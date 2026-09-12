@@ -2,20 +2,62 @@ import { useEffect, useRef, useState } from 'react'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import { decodeAudioFile } from '../audio/decode.ts'
 import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
+import { deriveCompletion } from '../domain/completion.ts'
+import { markEnough, suggestNext } from '../domain/sessionPlan.ts'
+import type { Phrase, Project, VoicePart } from '../domain/schemas.ts'
 import { SingerShell } from '../ui/shell/SingerShell.tsx'
+import { PartPicker } from '../ui/singer/PartPicker.tsx'
+import { PhraseStage } from '../ui/singer/PhraseStage.tsx'
+import { ProgressRibbon } from '../ui/singer/ProgressRibbon.tsx'
 import { RecordControl } from '../ui/singer/RecordControl.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
 
+const EMPTY_BOOTH =
+  'Nothing to sing yet — the preparer still needs phrases and voice parts.'
+
+function liveParts(project: Project): VoicePart[] {
+  return project.voiceRoster.filter((item) => !item.isGhost)
+}
+
+function sortPhrases(phrases: Phrase[]): Phrase[] {
+  return [...phrases].sort((a, b) => a.startMs - b.startMs)
+}
+
+function cellTakeCount(project: Project, phraseId: string, voicePartId: string): number {
+  return project.takes.filter(
+    (item) => item.phraseId === phraseId && item.voicePartId === voicePartId,
+  ).length
+}
+
+function isPhraseDone(project: Project, phrase: Phrase, part: VoicePart): boolean {
+  const plan = phrase.partPlan.find((item) => item.voicePartId === part.id)
+  if (plan?.status === 'enough' || plan?.status === 'final') return true
+  const takeCount = cellTakeCount(project, phrase.id, part.id)
+  const target = plan?.targetTakes ?? part.targetTakes
+  return takeCount >= target
+}
+
 export function SingPage() {
   const { project, error, setProject } = useLoadedProject()
   const repo = useProjectRepository()
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null)
+  const [voicePartId, setVoicePartId] = useState<string | null>(null)
+  const [phraseId, setPhraseId] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
 
   bufferRef.current = buffer
+
+  const projectId = project && typeof project === 'object' ? project.id : undefined
+
+  useEffect(() => {
+    setVoicePartId(null)
+    setPhraseId(null)
+    setSaveError(null)
+  }, [projectId])
 
   useEffect(() => {
     return () => {
@@ -58,6 +100,8 @@ export function SingPage() {
     return <ProjectNotFound />
   }
 
+  const loaded = project
+
   function getEngine(): PlaybackEngine {
     if (!engineRef.current) {
       engineRef.current = createPlaybackEngine({
@@ -67,23 +111,156 @@ export function SingPage() {
     return engineRef.current
   }
 
-  const phrase = project.phrases[0]
-  const part =
-    project.voiceRoster.find((item) => !item.isGhost) ?? project.voiceRoster[0]
+  const parts = liveParts(loaded)
+  const phrases = sortPhrases(loaded.phrases)
+  const ready = parts.length > 0 && phrases.length > 0
+  const part = voicePartId ? parts.find((item) => item.id === voicePartId) : undefined
+  const phrase = phraseId ? phrases.find((item) => item.id === phraseId) : undefined
+
+  function applySuggestion(suggestion: ReturnType<typeof suggestNext>, lockedPartId?: string) {
+    if (!suggestion) {
+      setPhraseId(null)
+      if (lockedPartId) setVoicePartId(lockedPartId)
+      return
+    }
+    setVoicePartId(suggestion.voicePartId)
+    setPhraseId(suggestion.phraseId)
+  }
+
+  function handlePick(id: string) {
+    setSaveError(null)
+    applySuggestion(suggestNext(loaded, { voicePartId: id }), id)
+  }
+
+  function handleSurprise() {
+    setSaveError(null)
+    applySuggestion(suggestNext(loaded))
+  }
+
+  function handleChooseAnother() {
+    setSaveError(null)
+    setVoicePartId(null)
+    setPhraseId(null)
+  }
+
+  async function handleGoodEnough() {
+    if (!part || !phrase) return
+    setSaveError(null)
+    try {
+      const next = markEnough(loaded, phrase.id, part.id)
+      const saved = await repo.saveProject({
+        ...next,
+        completion: deriveCompletion(next),
+      })
+      setProject(saved)
+      applySuggestion(suggestNext(saved, { voicePartId: part.id }), part.id)
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error && err.message ? err.message : 'Could not save')
+    }
+  }
+
+  function handleNext() {
+    if (!part || !phrase) return
+    setSaveError(null)
+    const suggestion = suggestNext(markEnough(loaded, phrase.id, part.id), {
+      voicePartId: part.id,
+    })
+    if (suggestion) {
+      setVoicePartId(suggestion.voicePartId)
+      setPhraseId(suggestion.phraseId)
+    }
+  }
+
+  const phraseIndex = phrase ? phrases.findIndex((item) => item.id === phrase.id) + 1 : 0
+  const takeCount = phrase && part ? cellTakeCount(loaded, phrase.id, part.id) : 0
+  const targetTakes =
+    phrase && part
+      ? (phrase.partPlan.find((item) => item.voicePartId === part.id)?.targetTakes ?? part.targetTakes)
+      : 0
+  const sungPhrases = part ? phrases.filter((item) => isPhraseDone(loaded, item, part)).length : 0
 
   return (
-    <SingerShell songTitle={project.title} partLabel={part?.name}>
-      <p className="font-display text-lyric leading-snug">The booth is quiet.</p>
-      <p className="mt-3 max-w-md text-ink/70">Headphones carry the ghost. Sing the line when it comes.</p>
-      {phrase && part ? (
-        <RecordControl
-          phrase={phrase}
-          voicePart={part}
-          project={project}
-          onProjectChange={(next) => setProject(next)}
-          engine={getEngine()}
-        />
-      ) : null}
+    <SingerShell songTitle={loaded.title} partLabel={part?.name}>
+      {!ready ? (
+        <>
+          <p className="font-display text-lyric leading-snug">The booth is quiet.</p>
+          <p className="mt-3 max-w-md text-ink/70">{EMPTY_BOOTH}</p>
+        </>
+      ) : !voicePartId ? (
+        <PartPicker parts={parts} onPick={handlePick} onSurprise={handleSurprise} />
+      ) : part && phrase ? (
+        <>
+          <PhraseStage
+            phrase={phrase}
+            phraseIndex={phraseIndex}
+            phraseCount={phrases.length}
+            partColor={part.color}
+          />
+          <div className="mt-8">
+            <ProgressRibbon
+              takeCount={takeCount}
+              targetTakes={targetTakes}
+              sungPhrases={sungPhrases}
+              phraseCount={phrases.length}
+              partName={part.name}
+            />
+          </div>
+          <RecordControl
+            key={`${phrase.id}:${part.id}`}
+            phrase={phrase}
+            voicePart={part}
+            project={loaded}
+            onProjectChange={(next) => setProject(next)}
+            engine={getEngine()}
+          />
+          <div className="mt-8 flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={() => void handleGoodEnough()}
+              className="rounded-pill border border-ink/20 px-5 py-2 text-sm studio-transition hover:border-ink/50"
+            >
+              Good enough
+            </button>
+            <button
+              type="button"
+              onClick={handleNext}
+              className="text-sm text-ink-muted underline-offset-4 hover:underline"
+            >
+              Next
+            </button>
+            <button
+              type="button"
+              onClick={handleChooseAnother}
+              className="text-sm text-ink-muted underline-offset-4 hover:underline"
+            >
+              Sing another part
+            </button>
+          </div>
+          {saveError ? (
+            <p role="alert" className="mt-4 text-record-red">
+              {saveError}
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <p className="font-display text-lyric leading-snug">
+            {part ? `That’s a wrap for ${part.name}.` : 'Every line has a home.'}
+          </p>
+          <p className="mt-3 max-w-md text-ink/70">
+            {part
+              ? 'This part is full enough. Sing another, or rest the voice.'
+              : 'Nothing left to sing — the stack is complete.'}
+          </p>
+          <button
+            type="button"
+            onClick={handleChooseAnother}
+            className="mt-8 self-start text-sm text-ink-muted underline-offset-4 hover:underline"
+          >
+            Sing another part
+          </button>
+        </>
+      )}
     </SingerShell>
   )
 }

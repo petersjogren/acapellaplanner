@@ -13,6 +13,7 @@ import {
   type StartedRecording,
 } from '../../audio/record.ts'
 import { deriveCompletion } from '../../domain/completion.ts'
+import { markInProgress } from '../../domain/sessionPlan.ts'
 import type { Phrase, Project, Take, VoicePart } from '../../domain/schemas.ts'
 
 export type RecordControlProps = {
@@ -100,9 +101,10 @@ export function RecordControl({
       ...current,
       takes: [...current.takes, take],
     }
+    const progressing = markInProgress(next, phrase.id, voicePart.id)
     const saved = await repo.saveProject({
-      ...next,
-      completion: deriveCompletion(next),
+      ...progressing,
+      completion: deriveCompletion(progressing),
     })
     projectRef.current = saved
     onProjectChangeRef.current(saved)
