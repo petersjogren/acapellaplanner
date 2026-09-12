@@ -141,7 +141,6 @@ export function SheetCropper({
         </button>
       </div>
       <div
-        role="application"
         aria-label="Sheet page"
         className="relative mt-3 cursor-crosshair touch-none overflow-hidden rounded-md border border-ink/15 bg-paper-shadow"
         onPointerDown={handlePointerDown}

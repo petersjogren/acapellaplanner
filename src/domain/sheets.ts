@@ -46,17 +46,14 @@ export function regionFromDrag(
 }
 
 export function bindSheetRefToPhrase(project: Project, phraseId: string, ref: SheetRef): Project {
-  const current = project.phrases.find((item) => item.id === phraseId)
-  if (!current) {
+  if (!project.phrases.some((item) => item.id === phraseId)) {
     throw new Error(`Phrase ${phraseId} not found`)
   }
-  const sheetRefs = [
-    ...current.sheetRefs.filter(
-      (item) => !(item.sheetDocId === ref.sheetDocId && item.pageIndex === ref.pageIndex),
-    ),
-    ref,
-  ]
-  const phrases = project.phrases.map((item) => (item.id === phraseId ? { ...item, sheetRefs } : item))
+  // MVP: one crop per phrase. A later bind (other page or replaced PDF) must
+  // become sheetRefs[0] so the booth shows the crop just bound.
+  const phrases = project.phrases.map((item) =>
+    item.id === phraseId ? { ...item, sheetRefs: [ref] } : item,
+  )
   return { ...project, phrases }
 }
 

@@ -48,6 +48,7 @@ export function PreparePage() {
   const writeQueueRef = useRef(Promise.resolve())
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
+  const sheetPageChangeGenRef = useRef(0)
 
   bufferRef.current = buffer
 
@@ -306,24 +307,29 @@ export function PreparePage() {
       ...current,
       sheetDocs: [...current.sheetDocs, nextDoc],
     }))
+    sheetPageChangeGenRef.current += 1
     setSheetPageIndex(0)
   }
 
   async function handleSheetPageChange(nextIndex: number) {
+    const gen = ++sheetPageChangeGenRef.current
+    const stillCurrent = () => gen === sheetPageChangeGenRef.current
     const current = projectRef.current ?? loaded
     const doc = current.sheetDocs.at(-1)
     if (!doc || nextIndex < 0 || nextIndex >= doc.pages.length) return
     const page = doc.pages.find((item) => item.pageIndex === nextIndex)
     if (page?.imageBlobId || !doc.pdfBlobId) {
-      setSheetPageIndex(nextIndex)
+      if (stillCurrent()) setSheetPageIndex(nextIndex)
       return
     }
     const pdfRecord = await repo.getAudioBlob(doc.pdfBlobId)
+    if (!stillCurrent()) return
     if (!pdfRecord) {
-      setSheetPageIndex(nextIndex)
+      if (stillCurrent()) setSheetPageIndex(nextIndex)
       return
     }
     const rendered = await renderPageToCanvas(await pdfRecord.blob.arrayBuffer(), nextIndex)
+    if (!stillCurrent()) return
     const pageBlobId = crypto.randomUUID()
     await repo.putAudioBlob({
       id: pageBlobId,
@@ -334,6 +340,7 @@ export function PreparePage() {
       createdAt: new Date().toISOString(),
       blob: rendered.pngBlob,
     })
+    if (!stillCurrent()) return
     await persistProject((proj) => ({
       ...proj,
       sheetDocs: proj.sheetDocs.map((item) =>
@@ -347,7 +354,7 @@ export function PreparePage() {
           : item,
       ),
     }))
-    setSheetPageIndex(nextIndex)
+    if (stillCurrent()) setSheetPageIndex(nextIndex)
   }
 
   async function handleBindCrop(phraseId: string, region: RegionNorm) {

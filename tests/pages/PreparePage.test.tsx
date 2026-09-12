@@ -790,4 +790,62 @@ describe('PreparePage sheet upload', () => {
       regionNorm: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 },
     })
   })
+
+  it('replaces the phrase crop on re-bind so the latest ref is the only one', async () => {
+    renderPrepare()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Upload sheet PDF')).toBeTruthy()
+    })
+
+    const file = new File([new Uint8Array([9, 8, 7])], 'lead.pdf', { type: 'application/pdf' })
+    fireEvent.change(screen.getByLabelText('Upload sheet PDF'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sheet page')).toBeTruthy()
+    })
+
+    function dragBind(from: { x: number; y: number }, to: { x: number; y: number }) {
+      const page = screen.getByLabelText('Sheet page')
+      vi.spyOn(page, 'getBoundingClientRect').mockReturnValue({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        toJSON() {
+          return {}
+        },
+      })
+      fireEvent.pointerDown(page, { clientX: from.x, clientY: from.y, pointerId: 1 })
+      fireEvent.pointerMove(page, { clientX: to.x, clientY: to.y, pointerId: 1 })
+      fireEvent.pointerUp(page, { clientX: to.x, clientY: to.y, pointerId: 1 })
+      fireEvent.click(screen.getByRole('button', { name: 'Bind crop' }))
+    }
+
+    dragBind({ x: 20, y: 10 }, { x: 120, y: 60 })
+    await waitFor(async () => {
+      const loaded = await repo.getProject(projectId)
+      expect(loaded?.phrases[0]?.sheetRefs).toHaveLength(1)
+      expect(loaded?.phrases[0]?.sheetRefs[0]).toMatchObject({
+        pageIndex: 0,
+        regionNorm: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 },
+      })
+    })
+    const firstId = (await repo.getProject(projectId))?.phrases[0]?.sheetRefs[0]?.id
+
+    dragBind({ x: 40, y: 20 }, { x: 140, y: 70 })
+    await waitFor(async () => {
+      const loaded = await repo.getProject(projectId)
+      expect(loaded?.phrases[0]?.sheetRefs).toHaveLength(1)
+      expect(loaded?.phrases[0]?.sheetRefs[0]?.id).not.toBe(firstId)
+      expect(loaded?.phrases[0]?.sheetRefs[0]).toMatchObject({
+        pageIndex: 0,
+        regionNorm: { x: 0.2, y: 0.2, w: 0.5, h: 0.5 },
+      })
+    })
+  })
 })

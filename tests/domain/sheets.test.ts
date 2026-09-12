@@ -56,7 +56,7 @@ describe('bindSheetRefToPhrase', () => {
     regionNorm: { x: 0.1, y: 0.2, w: 0.5, h: 0.25 },
   }
 
-  it('appends a sheet ref onto the phrase', () => {
+  it('sets a sheet ref on the phrase', () => {
     const project = projectWithPhrase(phrase({ id: 'p1' }))
     const next = bindSheetRefToPhrase(project, 'p1', ref)
 
@@ -64,16 +64,56 @@ describe('bindSheetRefToPhrase', () => {
     expect(project.phrases[0]?.sheetRefs).toEqual([])
   })
 
-  it('replaces an existing crop for the same page', () => {
-    const project = projectWithPhrase(
-      phrase({
-        id: 'p1',
-        sheetRefs: [{ id: 'old', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 1, h: 1 } }],
-      }),
-    )
+  it('replaces the phrase crop instead of appending, including a different page or PDF', () => {
+    const oldRef: SheetRef = {
+      id: 'old',
+      sheetDocId: 'doc-1',
+      pageIndex: 0,
+      regionNorm: { x: 0, y: 0, w: 1, h: 1 },
+    }
+    const otherRef: SheetRef = {
+      id: 'other',
+      sheetDocId: 'doc-1',
+      pageIndex: 0,
+      regionNorm: { x: 0.5, y: 0.5, w: 0.4, h: 0.4 },
+    }
+    const laterRef: SheetRef = {
+      id: 'ref-2',
+      sheetDocId: 'doc-2',
+      pageIndex: 1,
+      regionNorm: { x: 0.2, y: 0.3, w: 0.4, h: 0.2 },
+    }
+    const project: Project = {
+      ...createEmptyProject('When I Fall'),
+      phrases: [phrase({ id: 'p1', sheetRefs: [oldRef] }), phrase({ id: 'p2', sheetRefs: [otherRef] })],
+    }
 
-    const next = bindSheetRefToPhrase(project, 'p1', ref)
-    expect(next.phrases[0]?.sheetRefs).toEqual([ref])
+    const next = bindSheetRefToPhrase(project, 'p1', laterRef)
+    expect(next.phrases[0]?.sheetRefs).toEqual([laterRef])
+    expect(next.phrases[1]?.sheetRefs).toEqual([otherRef])
+    expect(sheetPageBlobId(
+      {
+        ...next,
+        sheetDocs: [
+          {
+            id: 'doc-1',
+            name: 'old.pdf',
+            source: 'pdf',
+            pages: [{ pageIndex: 0, imageBlobId: 'img-old' }],
+          },
+          {
+            id: 'doc-2',
+            name: 'new.pdf',
+            source: 'pdf',
+            pages: [
+              { pageIndex: 0, imageBlobId: 'img-0' },
+              { pageIndex: 1, imageBlobId: 'img-new' },
+            ],
+          },
+        ],
+      },
+      next.phrases[0]!,
+    )).toBe('img-new')
   })
 
   it('throws when the phrase is missing', () => {
