@@ -67,7 +67,7 @@ describe('routes', () => {
 
     renderAt(`/project/${projectId}/review`)
     await waitFor(() => {
-      expect(screen.getByText('Review takes come next')).toBeTruthy()
+      expect(screen.getByText('Play a take against the ghost, then keep or scratch it.')).toBeTruthy()
     })
     expect(screen.getByRole('navigation', { name: 'Studio' })).toBeTruthy()
     expect(screen.getByRole('link', { name: /Review/ }).getAttribute('aria-current')).toBe('page')

@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from '../../src/app/routes.tsx'
 import { createEmptyProject } from '../../src/domain/schemas.ts'
 import { AcapellaDB } from '../../src/storage/db.ts'
+import { exportProjectZip } from '../../src/storage/projectIO.ts'
 import {
   createProjectRepository,
   type ProjectRepository,
@@ -104,5 +105,44 @@ describe('HomePage', () => {
       expect(screen.getByRole('alert').textContent).toBe('Could not save')
     })
     expect(screen.getByRole('button', { name: 'New song' })).toBeTruthy()
+  })
+
+  it('imports a project zip into the list with its audio blob', async () => {
+    const source = await repo.saveProject({
+      ...createEmptyProject('Imported song'),
+      ghostTrackId: 'blob-tiny',
+    })
+    const audio = new Blob(['ghost-audio'], { type: 'audio/webm' })
+    await repo.putAudioBlob({
+      id: 'blob-tiny',
+      projectId: source.id,
+      kind: 'ghost',
+      mimeType: 'audio/webm',
+      byteSize: audio.size,
+      createdAt: source.createdAt,
+      blob: audio,
+    })
+    const zip = await exportProjectZip(source, async () => audio)
+    await repo.deleteProject(source.id)
+
+    renderHome()
+    await waitFor(() => {
+      expect(screen.getByText('No songs yet')).toBeTruthy()
+    })
+
+    const file = new File([zip], 'song.acapella.zip', { type: 'application/zip' })
+    fireEvent.change(screen.getByLabelText('Import zip'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByText('Imported song')).toBeTruthy()
+    })
+    const listed = await repo.listProjects()
+    expect(listed).toHaveLength(1)
+    expect(listed[0]?.title).toBe('Imported song')
+    expect(listed[0]?.ghostTrackId).toBe('blob-tiny')
+    const loadedBlob = await repo.getAudioBlob('blob-tiny')
+    expect(loadedBlob?.kind).toBe('ghost')
+    expect(loadedBlob?.mimeType).toBe('audio/webm')
+    expect(loadedBlob?.byteSize).toBe(11)
   })
 })
