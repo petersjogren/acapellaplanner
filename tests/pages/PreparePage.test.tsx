@@ -136,3 +136,133 @@ describe('PreparePage ghost import', () => {
     expect(screen.getByLabelText('Import ghost track')).toBeTruthy()
   })
 })
+
+describe('PreparePage phrase marking', () => {
+  let database: AcapellaDB
+  let repo: ProjectRepository
+  let projectId: string
+
+  beforeEach(async () => {
+    database = new AcapellaDB(`acapellaplanner-prepare-phrases-${crypto.randomUUID()}`)
+    repo = createProjectRepository(database)
+    const project = await repo.saveProject(createEmptyProject('When I Fall'))
+    projectId = project.id
+    const blobId = crypto.randomUUID()
+    await repo.saveProject({
+      ...project,
+      ghostTrackId: blobId,
+      guides: [
+        {
+          id: crypto.randomUUID(),
+          kind: 'ghost',
+          audioBlobId: blobId,
+          gainDbDefault: 0,
+          alignToGhost: true,
+        },
+      ],
+      settings: {
+        ...project.settings,
+        ghostMeta: { filename: 'lead.wav', durationMs: 10_000 },
+      },
+    })
+  })
+
+  afterEach(async () => {
+    cleanup()
+    database.close()
+    await database.delete()
+  })
+
+  function renderPrepare(repository: ProjectRepository = repo) {
+    return render(
+      <MemoryRouter initialEntries={[`/project/${projectId}/prepare`]}>
+        <AppRoutes repo={repository} />
+      </MemoryRouter>,
+    )
+  }
+
+  function mockTimelineRect(width = 1000) {
+    const timeline = screen.getByLabelText('Ghost timeline')
+    vi.spyOn(timeline, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: width,
+      bottom: 80,
+      width,
+      height: 80,
+      toJSON() {
+        return {}
+      },
+    })
+    return timeline
+  }
+
+  function dragPhrase(timeline: HTMLElement, fromX: number, toX: number, pointerId = 1) {
+    fireEvent.pointerDown(timeline, { clientX: fromX, pointerId })
+    fireEvent.pointerMove(timeline, { clientX: toX, pointerId })
+    fireEvent.pointerUp(timeline, { clientX: toX, pointerId })
+  }
+
+  it('persists two sequential phrases using the latest project state', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Ghost timeline')).toBeTruthy()
+    })
+
+    const timeline = mockTimelineRect()
+    dragPhrase(timeline, 100, 300)
+    await waitFor(() => {
+      expect(screen.getByText('Phrase 1')).toBeTruthy()
+    })
+
+    dragPhrase(timeline, 400, 600)
+    await waitFor(() => {
+      expect(screen.getByText('Phrase 2')).toBeTruthy()
+    })
+
+    const loaded = await repo.getProject(projectId)
+    expect(loaded?.phrases).toHaveLength(2)
+    expect(loaded?.phrases.map((item) => item.name).sort()).toEqual(['Phrase 1', 'Phrase 2'])
+  })
+
+  it('does not drop the first phrase when a second mark starts before save resolves', async () => {
+    let releaseFirstSave = () => {}
+    let resolveFirstSaveStarted = () => {}
+    const firstSaveStarted = new Promise<void>((resolve) => {
+      resolveFirstSaveStarted = resolve
+    })
+    const firstSaveGate = new Promise<void>((resolve) => {
+      releaseFirstSave = resolve
+    })
+    let saves = 0
+    const gatedRepo: ProjectRepository = {
+      ...repo,
+      async saveProject(project) {
+        saves += 1
+        if (saves === 1) {
+          resolveFirstSaveStarted()
+          await firstSaveGate
+        }
+        return repo.saveProject(project)
+      },
+    }
+
+    renderPrepare(gatedRepo)
+    await waitFor(() => {
+      expect(screen.getByLabelText('Ghost timeline')).toBeTruthy()
+    })
+
+    const timeline = mockTimelineRect()
+    dragPhrase(timeline, 100, 300, 1)
+    await firstSaveStarted
+    dragPhrase(timeline, 400, 600, 2)
+    releaseFirstSave()
+
+    await waitFor(async () => {
+      const loaded = await repo.getProject(projectId)
+      expect(loaded?.phrases).toHaveLength(2)
+    })
+  })
+})

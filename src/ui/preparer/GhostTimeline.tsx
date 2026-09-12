@@ -53,6 +53,63 @@ function percent(ms: number, durationMs: number): number {
   return Math.min(Math.max((ms / durationMs) * 100, 0), 100)
 }
 
+function isTooShortDrag(startMs: number, endMs: number): boolean {
+  return Math.abs(endMs - startMs) < MIN_PHRASE_MS
+}
+
+function previewFromRawDrag(
+  startMs: number,
+  endMs: number,
+  durationMs: number,
+): { startMs: number; endMs: number } | null {
+  if (isTooShortDrag(startMs, endMs)) return null
+  const start = Math.min(startMs, endMs)
+  const end = Math.max(startMs, endMs)
+  return {
+    startMs: Math.min(Math.max(start, 0), durationMs),
+    endMs: Math.min(Math.max(end, 0), durationMs),
+  }
+}
+
+function PhraseNameInput({
+  value,
+  onCommit,
+}: {
+  value: string
+  onCommit: (name: string) => void | Promise<void>
+}) {
+  const [draft, setDraft] = useState(value)
+
+  useEffect(() => {
+    setDraft(value)
+  }, [value])
+
+  function commit() {
+    const trimmed = draft.trim()
+    if (!trimmed) {
+      setDraft(value)
+      return
+    }
+    if (trimmed === value) return
+    void onCommit(trimmed)
+  }
+
+  return (
+    <input
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          event.currentTarget.blur()
+        }
+      }}
+      className="rounded-md border border-ink/15 bg-paper px-2 py-1"
+    />
+  )
+}
+
 function capturePointer(target: HTMLElement, pointerId: number) {
   if (typeof target.setPointerCapture !== 'function') return
   try {
@@ -142,7 +199,7 @@ export function GhostTimeline({
     event.preventDefault()
     const ms = msFromEvent(event)
     dragRef.current = { startMs: ms, endMs: ms }
-    setPreview({ startMs: ms, endMs: ms })
+    setPreview(null)
     capturePointer(event.currentTarget, event.pointerId)
   }
 
@@ -151,7 +208,7 @@ export function GhostTimeline({
     if (!drag) return
     const ms = msFromEvent(event)
     dragRef.current = { startMs: drag.startMs, endMs: ms }
-    setPreview(phrasesFromDrag(drag.startMs, ms, durationMs))
+    setPreview(previewFromRawDrag(drag.startMs, ms, durationMs))
   }
 
   function finishDrag(event: ReactPointerEvent<HTMLElement>, commit: boolean) {
@@ -160,7 +217,7 @@ export function GhostTimeline({
     setPreview(null)
     releasePointer(event.currentTarget, event.pointerId)
     if (!commit || !drag) return
-    if (Math.abs(drag.endMs - drag.startMs) < MIN_PHRASE_MS) return
+    if (isTooShortDrag(drag.startMs, drag.endMs)) return
     const marked = phrasesFromDrag(drag.startMs, drag.endMs, durationMs)
     void run(() => onMarkPhrase(marked.startMs, marked.endMs), 'Could not mark phrase')
   }
@@ -245,15 +302,11 @@ export function GhostTimeline({
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <label className="flex flex-col gap-1 text-sm">
                       Name
-                      <input
+                      <PhraseNameInput
                         value={item.name}
-                        onChange={(event) => {
-                          void run(
-                            () => onUpdatePhrase(item.id, { name: event.target.value }),
-                            'Could not update phrase',
-                          )
-                        }}
-                        className="rounded-md border border-ink/15 bg-paper px-2 py-1"
+                        onCommit={(name) =>
+                          run(() => onUpdatePhrase(item.id, { name }), 'Could not update phrase')
+                        }
                       />
                     </label>
                     <label className="flex flex-col gap-1 text-sm">

@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { ComponentProps } from 'react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GhostTimeline } from './GhostTimeline.tsx'
+import { GhostTimeline, msAtTimelineX } from './GhostTimeline.tsx'
 import type { Phrase } from '../../domain/schemas.ts'
 
 afterEach(() => {
@@ -42,6 +43,37 @@ function mockTimelineRect(width = 1000) {
   return timeline
 }
 
+function renderTimeline(overrides: Partial<ComponentProps<typeof GhostTimeline>> = {}) {
+  const onMarkPhrase = overrides.onMarkPhrase ?? vi.fn()
+  const onUpdatePhrase = overrides.onUpdatePhrase ?? vi.fn()
+  const onRemovePhrase = overrides.onRemovePhrase ?? vi.fn()
+  render(
+    <GhostTimeline
+      durationMs={overrides.durationMs ?? 10_000}
+      phrases={overrides.phrases ?? []}
+      onMarkPhrase={onMarkPhrase}
+      onUpdatePhrase={onUpdatePhrase}
+      onRemovePhrase={onRemovePhrase}
+    />,
+  )
+  return { onMarkPhrase, onUpdatePhrase, onRemovePhrase }
+}
+
+describe('msAtTimelineX', () => {
+  const rect = { left: 0, width: 1000 }
+
+  it('maps clientX across the ghost duration', () => {
+    expect(msAtTimelineX(100, rect, 10_000)).toBe(1000)
+    expect(msAtTimelineX(400, rect, 10_000)).toBe(4000)
+  })
+
+  it('clamps to [0, durationMs] and treats a zero-width track as 0', () => {
+    expect(msAtTimelineX(-50, rect, 10_000)).toBe(0)
+    expect(msAtTimelineX(2000, rect, 10_000)).toBe(10_000)
+    expect(msAtTimelineX(50, { left: 0, width: 0 }, 10_000)).toBe(0)
+  })
+})
+
 describe('GhostTimeline', () => {
   it('renders a duration ruler and Mark a phrase copy without a waveform buffer', () => {
     render(
@@ -62,16 +94,7 @@ describe('GhostTimeline', () => {
   })
 
   it('creates a phrase from a pointer drag mapped across the ghost duration', () => {
-    const onMarkPhrase = vi.fn()
-    render(
-      <GhostTimeline
-        durationMs={10_000}
-        phrases={[]}
-        onMarkPhrase={onMarkPhrase}
-        onUpdatePhrase={() => undefined}
-        onRemovePhrase={() => undefined}
-      />,
-    )
+    const { onMarkPhrase } = renderTimeline()
 
     const timeline = mockTimelineRect(1000)
     fireEvent.pointerDown(timeline, { clientX: 100, pointerId: 1 })
@@ -82,21 +105,79 @@ describe('GhostTimeline', () => {
     expect(onMarkPhrase).toHaveBeenCalledWith(1000, 4000)
   })
 
-  it('edits the selected phrase name', () => {
-    const onUpdatePhrase = vi.fn()
-    render(
-      <GhostTimeline
-        durationMs={10_000}
-        phrases={[phrase]}
-        onMarkPhrase={() => undefined}
-        onUpdatePhrase={onUpdatePhrase}
-        onRemovePhrase={() => undefined}
-      />,
+  it('creates a correctly ordered phrase from a reverse drag', () => {
+    const { onMarkPhrase } = renderTimeline()
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.pointerDown(timeline, { clientX: 400, pointerId: 1 })
+    fireEvent.pointerMove(timeline, { clientX: 100, pointerId: 1 })
+    fireEvent.pointerUp(timeline, { clientX: 100, pointerId: 1 })
+
+    expect(onMarkPhrase).toHaveBeenCalledTimes(1)
+    expect(onMarkPhrase).toHaveBeenCalledWith(1000, 4000)
+  })
+
+  it('does not create a phrase from a too-short click', () => {
+    const { onMarkPhrase } = renderTimeline()
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.pointerDown(timeline, { clientX: 100, pointerId: 1 })
+    fireEvent.pointerUp(timeline, { clientX: 100, pointerId: 1 })
+
+    expect(onMarkPhrase).not.toHaveBeenCalled()
+  })
+
+  it('does not create a phrase from a drag shorter than 50ms', () => {
+    const { onMarkPhrase } = renderTimeline()
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.pointerDown(timeline, { clientX: 100, pointerId: 1 })
+    fireEvent.pointerMove(timeline, { clientX: 104, pointerId: 1 })
+    fireEvent.pointerUp(timeline, { clientX: 104, pointerId: 1 })
+
+    expect(onMarkPhrase).not.toHaveBeenCalled()
+  })
+
+  it('surfaces overlap as role=alert', async () => {
+    const onMarkPhrase = vi.fn(() =>
+      Promise.reject(new Error('Phrases overlap on the ghost timeline')),
     )
+    renderTimeline({ onMarkPhrase })
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.pointerDown(timeline, { clientX: 100, pointerId: 1 })
+    fireEvent.pointerMove(timeline, { clientX: 400, pointerId: 1 })
+    fireEvent.pointerUp(timeline, { clientX: 400, pointerId: 1 })
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/overlap/i)
+    })
+  })
+
+  it('commits the selected phrase name on blur', () => {
+    const { onUpdatePhrase } = renderTimeline({ phrases: [phrase] })
 
     fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Intro' } })
+    const input = screen.getByLabelText('Name') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'Intro' } })
+    expect(onUpdatePhrase).not.toHaveBeenCalled()
 
+    fireEvent.blur(input)
     expect(onUpdatePhrase).toHaveBeenCalledWith('phrase-1', { name: 'Intro' })
+  })
+
+  it('keeps an empty name draft without calling updatePhrase', () => {
+    const { onUpdatePhrase } = renderTimeline({ phrases: [phrase] })
+
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    const input = screen.getByLabelText('Name') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '' } })
+
+    expect(onUpdatePhrase).not.toHaveBeenCalled()
+    expect(input.value).toBe('')
+
+    fireEvent.blur(input)
+    expect(onUpdatePhrase).not.toHaveBeenCalled()
+    expect(input.value).toBe('Phrase 1')
   })
 })

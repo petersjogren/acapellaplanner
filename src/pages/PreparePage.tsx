@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PreparerShell } from '../ui/shell/PreparerShell.tsx'
 import { decodeAudioFile, formatDuration } from '../audio/decode.ts'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
@@ -8,6 +8,7 @@ import {
 } from '../ui/preparer/GhostImporter.tsx'
 import { GhostTimeline } from '../ui/preparer/GhostTimeline.tsx'
 import { addPhrase, removePhrase, updatePhrase, type PhrasePatch } from '../domain/phrases.ts'
+import type { Project } from '../domain/schemas.ts'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
@@ -16,6 +17,14 @@ export function PreparePage() {
   const { project, error, setProject } = useLoadedProject()
   const repo = useProjectRepository()
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null)
+  const projectRef = useRef<Project | null>(null)
+  const writeQueueRef = useRef(Promise.resolve())
+
+  useEffect(() => {
+    if (project && typeof project === 'object') {
+      projectRef.current = project
+    }
+  }, [project])
 
   const ghostTrackId = project && typeof project === 'object' ? project.ghostTrackId : null
 
@@ -90,21 +99,30 @@ export function PreparePage() {
     setProject(saved)
   }
 
-  async function persistPhrases(next: typeof loaded) {
-    const saved = await repo.saveProject(next)
-    setProject(saved)
+  function persistPhrases(mutate: (current: Project) => Project): Promise<void> {
+    const run = writeQueueRef.current.then(async () => {
+      const current = projectRef.current ?? loaded
+      const saved = await repo.saveProject(mutate(current))
+      projectRef.current = saved
+      setProject(saved)
+    })
+    writeQueueRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
   }
 
   async function handleMarkPhrase(startMs: number, endMs: number) {
-    await persistPhrases(addPhrase(loaded, { startMs, endMs }))
+    await persistPhrases((current) => addPhrase(current, { startMs, endMs }))
   }
 
   async function handleUpdatePhrase(id: string, patch: PhrasePatch) {
-    await persistPhrases(updatePhrase(loaded, id, patch))
+    await persistPhrases((current) => updatePhrase(current, id, patch))
   }
 
   async function handleRemovePhrase(id: string) {
-    await persistPhrases(removePhrase(loaded, id))
+    await persistPhrases((current) => removePhrase(current, id))
   }
 
   const ghostMeta = loaded.settings.ghostMeta
