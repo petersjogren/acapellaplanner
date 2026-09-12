@@ -47,6 +47,7 @@ function renderTimeline(overrides: Partial<ComponentProps<typeof GhostTimeline>>
   const onMarkPhrase = overrides.onMarkPhrase ?? vi.fn()
   const onUpdatePhrase = overrides.onUpdatePhrase ?? vi.fn()
   const onRemovePhrase = overrides.onRemovePhrase ?? vi.fn()
+  const onSelectPhrase = overrides.onSelectPhrase
   render(
     <GhostTimeline
       durationMs={overrides.durationMs ?? 10_000}
@@ -54,9 +55,10 @@ function renderTimeline(overrides: Partial<ComponentProps<typeof GhostTimeline>>
       onMarkPhrase={onMarkPhrase}
       onUpdatePhrase={onUpdatePhrase}
       onRemovePhrase={onRemovePhrase}
+      onSelectPhrase={onSelectPhrase}
     />,
   )
-  return { onMarkPhrase, onUpdatePhrase, onRemovePhrase }
+  return { onMarkPhrase, onUpdatePhrase, onRemovePhrase, onSelectPhrase }
 }
 
 describe('msAtTimelineX', () => {
@@ -179,5 +181,16 @@ describe('GhostTimeline', () => {
     fireEvent.blur(input)
     expect(onUpdatePhrase).not.toHaveBeenCalled()
     expect(input.value).toBe('Phrase 1')
+  })
+
+  it('notifies when a phrase is selected or cleared', () => {
+    const onSelectPhrase = vi.fn()
+    renderTimeline({ phrases: [phrase], onSelectPhrase })
+
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    expect(onSelectPhrase).toHaveBeenCalledWith('phrase-1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete phrase' }))
+    expect(onSelectPhrase).toHaveBeenCalledWith(null)
   })
 })

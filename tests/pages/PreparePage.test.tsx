@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from '../../src/app/routes.tsx'
+import { closeAudioContext } from '../../src/audio/context.ts'
 import { decodeAudioFile } from '../../src/audio/decode.ts'
 import { createEmptyProject } from '../../src/domain/schemas.ts'
 import { AcapellaDB } from '../../src/storage/db.ts'
@@ -487,5 +488,148 @@ describe('PreparePage voice roster and matrix', () => {
       expect(loaded?.takes.map((item) => item.id)).toEqual(['t-a1'])
       expect(loaded?.phrases[0]?.partPlan.map((row) => row.voicePartId)).toEqual(['a1'])
     })
+  })
+})
+
+describe('PreparePage phrase playback', () => {
+  let database: AcapellaDB
+  let repo: ProjectRepository
+  let projectId: string
+  let sources: Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }>
+
+  beforeEach(async () => {
+    sources = []
+    class FakeAudioContext {
+      state: AudioContextState = 'suspended'
+      currentTime = 1
+      destination = {}
+      resume = vi.fn(async () => {
+        this.state = 'running'
+      })
+      close = vi.fn(async () => {
+        this.state = 'closed'
+      })
+      createGain() {
+        return { connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } }
+      }
+      createBufferSource() {
+        const source = {
+          buffer: null as AudioBuffer | null,
+          connect: vi.fn(),
+          disconnect: vi.fn(),
+          start: vi.fn(),
+          stop: vi.fn(),
+          onended: null as (() => void) | null,
+        }
+        sources.push(source)
+        return source
+      }
+    }
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+
+    database = new AcapellaDB(`acapellaplanner-prepare-play-${crypto.randomUUID()}`)
+    repo = createProjectRepository(database)
+    const project = await repo.saveProject(createEmptyProject('When I Fall'))
+    projectId = project.id
+    const blobId = crypto.randomUUID()
+    await repo.putAudioBlob({
+      id: blobId,
+      projectId,
+      kind: 'ghost',
+      mimeType: 'audio/wav',
+      byteSize: 4,
+      createdAt: new Date().toISOString(),
+      blob: new Blob([new Uint8Array([1, 2, 3, 4])]),
+    })
+    await repo.saveProject({
+      ...project,
+      ghostTrackId: blobId,
+      guides: [
+        {
+          id: crypto.randomUUID(),
+          kind: 'ghost',
+          audioBlobId: blobId,
+          gainDbDefault: 0,
+          alignToGhost: true,
+        },
+      ],
+      phrases: [
+        {
+          id: 'phrase-1',
+          name: 'Phrase 1',
+          startMs: 1000,
+          endMs: 3000,
+          sheetRefs: [],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          preRollMs: 250,
+          postRollMs: 100,
+        },
+      ],
+      settings: {
+        ...project.settings,
+        ghostMeta: { filename: 'lead.wav', durationMs: 10_000 },
+      },
+    })
+    vi.mocked(decodeAudioFile).mockReset()
+    vi.mocked(decodeAudioFile).mockResolvedValue({
+      buffer: { duration: 10, sampleRate: 44100, length: 441_000 } as AudioBuffer,
+      durationMs: 10_000,
+      sampleRate: 44100,
+    })
+  })
+
+  afterEach(async () => {
+    cleanup()
+    await closeAudioContext()
+    vi.unstubAllGlobals()
+    database.close()
+    await database.delete()
+  })
+
+  function renderPrepare() {
+    return render(
+      <MemoryRouter initialEntries={[`/project/${projectId}/prepare`]}>
+        <AppRoutes repo={repo} />
+      </MemoryRouter>,
+    )
+  }
+
+  it('hides playback controls until a phrase is selected', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByText('Phrase 1')).toBeTruthy()
+    })
+    expect(screen.queryByRole('button', { name: 'Play once' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Loop' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+  })
+
+  it('plays the selected phrase once, loops with gap, and stops without throwing', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByText('Phrase 1')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play once' })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play once' }))
+    await waitFor(() => {
+      expect(sources).toHaveLength(1)
+    })
+    expect(sources[0]?.start).toHaveBeenCalledWith(1, 0.75, 2.35)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Loop' }))
+    await waitFor(() => {
+      expect(sources[0]?.stop).toHaveBeenCalled()
+      expect(sources.length).toBeGreaterThanOrEqual(2)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    expect(screen.queryByText('Playing')).toBeNull()
   })
 })

@@ -15,6 +15,7 @@ export type GhostTimelineProps = {
   onMarkPhrase: (startMs: number, endMs: number) => void | Promise<void>
   onUpdatePhrase: (id: string, patch: PhrasePatch) => void | Promise<void>
   onRemovePhrase: (id: string) => void | Promise<void>
+  onSelectPhrase?: (id: string | null) => void
 }
 
 export function msAtTimelineX(
@@ -138,6 +139,7 @@ export function GhostTimeline({
   onMarkPhrase,
   onUpdatePhrase,
   onRemovePhrase,
+  onSelectPhrase,
 }: GhostTimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -290,7 +292,10 @@ export function GhostTimeline({
                   type="button"
                   aria-pressed={selected}
                   className="flex w-full flex-col items-start gap-0.5 text-left studio-transition hover:text-record-red"
-                  onClick={() => setSelectedId(item.id)}
+                  onClick={() => {
+                    setSelectedId(item.id)
+                    onSelectPhrase?.(item.id)
+                  }}
                 >
                   <span className="font-medium">{item.name}</span>
                   <span className="text-sm text-ink-muted">
@@ -360,6 +365,7 @@ export function GhostTimeline({
                       onClick={() => {
                         void run(() => onRemovePhrase(item.id), 'Could not delete phrase')
                         setSelectedId(null)
+                        onSelectPhrase?.(null)
                       }}
                     >
                       Delete phrase

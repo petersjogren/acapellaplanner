@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { PreparerShell } from '../ui/shell/PreparerShell.tsx'
 import { decodeAudioFile, formatDuration } from '../audio/decode.ts'
+import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import {
   GhostImporter,
@@ -27,8 +28,26 @@ export function PreparePage() {
   const { project, error, setProject } = useLoadedProject()
   const repo = useProjectRepository()
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null)
+  const [selectedPhraseId, setSelectedPhraseId] = useState<string | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [playError, setPlayError] = useState<string | null>(null)
   const projectRef = useRef<Project | null>(null)
   const writeQueueRef = useRef(Promise.resolve())
+  const bufferRef = useRef<AudioBuffer | null>(null)
+  const engineRef = useRef<PlaybackEngine | null>(null)
+
+  bufferRef.current = buffer
+
+  useEffect(() => {
+    return () => {
+      engineRef.current?.stop()
+    }
+  }, [])
+
+  useEffect(() => {
+    engineRef.current?.stop()
+    setPlaying(false)
+  }, [selectedPhraseId])
 
   useEffect(() => {
     if (project && typeof project === 'object') {
@@ -137,6 +156,7 @@ export function PreparePage() {
 
   async function handleRemovePhrase(id: string) {
     await persistProject((current) => removePhrase(current, id))
+    if (selectedPhraseId === id) setSelectedPhraseId(null)
   }
 
   async function handleAddPart(partial: NewVoicePartInput) {
@@ -149,6 +169,46 @@ export function PreparePage() {
 
   async function handleRemovePart(id: string) {
     await persistProject((current) => removePart(current, id))
+  }
+
+  function getEngine(): PlaybackEngine {
+    if (!engineRef.current) {
+      engineRef.current = createPlaybackEngine({
+        getBuffer: () => bufferRef.current,
+      })
+    }
+    return engineRef.current
+  }
+
+  const selectedPhrase = loaded.phrases.find((item) => item.id === selectedPhraseId) ?? null
+
+  async function handlePlay(loop: boolean) {
+    if (!selectedPhrase) return
+    setPlayError(null)
+    try {
+      await getEngine().play(
+        {
+          startMs: selectedPhrase.startMs,
+          endMs: selectedPhrase.endMs,
+          preRollMs: selectedPhrase.preRollMs ?? 0,
+          postRollMs: selectedPhrase.postRollMs,
+          gapMs: selectedPhrase.loopDefault.gapMs,
+          loop,
+        },
+        {
+          onEnded: () => setPlaying(false),
+        },
+      )
+      setPlaying(true)
+    } catch (err: unknown) {
+      setPlaying(false)
+      setPlayError(err instanceof Error && err.message ? err.message : 'Could not play phrase')
+    }
+  }
+
+  function handleStop() {
+    engineRef.current?.stop()
+    setPlaying(false)
   }
 
   const ghostMeta = loaded.settings.ghostMeta
@@ -171,7 +231,43 @@ export function PreparePage() {
             onMarkPhrase={handleMarkPhrase}
             onUpdatePhrase={handleUpdatePhrase}
             onRemovePhrase={handleRemovePhrase}
+            onSelectPhrase={setSelectedPhraseId}
           />
+          {selectedPhrase && buffer ? (
+            <section className="mt-6" aria-label="Phrase playback">
+              <h3 className="font-medium">Listen</h3>
+              <p className="mt-1 text-sm text-ink-muted">{selectedPhrase.name}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red"
+                  onClick={() => void handlePlay(false)}
+                >
+                  Play once
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red"
+                  onClick={() => void handlePlay(true)}
+                >
+                  Loop
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:bg-ink/5"
+                  onClick={handleStop}
+                >
+                  Stop
+                </button>
+              </div>
+              {playing ? <p className="mt-2 text-sm text-ink-muted">Playing</p> : null}
+              {playError ? (
+                <p role="alert" className="mt-2 text-record-red">
+                  {playError}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
         </section>
       ) : (
         <GhostImporter onImported={handleImported} />
