@@ -281,16 +281,22 @@ describe('PreparePage voice roster and matrix', () => {
 
   afterEach(async () => {
     cleanup()
+    vi.restoreAllMocks()
     database.close()
     await database.delete()
   })
 
-  function renderPrepare() {
+  function renderPrepare(repository: ProjectRepository = repo) {
     return render(
       <MemoryRouter initialEntries={[`/project/${projectId}/prepare`]}>
-        <AppRoutes repo={repo} />
+        <AppRoutes repo={repository} />
       </MemoryRouter>,
     )
+  }
+
+  function fillAddForm(name: string, shortLabel: string) {
+    fireEvent.change(screen.getByLabelText('Part name'), { target: { value: name } })
+    fireEvent.change(screen.getByLabelText('Short label'), { target: { value: shortLabel } })
   }
 
   it('shows the empty completion matrix copy', async () => {
@@ -306,8 +312,7 @@ describe('PreparePage voice roster and matrix', () => {
       expect(screen.getByLabelText('Part name')).toBeTruthy()
     })
 
-    fireEvent.change(screen.getByLabelText('Part name'), { target: { value: 'Soprano 1' } })
-    fireEvent.change(screen.getByLabelText('Short label'), { target: { value: 'S1' } })
+    fillAddForm('Soprano 1', 'S1')
     fireEvent.click(screen.getByRole('button', { name: 'Add voice part' }))
 
     await waitFor(async () => {
@@ -321,5 +326,166 @@ describe('PreparePage voice roster and matrix', () => {
     })
     expect(screen.getByText('Soprano 1')).toBeTruthy()
     expect(screen.queryByText(/users/i)).toBeNull()
+  })
+
+  it('persists two sequential adds against the latest project', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Part name')).toBeTruthy()
+    })
+
+    fillAddForm('Soprano 1', 'S1')
+    fireEvent.click(screen.getByRole('button', { name: 'Add voice part' }))
+    await waitFor(() => {
+      expect(screen.getByText('Soprano 1')).toBeTruthy()
+    })
+
+    fillAddForm('Alto 1', 'A1')
+    fireEvent.click(screen.getByRole('button', { name: 'Add voice part' }))
+    await waitFor(() => {
+      expect(screen.getByText('Alto 1')).toBeTruthy()
+    })
+
+    const loaded = await repo.getProject(projectId)
+    expect(loaded?.voiceRoster).toHaveLength(2)
+    expect(loaded?.voiceRoster.map((item) => item.shortLabel).sort()).toEqual(['A1', 'S1'])
+  })
+
+  it('does not drop the first part when a second add starts before save resolves', async () => {
+    let releaseFirstSave = () => {}
+    let resolveFirstSaveStarted = () => {}
+    const firstSaveStarted = new Promise<void>((resolve) => {
+      resolveFirstSaveStarted = resolve
+    })
+    const firstSaveGate = new Promise<void>((resolve) => {
+      releaseFirstSave = resolve
+    })
+    let saves = 0
+    const gatedRepo: ProjectRepository = {
+      ...repo,
+      async saveProject(project) {
+        saves += 1
+        if (saves === 1) {
+          resolveFirstSaveStarted()
+          await firstSaveGate
+        }
+        return repo.saveProject(project)
+      },
+    }
+
+    renderPrepare(gatedRepo)
+    await waitFor(() => {
+      expect(screen.getByLabelText('Part name')).toBeTruthy()
+    })
+
+    fillAddForm('Soprano 1', 'S1')
+    fireEvent.click(screen.getByRole('button', { name: 'Add voice part' }))
+    await firstSaveStarted
+    fillAddForm('Alto 1', 'A1')
+    fireEvent.click(screen.getByRole('button', { name: 'Add voice part' }))
+    releaseFirstSave()
+
+    await waitFor(async () => {
+      const loaded = await repo.getProject(projectId)
+      expect(loaded?.voiceRoster).toHaveLength(2)
+    })
+  })
+
+  it('rejects a duplicate short label without persisting', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Part name')).toBeTruthy()
+    })
+
+    fillAddForm('Soprano 1', 'S1')
+    fireEvent.click(screen.getByRole('button', { name: 'Add voice part' }))
+    await waitFor(() => {
+      expect(screen.getByText('Soprano 1')).toBeTruthy()
+    })
+
+    fillAddForm('Soprano double', 's1')
+    fireEvent.click(screen.getByRole('button', { name: 'Add voice part' }))
+    expect(screen.getByRole('alert').textContent).toMatch(/already used/i)
+
+    const loaded = await repo.getProject(projectId)
+    expect(loaded?.voiceRoster).toHaveLength(1)
+    expect(loaded?.voiceRoster[0]?.shortLabel).toBe('S1')
+  })
+
+  it('cascades takes and partPlan when a part is deleted after confirm', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const existing = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...existing!,
+      voiceRoster: [
+        { id: 's1', name: 'Soprano 1', shortLabel: 'S1', color: '#c23b2a', targetTakes: 4 },
+        { id: 'a1', name: 'Alto 1', shortLabel: 'A1', color: '#4d6a8f', targetTakes: 3 },
+      ],
+      phrases: [
+        {
+          id: 'p1',
+          name: 'Phrase 1',
+          startMs: 0,
+          endMs: 1000,
+          sheetRefs: [],
+          partPlan: [
+            {
+              voicePartId: 's1',
+              priority: 0,
+              targetTakes: 4,
+              requiredGuide: ['ghost'],
+              status: 'in-progress',
+            },
+            {
+              voicePartId: 'a1',
+              priority: 1,
+              targetTakes: 3,
+              requiredGuide: ['ghost'],
+              status: 'not-started',
+            },
+          ],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          postRollMs: 0,
+        },
+      ],
+      takes: [
+        {
+          id: 't-s1',
+          phraseId: 'p1',
+          voicePartId: 's1',
+          takeIndex: 1,
+          audioBlobId: 'blob-1',
+          recordedAt: '2026-09-12T10:00:00.000Z',
+          durationMs: 1000,
+          headphoneMixSnapshot: { layers: [] },
+          peakDb: -6,
+        },
+        {
+          id: 't-a1',
+          phraseId: 'p1',
+          voicePartId: 'a1',
+          takeIndex: 1,
+          audioBlobId: 'blob-2',
+          recordedAt: '2026-09-12T10:00:00.000Z',
+          durationMs: 1000,
+          headphoneMixSnapshot: { layers: [] },
+          peakDb: -6,
+        },
+      ],
+    })
+
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Delete Soprano 1' })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Soprano 1' }))
+
+    await waitFor(async () => {
+      const loaded = await repo.getProject(projectId)
+      expect(loaded?.voiceRoster.map((item) => item.id)).toEqual(['a1'])
+      expect(loaded?.takes.map((item) => item.id)).toEqual(['t-a1'])
+      expect(loaded?.phrases[0]?.partPlan.map((row) => row.voicePartId)).toEqual(['a1'])
+    })
   })
 })

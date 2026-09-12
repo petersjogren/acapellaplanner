@@ -1,4 +1,11 @@
 import { useState, type FormEvent } from 'react'
+import {
+  DEFAULT_TARGET_TAKES,
+  duplicateShortLabelMessage,
+  isDuplicateShortLabel,
+  type NewVoicePartInput,
+  type VoicePartPatch,
+} from '../../domain/roster.ts'
 import type { VoicePart } from '../../domain/schemas.ts'
 
 export const VOICE_PART_SWATCHES = [
@@ -11,17 +18,22 @@ export const VOICE_PART_SWATCHES = [
   { color: '#1c1916', name: 'Ink' },
 ] as const
 
-const DEFAULT_TARGET_TAKES = 4
 const DEFAULT_COLOR = VOICE_PART_SWATCHES[0].color
 
 export type VoiceRosterEditorProps = {
   parts: VoicePart[]
-  onChange: (parts: VoicePart[]) => void | Promise<void>
+  onAddPart: (partial: NewVoicePartInput) => void | Promise<void>
+  onUpdatePart: (id: string, patch: VoicePartPatch) => void | Promise<void>
+  onRemovePart: (id: string) => void | Promise<void>
 }
 
 function parseTargetTakes(value: string): number {
   const parsed = Number.parseInt(value, 10)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_TARGET_TAKES
+}
+
+function messageFrom(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
 }
 
 function ColorSwatches({
@@ -60,11 +72,15 @@ function ColorSwatches({
 function PartRow({
   part,
   parts,
-  onChange,
+  onUpdatePart,
+  onRemovePart,
+  onError,
 }: {
   part: VoicePart
   parts: VoicePart[]
-  onChange: VoiceRosterEditorProps['onChange']
+  onUpdatePart: VoiceRosterEditorProps['onUpdatePart']
+  onRemovePart: VoiceRosterEditorProps['onRemovePart']
+  onError: (message: string | null) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(part.name)
@@ -72,24 +88,41 @@ function PartRow({
   const [color, setColor] = useState(part.color)
   const [targetTakes, setTargetTakes] = useState(String(part.targetTakes))
 
-  function commitEdit() {
+  async function commitEdit() {
     const nextName = name.trim()
     const nextShort = shortLabel.trim()
     if (!nextName || !nextShort) return
-    void onChange(
-      parts.map((item) =>
-        item.id === part.id
-          ? {
-              ...item,
-              name: nextName,
-              shortLabel: nextShort,
-              color,
-              targetTakes: parseTargetTakes(targetTakes),
-            }
-          : item,
-      ),
+    if (isDuplicateShortLabel(parts, nextShort, part.id)) {
+      onError(duplicateShortLabelMessage(nextShort))
+      return
+    }
+    try {
+      await onUpdatePart(part.id, {
+        name: nextName,
+        shortLabel: nextShort,
+        color,
+        targetTakes: parseTargetTakes(targetTakes),
+      })
+      onError(null)
+      setEditing(false)
+    } catch (error: unknown) {
+      onError(messageFrom(error, 'Could not update part'))
+    }
+  }
+
+  function requestDelete() {
+    const confirmed = window.confirm(
+      `Delete ${part.name}? Recorded takes for this part will also be removed.`,
     )
-    setEditing(false)
+    if (!confirmed) return
+    void (async () => {
+      try {
+        await onRemovePart(part.id)
+        onError(null)
+      } catch (error: unknown) {
+        onError(messageFrom(error, 'Could not delete part'))
+      }
+    })()
   }
 
   if (!editing) {
@@ -122,7 +155,7 @@ function PartRow({
             type="button"
             className="text-sm text-record-red"
             aria-label={`Delete ${part.name}`}
-            onClick={() => void onChange(parts.filter((item) => item.id !== part.id))}
+            onClick={requestDelete}
           >
             Delete
           </button>
@@ -171,7 +204,7 @@ function PartRow({
         <button
           type="button"
           className="rounded-md bg-ink px-3 py-1 text-sm font-medium text-paper"
-          onClick={commitEdit}
+          onClick={() => void commitEdit()}
         >
           Save part
         </button>
@@ -183,11 +216,17 @@ function PartRow({
   )
 }
 
-export function VoiceRosterEditor({ parts, onChange }: VoiceRosterEditorProps) {
+export function VoiceRosterEditor({
+  parts,
+  onAddPart,
+  onUpdatePart,
+  onRemovePart,
+}: VoiceRosterEditorProps) {
   const [name, setName] = useState('')
   const [shortLabel, setShortLabel] = useState('')
   const [color, setColor] = useState<string>(DEFAULT_COLOR)
   const [targetTakes, setTargetTakes] = useState(String(DEFAULT_TARGET_TAKES))
+  const [error, setError] = useState<string | null>(null)
   const addColorId = 'add-part-color'
 
   function handleAdd(event?: FormEvent) {
@@ -195,16 +234,23 @@ export function VoiceRosterEditor({ parts, onChange }: VoiceRosterEditorProps) {
     const nextName = name.trim()
     const nextShort = shortLabel.trim()
     if (!nextName || !nextShort) return
-    void onChange([
-      ...parts,
-      {
-        id: crypto.randomUUID(),
-        name: nextName,
-        shortLabel: nextShort,
-        color,
-        targetTakes: parseTargetTakes(targetTakes),
-      },
-    ])
+    if (isDuplicateShortLabel(parts, nextShort)) {
+      setError(duplicateShortLabelMessage(nextShort))
+      return
+    }
+    void (async () => {
+      try {
+        await onAddPart({
+          name: nextName,
+          shortLabel: nextShort,
+          color,
+          targetTakes: parseTargetTakes(targetTakes),
+        })
+        setError(null)
+      } catch (err: unknown) {
+        setError(messageFrom(err, 'Could not add part'))
+      }
+    })()
     setName('')
     setShortLabel('')
     setColor(DEFAULT_COLOR)
@@ -215,12 +261,24 @@ export function VoiceRosterEditor({ parts, onChange }: VoiceRosterEditorProps) {
     <section className="mt-10 max-w-3xl" aria-label="Voice parts">
       <h3 className="font-medium">Voice parts</h3>
       <p className="mt-1 text-sm text-ink-muted">Name the parts that stack on the ghost.</p>
+      {error ? (
+        <p role="alert" className="mt-3 text-record-red">
+          {error}
+        </p>
+      ) : null}
       {parts.length === 0 ? (
         <p className="mt-4 text-sm text-ink-muted">No voice parts yet.</p>
       ) : (
         <ul className="mt-4 flex flex-col gap-2" aria-label="Voice part list">
           {parts.map((part) => (
-            <PartRow key={part.id} part={part} parts={parts} onChange={onChange} />
+            <PartRow
+              key={part.id}
+              part={part}
+              parts={parts}
+              onUpdatePart={onUpdatePart}
+              onRemovePart={onRemovePart}
+              onError={setError}
+            />
           ))}
         </ul>
       )}

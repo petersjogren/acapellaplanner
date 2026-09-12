@@ -9,7 +9,14 @@ import {
 import { GhostTimeline } from '../ui/preparer/GhostTimeline.tsx'
 import { deriveCompletion } from '../domain/completion.ts'
 import { addPhrase, removePhrase, updatePhrase, type PhrasePatch } from '../domain/phrases.ts'
-import type { Project, VoicePart } from '../domain/schemas.ts'
+import {
+  addPart,
+  removePart,
+  updatePart,
+  type NewVoicePartInput,
+  type VoicePartPatch,
+} from '../domain/roster.ts'
+import type { Project } from '../domain/schemas.ts'
 import { CompletionMatrix } from '../ui/preparer/CompletionMatrix.tsx'
 import { VoiceRosterEditor } from '../ui/preparer/VoiceRosterEditor.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
@@ -132,8 +139,16 @@ export function PreparePage() {
     await persistProject((current) => removePhrase(current, id))
   }
 
-  async function handleRosterChange(voiceRoster: VoicePart[]) {
-    await persistProject((current) => ({ ...current, voiceRoster }))
+  async function handleAddPart(partial: NewVoicePartInput) {
+    await persistProject((current) => addPart(current, partial))
+  }
+
+  async function handleUpdatePart(id: string, patch: VoicePartPatch) {
+    await persistProject((current) => updatePart(current, id, patch))
+  }
+
+  async function handleRemovePart(id: string) {
+    await persistProject((current) => removePart(current, id))
   }
 
   const ghostMeta = loaded.settings.ghostMeta
@@ -161,7 +176,12 @@ export function PreparePage() {
       ) : (
         <GhostImporter onImported={handleImported} />
       )}
-      <VoiceRosterEditor parts={loaded.voiceRoster} onChange={handleRosterChange} />
+      <VoiceRosterEditor
+        parts={loaded.voiceRoster}
+        onAddPart={handleAddPart}
+        onUpdatePart={handleUpdatePart}
+        onRemovePart={handleRemovePart}
+      />
       <CompletionMatrix project={loaded} />
     </PreparerShell>
   )
