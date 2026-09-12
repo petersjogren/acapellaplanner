@@ -7,8 +7,11 @@ import {
   type GhostImportResult,
 } from '../ui/preparer/GhostImporter.tsx'
 import { GhostTimeline } from '../ui/preparer/GhostTimeline.tsx'
+import { deriveCompletion } from '../domain/completion.ts'
 import { addPhrase, removePhrase, updatePhrase, type PhrasePatch } from '../domain/phrases.ts'
-import type { Project } from '../domain/schemas.ts'
+import type { Project, VoicePart } from '../domain/schemas.ts'
+import { CompletionMatrix } from '../ui/preparer/CompletionMatrix.tsx'
+import { VoiceRosterEditor } from '../ui/preparer/VoiceRosterEditor.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
@@ -99,10 +102,14 @@ export function PreparePage() {
     setProject(saved)
   }
 
-  function persistPhrases(mutate: (current: Project) => Project): Promise<void> {
+  function persistProject(mutate: (current: Project) => Project): Promise<void> {
     const run = writeQueueRef.current.then(async () => {
       const current = projectRef.current ?? loaded
-      const saved = await repo.saveProject(mutate(current))
+      const next = mutate(current)
+      const saved = await repo.saveProject({
+        ...next,
+        completion: deriveCompletion(next),
+      })
       projectRef.current = saved
       setProject(saved)
     })
@@ -114,15 +121,19 @@ export function PreparePage() {
   }
 
   async function handleMarkPhrase(startMs: number, endMs: number) {
-    await persistPhrases((current) => addPhrase(current, { startMs, endMs }))
+    await persistProject((current) => addPhrase(current, { startMs, endMs }))
   }
 
   async function handleUpdatePhrase(id: string, patch: PhrasePatch) {
-    await persistPhrases((current) => updatePhrase(current, id, patch))
+    await persistProject((current) => updatePhrase(current, id, patch))
   }
 
   async function handleRemovePhrase(id: string) {
-    await persistPhrases((current) => removePhrase(current, id))
+    await persistProject((current) => removePhrase(current, id))
+  }
+
+  async function handleRosterChange(voiceRoster: VoicePart[]) {
+    await persistProject((current) => ({ ...current, voiceRoster }))
   }
 
   const ghostMeta = loaded.settings.ghostMeta
@@ -150,6 +161,8 @@ export function PreparePage() {
       ) : (
         <GhostImporter onImported={handleImported} />
       )}
+      <VoiceRosterEditor parts={loaded.voiceRoster} onChange={handleRosterChange} />
+      <CompletionMatrix project={loaded} />
     </PreparerShell>
   )
 }

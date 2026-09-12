@@ -266,3 +266,60 @@ describe('PreparePage phrase marking', () => {
     })
   })
 })
+
+describe('PreparePage voice roster and matrix', () => {
+  let database: AcapellaDB
+  let repo: ProjectRepository
+  let projectId: string
+
+  beforeEach(async () => {
+    database = new AcapellaDB(`acapellaplanner-prepare-roster-${crypto.randomUUID()}`)
+    repo = createProjectRepository(database)
+    const project = await repo.saveProject(createEmptyProject('When I Fall'))
+    projectId = project.id
+  })
+
+  afterEach(async () => {
+    cleanup()
+    database.close()
+    await database.delete()
+  })
+
+  function renderPrepare() {
+    return render(
+      <MemoryRouter initialEntries={[`/project/${projectId}/prepare`]}>
+        <AppRoutes repo={repo} />
+      </MemoryRouter>,
+    )
+  }
+
+  it('shows the empty completion matrix copy', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByText("Mark phrases and add voice parts to see what's left.")).toBeTruthy()
+    })
+  })
+
+  it('adds a voice part and persists it with saveProject', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Part name')).toBeTruthy()
+    })
+
+    fireEvent.change(screen.getByLabelText('Part name'), { target: { value: 'Soprano 1' } })
+    fireEvent.change(screen.getByLabelText('Short label'), { target: { value: 'S1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add voice part' }))
+
+    await waitFor(async () => {
+      const loaded = await repo.getProject(projectId)
+      expect(loaded?.voiceRoster).toHaveLength(1)
+      expect(loaded?.voiceRoster[0]).toMatchObject({
+        name: 'Soprano 1',
+        shortLabel: 'S1',
+        targetTakes: 4,
+      })
+    })
+    expect(screen.getByText('Soprano 1')).toBeTruthy()
+    expect(screen.queryByText(/users/i)).toBeNull()
+  })
+})
