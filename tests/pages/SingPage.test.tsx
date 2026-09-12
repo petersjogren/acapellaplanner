@@ -411,4 +411,56 @@ describe('SingPage booth flow', () => {
     expect(screen.getByText(/The booth is quiet/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Record' })).toBeNull()
   })
+
+  it('shows the bound sheet crop in the booth', async () => {
+    const imageBlobId = crypto.randomUUID()
+    await repo.putAudioBlob({
+      id: imageBlobId,
+      projectId,
+      kind: 'sheet',
+      mimeType: 'image/png',
+      byteSize: 4,
+      createdAt: new Date().toISOString(),
+      blob: new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' }),
+    })
+    const current = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...current!,
+      sheetDocs: [
+        {
+          id: 'doc-1',
+          name: 'lead.pdf',
+          source: 'pdf',
+          pages: [{ pageIndex: 0, imageBlobId }],
+        },
+      ],
+      phrases: current!.phrases.map((item) =>
+        item.id === 'p1'
+          ? {
+              ...item,
+              sheetRefs: [
+                {
+                  id: 'ref-1',
+                  sheetDocId: 'doc-1',
+                  pageIndex: 0,
+                  regionNorm: { x: 0.1, y: 0.2, w: 0.5, h: 0.25 },
+                },
+              ],
+            }
+          : item,
+      ),
+    })
+
+    renderSing()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /S1/ })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /S1/ }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sheet crop')).toBeTruthy()
+    })
+    expect(screen.getByText('when I fall in love')).toBeTruthy()
+    expect(screen.getByLabelText('Sheet crop').querySelector('img')).toBeTruthy()
+  })
 })

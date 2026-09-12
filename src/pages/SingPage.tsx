@@ -5,6 +5,7 @@ import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
 import { GHOST_FOCUS_PRESET_ID } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import { markEnough, suggestNext } from '../domain/sessionPlan.ts'
+import { sheetPageBlobId } from '../domain/sheets.ts'
 import type { Phrase, Project, VoicePart } from '../domain/schemas.ts'
 import { SingerShell } from '../ui/shell/SingerShell.tsx'
 import { PartPicker } from '../ui/singer/PartPicker.tsx'
@@ -49,6 +50,7 @@ export function SingPage() {
   const [phraseId, setPhraseId] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
+  const [sheetPageUrl, setSheetPageUrl] = useState<string | null>(null)
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
   const projectRef = useRef<Project | null>(null)
@@ -58,6 +60,12 @@ export function SingPage() {
   bufferRef.current = buffer
 
   const projectId = project && typeof project === 'object' ? project.id : undefined
+  const liveProject = project && typeof project === 'object' ? project : null
+  const boothPhrase = liveProject && phraseId
+    ? liveProject.phrases.find((item) => item.id === phraseId)
+    : undefined
+  const sheetImageBlobId =
+    liveProject && boothPhrase ? sheetPageBlobId(liveProject, boothPhrase) : undefined
 
   useEffect(() => {
     if (project && typeof project === 'object') {
@@ -70,6 +78,32 @@ export function SingPage() {
     setPhraseId(null)
     setSaveError(null)
   }, [projectId])
+
+  useEffect(() => {
+    let cancelled = false
+    let url: string | undefined
+    setSheetPageUrl(null)
+    if (!sheetImageBlobId) return
+    void repo
+      .getAudioBlob(sheetImageBlobId)
+      .then((record) => {
+        if (!record) return
+        const next = URL.createObjectURL(record.blob)
+        if (cancelled) {
+          URL.revokeObjectURL(next)
+          return
+        }
+        url = next
+        setSheetPageUrl(next)
+      })
+      .catch(() => {
+        if (!cancelled) setSheetPageUrl(null)
+      })
+    return () => {
+      cancelled = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [sheetImageBlobId, repo])
 
   useEffect(() => {
     return () => {
@@ -229,6 +263,7 @@ export function SingPage() {
             phraseIndex={phraseIndex}
             phraseCount={phrases.length}
             partColor={part.color}
+            sheetPageUrl={sheetPageUrl}
           />
           <div className="mt-8">
             <ProgressRibbon

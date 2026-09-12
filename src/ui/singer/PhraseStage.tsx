@@ -1,13 +1,21 @@
 import type { Phrase } from '../../domain/schemas.ts'
+import { SheetCue } from './SheetCue.tsx'
 
 export type PhraseStageProps = {
   phrase: Phrase
   phraseIndex: number
   phraseCount: number
   partColor: string
+  sheetPageUrl?: string | null
 }
 
-export function PhraseStage({ phrase, phraseIndex, phraseCount, partColor }: PhraseStageProps) {
+export function PhraseStage({
+  phrase,
+  phraseIndex,
+  phraseCount,
+  partColor,
+  sheetPageUrl = null,
+}: PhraseStageProps) {
   const lyric = phrase.lyricText?.trim() || phrase.name
 
   return (
@@ -24,8 +32,7 @@ export function PhraseStage({ phrase, phraseIndex, phraseCount, partColor }: Phr
       {phrase.notesForSinger ? (
         <p className="max-w-md text-ink/70">{phrase.notesForSinger}</p>
       ) : null}
-      {/* Sheet crop arrives in Task 14 */}
-      <div hidden data-sheet-cue="" />
+      <SheetCue phrase={phrase} pageImageUrl={sheetPageUrl} />
     </section>
   )
 }

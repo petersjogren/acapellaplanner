@@ -13,6 +13,8 @@ import {
   type GhostImportResult,
 } from '../ui/preparer/GhostImporter.tsx'
 import { GhostTimeline } from '../ui/preparer/GhostTimeline.tsx'
+import { SheetCropper } from '../ui/preparer/SheetCropper.tsx'
+import { SheetUploader, type SheetUploadResult } from '../ui/preparer/SheetUploader.tsx'
 import { deriveCompletion } from '../domain/completion.ts'
 import { addPhrase, removePhrase, updatePhrase, type PhrasePatch } from '../domain/phrases.ts'
 import {
@@ -22,7 +24,9 @@ import {
   type NewVoicePartInput,
   type VoicePartPatch,
 } from '../domain/roster.ts'
-import type { Project } from '../domain/schemas.ts'
+import { bindSheetRefToPhrase } from '../domain/sheets.ts'
+import type { Project, RegionNorm, SheetDocument } from '../domain/schemas.ts'
+import { renderPageToCanvas } from '../pdf/renderPage.ts'
 import { CompletionMatrix } from '../ui/preparer/CompletionMatrix.tsx'
 import { VoiceRosterEditor } from '../ui/preparer/VoiceRosterEditor.tsx'
 import { MixPresetSelect } from '../ui/shared/MixPresetSelect.tsx'
@@ -38,12 +42,49 @@ export function PreparePage() {
   const [playing, setPlaying] = useState(false)
   const [playError, setPlayError] = useState<string | null>(null)
   const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
+  const [sheetPageIndex, setSheetPageIndex] = useState(0)
+  const [sheetPageUrl, setSheetPageUrl] = useState<string | null>(null)
   const projectRef = useRef<Project | null>(null)
   const writeQueueRef = useRef(Promise.resolve())
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
 
   bufferRef.current = buffer
+
+  const liveProject = project && typeof project === 'object' ? project : null
+  const sheetDoc = liveProject?.sheetDocs.at(-1) ?? null
+  const sheetImageBlobId = sheetDoc?.pages.find((page) => page.pageIndex === sheetPageIndex)
+    ?.imageBlobId
+
+  useEffect(() => {
+    setSheetPageIndex(0)
+  }, [liveProject?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    let url: string | undefined
+    setSheetPageUrl(null)
+    if (!sheetImageBlobId) return
+    void repo
+      .getAudioBlob(sheetImageBlobId)
+      .then((record) => {
+        if (!record) return
+        const next = URL.createObjectURL(record.blob)
+        if (cancelled) {
+          URL.revokeObjectURL(next)
+          return
+        }
+        url = next
+        setSheetPageUrl(next)
+      })
+      .catch(() => {
+        if (!cancelled) setSheetPageUrl(null)
+      })
+    return () => {
+      cancelled = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [sheetImageBlobId, repo])
 
   useEffect(() => {
     return () => {
@@ -227,7 +268,103 @@ export function PreparePage() {
     setPlaying(false)
   }
 
+  async function handleSheetUploaded({ blob, filename }: SheetUploadResult) {
+    const bytes = await blob.arrayBuffer()
+    const rendered = await renderPageToCanvas(bytes, 0)
+    const pdfBlobId = crypto.randomUUID()
+    const pageBlobId = crypto.randomUUID()
+    const now = new Date().toISOString()
+    await repo.putAudioBlob({
+      id: pdfBlobId,
+      projectId: loaded.id,
+      kind: 'sheet',
+      mimeType: blob.type || 'application/pdf',
+      byteSize: blob.size,
+      createdAt: now,
+      blob,
+    })
+    await repo.putAudioBlob({
+      id: pageBlobId,
+      projectId: loaded.id,
+      kind: 'sheet',
+      mimeType: 'image/png',
+      byteSize: rendered.pngBlob.size,
+      createdAt: now,
+      blob: rendered.pngBlob,
+    })
+    const nextDoc: SheetDocument = {
+      id: crypto.randomUUID(),
+      name: filename,
+      source: 'pdf',
+      pdfBlobId,
+      pages: Array.from({ length: Math.max(1, rendered.pageCount) }, (_, pageIndex) => ({
+        pageIndex,
+        imageBlobId: pageIndex === 0 ? pageBlobId : undefined,
+      })),
+    }
+    await persistProject((current) => ({
+      ...current,
+      sheetDocs: [...current.sheetDocs, nextDoc],
+    }))
+    setSheetPageIndex(0)
+  }
+
+  async function handleSheetPageChange(nextIndex: number) {
+    const current = projectRef.current ?? loaded
+    const doc = current.sheetDocs.at(-1)
+    if (!doc || nextIndex < 0 || nextIndex >= doc.pages.length) return
+    const page = doc.pages.find((item) => item.pageIndex === nextIndex)
+    if (page?.imageBlobId || !doc.pdfBlobId) {
+      setSheetPageIndex(nextIndex)
+      return
+    }
+    const pdfRecord = await repo.getAudioBlob(doc.pdfBlobId)
+    if (!pdfRecord) {
+      setSheetPageIndex(nextIndex)
+      return
+    }
+    const rendered = await renderPageToCanvas(await pdfRecord.blob.arrayBuffer(), nextIndex)
+    const pageBlobId = crypto.randomUUID()
+    await repo.putAudioBlob({
+      id: pageBlobId,
+      projectId: loaded.id,
+      kind: 'sheet',
+      mimeType: 'image/png',
+      byteSize: rendered.pngBlob.size,
+      createdAt: new Date().toISOString(),
+      blob: rendered.pngBlob,
+    })
+    await persistProject((proj) => ({
+      ...proj,
+      sheetDocs: proj.sheetDocs.map((item) =>
+        item.id === doc.id
+          ? {
+              ...item,
+              pages: item.pages.map((row) =>
+                row.pageIndex === nextIndex ? { ...row, imageBlobId: pageBlobId } : row,
+              ),
+            }
+          : item,
+      ),
+    }))
+    setSheetPageIndex(nextIndex)
+  }
+
+  async function handleBindCrop(phraseId: string, region: RegionNorm) {
+    const doc = (projectRef.current ?? loaded).sheetDocs.at(-1)
+    if (!doc) return
+    await persistProject((current) =>
+      bindSheetRefToPhrase(current, phraseId, {
+        id: crypto.randomUUID(),
+        sheetDocId: doc.id,
+        pageIndex: sheetPageIndex,
+        regionNorm: region,
+      }),
+    )
+  }
+
   const ghostMeta = loaded.settings.ghostMeta
+  const activeSheet = loaded.sheetDocs.at(-1) ?? null
   const hasGhost = Boolean(loaded.ghostTrackId && ghostMeta)
 
   return (
@@ -291,6 +428,27 @@ export function PreparePage() {
       ) : (
         <GhostImporter onImported={handleImported} />
       )}
+      <section className="mt-10 max-w-3xl" aria-label="Sheet music">
+        <h3 className="font-medium">Sheet music</h3>
+        <p className="mt-1 text-sm text-ink-muted">
+          Upload a PDF, crop a region, and bind it to a phrase.
+        </p>
+        <SheetUploader
+          onUploaded={handleSheetUploaded}
+          label={activeSheet ? 'Replace sheet PDF' : 'Upload sheet PDF'}
+        />
+        {activeSheet && sheetPageUrl ? (
+          <SheetCropper
+            pageImageUrl={sheetPageUrl}
+            pageIndex={sheetPageIndex}
+            pageCount={activeSheet.pages.length}
+            phrases={loaded.phrases}
+            selectedPhraseId={selectedPhraseId}
+            onPageChange={handleSheetPageChange}
+            onBind={handleBindCrop}
+          />
+        ) : null}
+      </section>
       <VoiceRosterEditor
         parts={loaded.voiceRoster}
         onAddPart={handleAddPart}

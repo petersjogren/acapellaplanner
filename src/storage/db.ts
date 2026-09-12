@@ -1,7 +1,14 @@
 import Dexie, { type Table } from 'dexie'
 import type { Project } from '../domain/schemas.ts'
 
-export type AudioBlobKind = 'ghost' | 'tonal' | 'click' | 'reference-stack' | 'take' | 'other'
+export type AudioBlobKind =
+  | 'ghost'
+  | 'tonal'
+  | 'click'
+  | 'reference-stack'
+  | 'take'
+  | 'sheet'
+  | 'other'
 
 export type AudioBlobRecord = {
   id: string

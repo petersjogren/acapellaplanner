@@ -122,6 +122,7 @@ export const SheetDocumentSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   source: z.enum(['pdf', 'images', 'musicxml']),
+  pdfBlobId: z.string().min(1).optional(),
   pages: z.array(SheetPageSchema),
 })
 

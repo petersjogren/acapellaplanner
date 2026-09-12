@@ -6,6 +6,7 @@ import { AppRoutes } from '../../src/app/routes.tsx'
 import { closeAudioContext } from '../../src/audio/context.ts'
 import { decodeAudioFile } from '../../src/audio/decode.ts'
 import { createEmptyProject } from '../../src/domain/schemas.ts'
+import { setRenderPageToCanvas } from '../../src/pdf/renderPage.ts'
 import { AcapellaDB } from '../../src/storage/db.ts'
 import {
   createProjectRepository,
@@ -665,5 +666,128 @@ describe('PreparePage phrase playback', () => {
       expect(screen.queryByText('Playing')).toBeNull()
     })
     expect(sources).toHaveLength(0)
+  })
+})
+
+describe('PreparePage sheet upload', () => {
+  let database: AcapellaDB
+  let repo: ProjectRepository
+  let projectId: string
+
+  beforeEach(async () => {
+    database = new AcapellaDB(`acapellaplanner-prepare-sheet-${crypto.randomUUID()}`)
+    repo = createProjectRepository(database)
+    const project = await repo.saveProject({
+      ...createEmptyProject('When I Fall'),
+      phrases: [
+        {
+          id: 'p1',
+          name: 'Phrase 1',
+          startMs: 0,
+          endMs: 1000,
+          sheetRefs: [],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop' as const, gapMs: 400 },
+          postRollMs: 0,
+        },
+      ],
+    })
+    projectId = project.id
+    setRenderPageToCanvas(async () => ({
+      canvas: document.createElement('canvas'),
+      pngBlob: new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' }),
+      pageCount: 2,
+      width: 200,
+      height: 100,
+    }))
+  })
+
+  afterEach(async () => {
+    setRenderPageToCanvas(null)
+    cleanup()
+    database.close()
+    await database.delete()
+  })
+
+  function renderPrepare() {
+    return render(
+      <MemoryRouter initialEntries={[`/project/${projectId}/prepare`]}>
+        <AppRoutes repo={repo} />
+      </MemoryRouter>,
+    )
+  }
+
+  it('stores the PDF as a sheet blob and shows the page cropper', async () => {
+    renderPrepare()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Upload sheet PDF')).toBeTruthy()
+    })
+
+    const file = new File([new Uint8Array([9, 8, 7])], 'lead.pdf', { type: 'application/pdf' })
+    fireEvent.change(screen.getByLabelText('Upload sheet PDF'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sheet page')).toBeTruthy()
+    })
+    expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+    expect(screen.getByLabelText('Replace sheet PDF')).toBeTruthy()
+
+    const loaded = await repo.getProject(projectId)
+    expect(loaded?.sheetDocs).toHaveLength(1)
+    expect(loaded?.sheetDocs[0]?.source).toBe('pdf')
+    expect(loaded?.sheetDocs[0]?.name).toBe('lead.pdf')
+    expect(loaded?.sheetDocs[0]?.pages).toHaveLength(2)
+    const pdfBlob = await repo.getAudioBlob(loaded!.sheetDocs[0]!.pdfBlobId!)
+    expect(pdfBlob?.kind).toBe('sheet')
+    expect(pdfBlob?.mimeType).toBe('application/pdf')
+    const pageBlob = await repo.getAudioBlob(loaded!.sheetDocs[0]!.pages[0]!.imageBlobId!)
+    expect(pageBlob?.kind).toBe('sheet')
+    expect(pageBlob?.mimeType).toBe('image/png')
+  })
+
+  it('binds a dragged crop onto the selected phrase', async () => {
+    renderPrepare()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Upload sheet PDF')).toBeTruthy()
+    })
+
+    const file = new File([new Uint8Array([9, 8, 7])], 'lead.pdf', { type: 'application/pdf' })
+    fireEvent.change(screen.getByLabelText('Upload sheet PDF'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sheet page')).toBeTruthy()
+    })
+
+    const page = screen.getByLabelText('Sheet page')
+    vi.spyOn(page, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 200,
+      bottom: 100,
+      width: 200,
+      height: 100,
+      toJSON() {
+        return {}
+      },
+    })
+    fireEvent.pointerDown(page, { clientX: 20, clientY: 10, pointerId: 1 })
+    fireEvent.pointerMove(page, { clientX: 120, clientY: 60, pointerId: 1 })
+    fireEvent.pointerUp(page, { clientX: 120, clientY: 60, pointerId: 1 })
+    fireEvent.click(screen.getByRole('button', { name: 'Bind crop' }))
+
+    await waitFor(async () => {
+      const loaded = await repo.getProject(projectId)
+      expect(loaded?.phrases[0]?.sheetRefs).toHaveLength(1)
+    })
+    const loaded = await repo.getProject(projectId)
+    expect(loaded?.phrases[0]?.sheetRefs[0]).toMatchObject({
+      sheetDocId: loaded?.sheetDocs[0]?.id,
+      pageIndex: 0,
+      regionNorm: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 },
+    })
   })
 })
