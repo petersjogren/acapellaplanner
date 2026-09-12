@@ -51,6 +51,22 @@ describe('createEmptyProject', () => {
   it('assigns a unique id per project', () => {
     expect(createEmptyProject().id).not.toBe(createEmptyProject().id)
   })
+
+  it('accepts optional ghostMeta on settings', () => {
+    const project = {
+      ...createEmptyProject(),
+      ghostTrackId: 'blob-1',
+      settings: {
+        language: 'en',
+        ghostMeta: { filename: 'lead.wav', durationMs: 83400 },
+      },
+    }
+
+    expect(ProjectSchema.parse(project).settings.ghostMeta).toEqual({
+      filename: 'lead.wav',
+      durationMs: 83400,
+    })
+  })
 })
 
 describe('phrase overlap', () => {

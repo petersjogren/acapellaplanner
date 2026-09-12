@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { useParams } from 'react-router-dom'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import type { Project } from '../domain/schemas.ts'
@@ -10,6 +10,7 @@ function messageFrom(error: unknown, fallback: string): string {
 export function useLoadedProject(): {
   project: Project | null | undefined
   error: string | null
+  setProject: Dispatch<SetStateAction<Project | null | undefined>>
 } {
   const { id } = useParams()
   const repo = useProjectRepository()
@@ -41,5 +42,5 @@ export function useLoadedProject(): {
     }
   }, [id, repo])
 
-  return { project, error }
+  return { project, error, setProject }
 }

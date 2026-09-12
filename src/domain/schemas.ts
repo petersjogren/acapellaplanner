@@ -175,8 +175,14 @@ export const CompletionStateSchema = z.object({
   cells: z.array(CompletionCellSchema),
 })
 
+export const GhostMetaSchema = z.object({
+  filename: z.string().min(1),
+  durationMs: z.number().nonnegative(),
+})
+
 export const ProjectSettingsSchema = z.object({
   language: z.string().min(1).default('en'),
+  ghostMeta: GhostMetaSchema.optional(),
 })
 
 export const ProjectSchema = z
@@ -225,6 +231,7 @@ export type TakeRating = z.infer<typeof TakeRatingSchema>
 export type Take = z.infer<typeof TakeSchema>
 export type CompletionCell = z.infer<typeof CompletionCellSchema>
 export type CompletionState = z.infer<typeof CompletionStateSchema>
+export type GhostMeta = z.infer<typeof GhostMetaSchema>
 export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>
 export type Project = z.infer<typeof ProjectSchema>
 

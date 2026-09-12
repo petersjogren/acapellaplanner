@@ -55,7 +55,7 @@ describe('HomePage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New song' }))
 
     await waitFor(() => {
-      expect(screen.getByText('Ghost track comes next')).toBeTruthy()
+      expect(screen.getByLabelText('Import ghost track')).toBeTruthy()
     })
 
     const listed = await repo.listProjects()

@@ -44,7 +44,7 @@ describe('routes', () => {
 
     renderAt(`/project/${projectId}/prepare`)
     await waitFor(() => {
-      expect(screen.getByText('Ghost track comes next')).toBeTruthy()
+      expect(screen.getByLabelText('Import ghost track')).toBeTruthy()
     })
     expect(screen.getByRole('link', { name: /Prepare/ }).getAttribute('href')).toBe(
       `/project/${projectId}/prepare`,
