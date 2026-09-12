@@ -43,7 +43,7 @@ Install: Chrome/Edge → install icon, or Safari on iPad → Share → Add to Ho
 - [ ] Define 3 voice parts
 - [ ] Record a take
 - [ ] Refresh: project and take still present
-- [ ] Export zip
-- [ ] Rubato section: no click
-- [ ] Fixed-tempo section: click in the section window
+- [ ] Export
+- [ ] Follow the ghost: no click
+- [ ] In time: click in the section window
 - [ ] iPad mic works, or desktop Chrome fallback as documented above
