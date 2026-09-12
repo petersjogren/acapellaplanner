@@ -4,7 +4,8 @@
   --record-red: #c23b2a;
   --gold: #c4a35a;
   --paper-shadow: #e8dfd0;
-  --ink-muted: color-mix(in srgb, var(--ink) 58%, var(--paper));
+  /* 65% ink on paper #f6f1e8 ≈ 5.18:1 — WCAG AA for small chrome (4.5:1). */
+  --ink-muted: color-mix(in srgb, var(--ink) 65%, var(--paper));
 
   --font-display-family: "Fraunces", "Source Serif 4", Georgia, serif;
   --font-ui-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
@@ -31,6 +32,7 @@
   --color-record-red: var(--record-red);
   --color-gold: var(--gold);
   --color-paper-shadow: var(--paper-shadow);
+  --color-ink-muted: var(--ink-muted);
   --font-display: var(--font-display-family);
   --font-ui: var(--font-ui-family);
   --text-xs: var(--type-xs);
@@ -40,10 +42,10 @@
   --text-xl: var(--type-xl);
   --text-display: var(--type-display);
   --text-lyric: var(--type-lyric);
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 1rem;
-  --radius-pill: 999px;
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-pill: var(--radius-pill);
 }
 
 html,
@@ -63,6 +65,11 @@ body {
 
 .fade-in {
   animation: studio-fade var(--fade-duration) ease-out;
+}
+
+.studio-transition {
+  transition-property: color, background-color, border-color;
+  transition-duration: var(--fade-duration);
 }
 
 @keyframes studio-fade {
@@ -98,5 +105,13 @@ body {
   .record-lamp {
     animation: none;
     box-shadow: 0 0 8px 2px color-mix(in srgb, var(--record-red) 50%, transparent);
+  }
+
+  .fade-in,
+  .record-lamp,
+  .studio-transition {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -31,4 +31,18 @@ describe('PreparerShell', () => {
     expect(screen.getByRole('heading', { name: 'Acapella Planner' })).toBeTruthy()
     expect(screen.getByText('Mark phrases on the ghost')).toBeTruthy()
   })
+
+  it('marks the current nav item with aria-current', () => {
+    render(
+      <PreparerShell current="sing">
+        <p>Booth</p>
+      </PreparerShell>,
+    )
+
+    expect(screen.getByRole('link', { name: /Sing/ }).getAttribute('aria-current')).toBe(
+      'page',
+    )
+    expect(screen.getByRole('link', { name: /Prepare/ }).getAttribute('aria-current')).toBeNull()
+    expect(screen.getByRole('link', { name: /Review/ }).getAttribute('aria-current')).toBeNull()
+  })
 })

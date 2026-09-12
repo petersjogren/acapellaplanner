@@ -20,7 +20,7 @@ export default function App() {
         </button>
         <button
           type="button"
-          className="mt-8 self-start text-sm text-ink/60 underline-offset-4 hover:underline"
+          className="mt-8 self-start text-sm text-ink-muted underline-offset-4 hover:underline"
           onClick={() => setBoothOpen(false)}
         >
           Back to the score desk
@@ -37,7 +37,7 @@ export default function App() {
       </p>
       <button
         type="button"
-        className="mt-8 rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors duration-700 hover:bg-record-red"
+        className="mt-8 rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red"
         onClick={() => setBoothOpen(true)}
       >
         Open booth

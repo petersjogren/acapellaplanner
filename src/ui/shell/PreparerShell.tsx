@@ -24,7 +24,7 @@ export function PreparerShell({
     <div className="flex min-h-screen bg-paper font-ui text-ink fade-in">
       <aside className="flex w-56 shrink-0 flex-col border-r border-ink/10 px-5 py-8">
         <h1 className="font-display text-lg font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 text-sm text-ink/55">Studio desk</p>
+        <p className="mt-1 text-sm text-ink-muted">Studio desk</p>
         <nav aria-label="Studio" className="mt-10 flex flex-col gap-1">
           {NAV.map((item) => {
             const active = current === item.id
@@ -34,7 +34,7 @@ export function PreparerShell({
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={clsx(
-                  'rounded-md px-3 py-2 transition-colors duration-700',
+                  'rounded-md px-3 py-2 studio-transition',
                   active ? 'bg-ink text-paper' : 'text-ink/80 hover:bg-ink/5',
                 )}
               >
@@ -47,7 +47,9 @@ export function PreparerShell({
                     />
                   ) : null}
                 </span>
-                <span className="block text-xs opacity-70">{item.hint}</span>
+                <span className={clsx('block text-xs', active ? 'text-paper/80' : 'text-ink-muted')}>
+                  {item.hint}
+                </span>
               </a>
             )
           })}
