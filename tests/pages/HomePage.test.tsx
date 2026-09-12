@@ -63,4 +63,46 @@ describe('HomePage', () => {
     expect(listed[0]?.title).toBe('Untitled song')
     expect(screen.getByRole('heading', { level: 1, name: 'Untitled song' })).toBeTruthy()
   })
+
+  it('surfaces a rejected listProjects call as an alert', async () => {
+    const failingRepo: ProjectRepository = {
+      ...repo,
+      listProjects: () => Promise.reject(new Error('Storage unavailable')),
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <AppRoutes repo={failingRepo} />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('Storage unavailable')
+    })
+    expect(screen.queryByText('Loading…')).toBeNull()
+  })
+
+  it('surfaces a rejected New song save as an alert', async () => {
+    const failingRepo: ProjectRepository = {
+      ...repo,
+      saveProject: () => Promise.reject(new Error('Could not save')),
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <AppRoutes repo={failingRepo} />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('No songs yet')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'New song' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('Could not save')
+    })
+    expect(screen.getByRole('button', { name: 'New song' })).toBeTruthy()
+  })
 })

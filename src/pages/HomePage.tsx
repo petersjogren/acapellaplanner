@@ -3,17 +3,27 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import { createEmptyProject, type Project } from '../domain/schemas.ts'
 
+function messageFrom(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
 export function HomePage() {
   const repo = useProjectRepository()
   const navigate = useNavigate()
   const [projects, setProjects] = useState<Project[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    void repo.listProjects().then((list) => {
-      if (!cancelled) setProjects(list)
-    })
+    void repo
+      .listProjects()
+      .then((list) => {
+        if (!cancelled) setProjects(list)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(messageFrom(err, 'Could not load songs'))
+      })
     return () => {
       cancelled = true
     }
@@ -21,9 +31,12 @@ export function HomePage() {
 
   async function handleNewSong() {
     setCreating(true)
+    setError(null)
     try {
       const project = await repo.saveProject(createEmptyProject())
       navigate(`/project/${project.id}/prepare`)
+    } catch (err: unknown) {
+      setError(messageFrom(err, 'Could not create song'))
     } finally {
       setCreating(false)
     }
@@ -41,10 +54,15 @@ export function HomePage() {
       >
         New song
       </button>
-      {projects === null ? (
+      {error ? (
+        <p role="alert" className="mt-8 text-record-red">
+          {error}
+        </p>
+      ) : null}
+      {projects === null && !error ? (
         <p className="mt-8 text-ink-muted">Loading…</p>
-      ) : projects.length === 0 ? (
-        <p className="mt-8 text-ink-muted">No songs yet</p>
+      ) : projects === null || projects.length === 0 ? (
+        error ? null : <p className="mt-8 text-ink-muted">No songs yet</p>
       ) : (
         <ul className="mt-8 flex max-w-xl flex-col gap-2">
           {projects.map((project) => (

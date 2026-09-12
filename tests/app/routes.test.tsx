@@ -80,4 +80,28 @@ describe('routes', () => {
       expect(screen.getByText(/Project not found/)).toBeTruthy()
     })
   })
+
+  it('shows not found for unknown paths', () => {
+    renderAt('/no-such-page')
+    expect(screen.getByRole('heading', { name: 'Not found' })).toBeTruthy()
+  })
+
+  it('surfaces a rejected getProject call as an alert', async () => {
+    const failingRepo: ProjectRepository = {
+      ...repo,
+      getProject: () => Promise.reject(new Error('Read failed')),
+    }
+
+    render(
+      <MemoryRouter initialEntries={[`/project/${projectId}/prepare`]}>
+        <AppRoutes repo={failingRepo} />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('Read failed')
+    })
+    expect(screen.queryByText('Loading…')).toBeNull()
+    expect(screen.queryByText('Project not found')).toBeNull()
+  })
 })

@@ -1,10 +1,14 @@
 import { PreparerShell } from '../ui/shell/PreparerShell.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
+import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
 
 export function PreparePage() {
-  const { project } = useLoadedProject()
+  const { project, error } = useLoadedProject()
 
+  if (error) {
+    return <StorageError message={error} />
+  }
   if (project === undefined) {
     return <p className="px-10 py-8 font-ui text-ink-muted">Loading…</p>
   }
