@@ -15,6 +15,10 @@ const LOOP_LOOKAHEAD_MS = 100
 export type PlaybackListeners = {
   onEnded?: () => void
   onPhraseEnter?: () => void
+  /** Play-window start (pre-roll boundary) for each pass. */
+  onPassStart?: () => void
+  /** Play-window end (phrase end + post-roll) for each pass. */
+  onPassComplete?: () => void
 }
 
 export type PlaybackEngine = {
@@ -108,8 +112,25 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       if (!spec.loop) listeners?.onEnded?.()
     }
 
+    const startDelayMs = Math.max(0, (when - ctx.currentTime) * 1000)
+
+    function armOffset(offsetMs: number, fn: () => void) {
+      const delayMs = startDelayMs + offsetMs
+      if (delayMs <= 0) {
+        fn()
+        return
+      }
+      armTimer(delayMs, gen, fn)
+    }
+
+    if (listeners?.onPassStart) {
+      armOffset(0, () => listeners.onPassStart?.())
+    }
+    if (listeners?.onPassComplete) {
+      armOffset(window.durationMs, () => listeners.onPassComplete?.())
+    }
     if (listeners?.onPhraseEnter) {
-      armTimer(phraseEnterDelayMs(spec.startMs, window.offsetMs), gen, () => {
+      armOffset(phraseEnterDelayMs(spec.startMs, window.offsetMs), () => {
         listeners.onPhraseEnter?.()
       })
     }

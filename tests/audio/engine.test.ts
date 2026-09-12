@@ -246,4 +246,43 @@ describe('createPlaybackEngine', () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(onPhraseEnter).toHaveBeenCalledTimes(1)
   })
+
+  it('fires onPassStart at play window start and onPassComplete at play window end', async () => {
+    const onPassStart = vi.fn()
+    const onPassComplete = vi.fn()
+    const engine = engineWith(buffer())
+    await engine.play(spec({ startMs: 0, endMs: 2000, loop: false }), { onPassStart, onPassComplete })
+
+    expect(onPassStart).toHaveBeenCalledTimes(1)
+    expect(onPassComplete).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(onPassComplete).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(onPassComplete).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fire onPassComplete after stop', async () => {
+    const onPassStart = vi.fn()
+    const onPassComplete = vi.fn()
+    const engine = engineWith(buffer())
+    await engine.play(spec({ startMs: 0, endMs: 2000, loop: false }), { onPassStart, onPassComplete })
+    expect(onPassStart).toHaveBeenCalledTimes(1)
+    engine.stop()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(onPassComplete).not.toHaveBeenCalled()
+  })
+
+  it('fires onPassStart for a looped pass at the audio-clock when', async () => {
+    const onPassStart = vi.fn()
+    const onPassComplete = vi.fn()
+    const engine = engineWith(buffer())
+    await engine.play(spec({ loop: true, gapMs: 400, endMs: 2000 }), { onPassStart, onPassComplete })
+    expect(onPassStart).toHaveBeenCalledTimes(1)
+
+    fakeCtx.currentTime = 3.3
+    await vi.advanceTimersByTimeAsync(2300)
+    expect(onPassStart).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(onPassStart).toHaveBeenCalledTimes(2)
+  })
 })
