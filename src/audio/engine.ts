@@ -13,6 +13,8 @@ export { computeLoopDeadlines, computePlayWindow, phraseEnterDelayMs } from './s
 
 /** How far ahead of a loop deadline we create/start the next BufferSource. */
 const LOOP_LOOKAHEAD_MS = 100
+const CLICK_FREQ_HZ = 1000
+const CLICK_DURATION_SEC = 0.02
 
 export type PlaybackListeners = {
   onEnded?: () => void
@@ -46,6 +48,7 @@ export type PlaybackEngineOptions = {
 export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): PlaybackEngine {
   let generation = 0
   const sources = new Set<AudioBufferSourceNode>()
+  const oscillators = new Set<OscillatorNode>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
   const outputGains = new Set<GainNode>()
 
@@ -75,6 +78,19 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     }
   }
 
+  function disconnectOscillator(osc: OscillatorNode) {
+    try {
+      osc.stop()
+    } catch {
+      // already stopped or not started
+    }
+    try {
+      osc.disconnect()
+    } catch {
+      // already disconnected
+    }
+  }
+
   function stop() {
     generation += 1
     clearTimers()
@@ -82,6 +98,10 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       disconnectSource(source)
     }
     sources.clear()
+    for (const osc of oscillators) {
+      disconnectOscillator(osc)
+    }
+    oscillators.clear()
     for (const node of outputGains) {
       disconnectGain(node)
     }
@@ -128,10 +148,44 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     }
   }
 
+  function startClick(ctx: AudioContext, output: GainNode, when: number) {
+    const osc = ctx.createOscillator()
+    osc.frequency.value = CLICK_FREQ_HZ
+    osc.connect(output)
+    osc.start(when)
+    osc.stop(when + CLICK_DURATION_SEC)
+    oscillators.add(osc)
+    osc.onended = () => {
+      oscillators.delete(osc)
+      try {
+        osc.disconnect()
+      } catch {
+        // already disconnected by stop()
+      }
+    }
+  }
+
+  function scheduleClicks(
+    ctx: AudioContext,
+    output: GainNode | null,
+    timesMs: number[],
+    window: { offsetMs: number; durationMs: number },
+    when: number,
+  ) {
+    if (!output || timesMs.length === 0) return
+    for (const t of timesMs) {
+      const relMs = t - window.offsetMs
+      if (relMs < 0 || relMs >= window.durationMs) continue
+      startClick(ctx, output, when + relMs / 1000)
+    }
+  }
+
   function startIteration(
     ctx: AudioContext,
     ghost: ScheduledLayer,
     extras: ScheduledLayer[],
+    clickOutput: GainNode | null,
+    clickTimesMs: number[],
     spec: PhrasePlaySpec,
     listeners: PlaybackListeners | undefined,
     window: { offsetMs: number; durationMs: number },
@@ -146,6 +200,7 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     for (const extra of extras) {
       startLayer(ctx, extra, window, when, gen)
     }
+    scheduleClicks(ctx, clickOutput, clickTimesMs, window, when)
 
     const startDelayMs = Math.max(0, (when - ctx.currentTime) * 1000)
 
@@ -176,7 +231,18 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       // Fire early enough that start() still sees a future audio-clock `when`.
       const delayMs = (nextWhen - ctx.currentTime) * 1000 - LOOP_LOOKAHEAD_MS
       armTimer(delayMs, gen, () => {
-        startIteration(ctx, ghost, extras, spec, listeners, window, nextWhen, gen)
+        startIteration(
+          ctx,
+          ghost,
+          extras,
+          clickOutput,
+          clickTimesMs,
+          spec,
+          listeners,
+          window,
+          nextWhen,
+          gen,
+        )
       })
     }
   }
@@ -214,10 +280,22 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       extras.push({ buffer: layer.buffer, output, offsetMs: 0 })
     }
 
+    const clickTimesMs =
+      mix?.click && mix.clickTimesMs && mix.clickTimesMs.length > 0 ? mix.clickTimesMs : []
+    let clickOutput: GainNode | null = null
+    if (clickTimesMs.length > 0) {
+      clickOutput = ctx.createGain()
+      clickOutput.gain.value = 0.25
+      clickOutput.connect(ctx.destination)
+      outputGains.add(clickOutput)
+    }
+
     startIteration(
       ctx,
       { buffer, output: ghostOutput, offsetMs: window.offsetMs },
       extras,
+      clickOutput,
+      clickTimesMs,
       spec,
       listeners,
       window,

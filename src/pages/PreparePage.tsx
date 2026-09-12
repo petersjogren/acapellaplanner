@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { PreparerShell } from '../ui/shell/PreparerShell.tsx'
 import { decodeAudioFile, formatDuration } from '../audio/decode.ts'
 import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
+import { clicksForPhrase } from '../audio/click.ts'
 import {
   createAudioBlobLoader,
   GHOST_FOCUS_PRESET_ID,
@@ -18,6 +19,11 @@ import { SheetUploader, type SheetUploadResult } from '../ui/preparer/SheetUploa
 import { deriveCompletion } from '../domain/completion.ts'
 import { addPhrase, removePhrase, updatePhrase, type PhrasePatch } from '../domain/phrases.ts'
 import {
+  addSection,
+  removeSection,
+  type NewSectionInput,
+} from '../domain/sections.ts'
+import {
   addPart,
   removePart,
   updatePart,
@@ -28,6 +34,7 @@ import { bindSheetRefToPhrase } from '../domain/sheets.ts'
 import type { Project, RegionNorm, SheetDocument } from '../domain/schemas.ts'
 import { renderPageToCanvas } from '../pdf/renderPage.ts'
 import { CompletionMatrix } from '../ui/preparer/CompletionMatrix.tsx'
+import { SectionEditor } from '../ui/preparer/SectionEditor.tsx'
 import { VoiceRosterEditor } from '../ui/preparer/VoiceRosterEditor.tsx'
 import { MixPresetSelect } from '../ui/shared/MixPresetSelect.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
@@ -221,6 +228,14 @@ export function PreparePage() {
     await persistProject((current) => removePart(current, id))
   }
 
+  async function handleAddSection(input: NewSectionInput) {
+    await persistProject((current) => addSection(current, input))
+  }
+
+  async function handleRemoveSection(id: string) {
+    await persistProject((current) => removeSection(current, id))
+  }
+
   function getEngine(): PlaybackEngine {
     if (!engineRef.current) {
       engineRef.current = createPlaybackEngine({
@@ -242,6 +257,7 @@ export function PreparePage() {
         mixPresetId,
         createAudioBlobLoader((id) => repo.getAudioBlob(id)),
       )
+      const clickTimesMs = clicksForPhrase(selectedPhrase, loaded.sections)
       const started = await getEngine().play(
         {
           startMs: selectedPhrase.startMs,
@@ -254,7 +270,7 @@ export function PreparePage() {
         {
           onEnded: () => setPlaying(false),
         },
-        mix,
+        { ...mix, click: true, clickTimesMs },
       )
       // play() returns false if Stop cancelled during AudioContext resume
       setPlaying(started)
@@ -435,6 +451,14 @@ export function PreparePage() {
       ) : (
         <GhostImporter onImported={handleImported} />
       )}
+      {hasGhost && ghostMeta ? (
+        <SectionEditor
+          sections={loaded.sections}
+          durationMs={ghostMeta.durationMs}
+          onAddSection={handleAddSection}
+          onRemoveSection={handleRemoveSection}
+        />
+      ) : null}
       <section className="mt-10 max-w-3xl" aria-label="Sheet music">
         <h3 className="font-medium">Sheet music</h3>
         <p className="mt-1 text-sm text-ink-muted">

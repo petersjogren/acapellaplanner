@@ -30,14 +30,25 @@ function spec(overrides: Partial<PhrasePlaySpec> = {}): PhrasePlaySpec {
   }
 }
 
+type FakeOscillator = {
+  frequency: { value: number }
+  connect: ReturnType<typeof vi.fn>
+  disconnect: ReturnType<typeof vi.fn>
+  start: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
+  onended: ((this: OscillatorNode, ev: Event) => void) | null
+}
+
 describe('createPlaybackEngine', () => {
   let sources: FakeSource[]
+  let oscillators: FakeOscillator[]
   let gains: FakeGain[]
   let destination: { kind: string }
   let fakeCtx: { currentTime: number; state: AudioContextState; resume: ReturnType<typeof vi.fn> }
 
   beforeEach(() => {
     sources = []
+    oscillators = []
     gains = []
     destination = { kind: 'destination' }
 
@@ -71,6 +82,18 @@ describe('createPlaybackEngine', () => {
         }
         sources.push(source)
         return source
+      }
+      createOscillator() {
+        const osc: FakeOscillator = {
+          frequency: { value: 440 },
+          connect: vi.fn(),
+          disconnect: vi.fn(),
+          start: vi.fn(),
+          stop: vi.fn(),
+          onended: null,
+        }
+        oscillators.push(osc)
+        return osc
       }
     }
 
@@ -330,6 +353,42 @@ describe('createPlaybackEngine', () => {
     expect(sources[0]?.stop).toHaveBeenCalled()
     expect(sources[1]?.stop).toHaveBeenCalled()
     expect(gains[0]?.disconnect).toHaveBeenCalled()
+    expect(gains[1]?.disconnect).toHaveBeenCalled()
+  })
+
+  it('schedules oscillator ticks at click times on the audio clock', async () => {
+    const engine = engineWith(buffer())
+    await engine.play(spec({ startMs: 0, endMs: 2000 }), undefined, {
+      click: true,
+      clickTimesMs: [0, 1000],
+    })
+
+    expect(oscillators).toHaveLength(2)
+    expect(oscillators[0]?.start).toHaveBeenCalledWith(1)
+    expect(oscillators[0]?.stop).toHaveBeenCalledWith(1.02)
+    expect(oscillators[1]?.start).toHaveBeenCalledWith(2)
+    expect(oscillators[1]?.stop).toHaveBeenCalledWith(2.02)
+    expect(oscillators[0]?.connect).toHaveBeenCalledWith(gains[1])
+    expect(gains[1]?.connect).toHaveBeenCalledWith(destination)
+  })
+
+  it('does not schedule clicks unless mix requests click with times', async () => {
+    const engine = engineWith(buffer())
+    await engine.play(spec(), undefined, { clickTimesMs: [0, 1000] })
+    expect(oscillators).toHaveLength(0)
+
+    await engine.play(spec(), undefined, { click: true, clickTimesMs: [] })
+    expect(oscillators).toHaveLength(0)
+  })
+
+  it('stop() cancels scheduled click oscillators', async () => {
+    const engine = engineWith(buffer())
+    await engine.play(spec(), undefined, { click: true, clickTimesMs: [0, 1000] })
+    expect(oscillators).toHaveLength(2)
+    engine.stop()
+    expect(oscillators[0]?.stop).toHaveBeenCalled()
+    expect(oscillators[1]?.stop).toHaveBeenCalled()
+    expect(oscillators[0]?.disconnect).toHaveBeenCalled()
     expect(gains[1]?.disconnect).toHaveBeenCalled()
   })
 })

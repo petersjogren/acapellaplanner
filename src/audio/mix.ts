@@ -26,6 +26,10 @@ export type PlaybackMix = {
   ghostGainDb?: number
   ghostMute?: boolean
   extra?: MixPlaybackLayer[]
+  /** When true and clickTimesMs is non-empty, the engine schedules click ticks. */
+  click?: boolean
+  /** Ghost-timeline click times (ms), typically from clicksForPhrase. */
+  clickTimesMs?: number[]
 }
 
 export function dbToGain(db: number, mute = false): number {

@@ -1,6 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { useProjectRepository } from '../../app/projectRepositoryContext.tsx'
 import type { PlaybackEngine } from '../../audio/engine.ts'
+import { clicksForPhrase } from '../../audio/click.ts'
 import { storedLatencyCompMs } from '../../audio/latency.ts'
 import {
   createAudioBlobLoader,
@@ -192,6 +193,7 @@ export function RecordControl({
         stopMic()
         return
       }
+      const clickTimesMs = clicksForPhrase(phrase, projectRef.current.sections)
       const started = await engine.play(
         {
           startMs: phrase.startMs,
@@ -218,7 +220,7 @@ export function RecordControl({
             stopMic()
           },
         },
-        mix,
+        { ...mix, click: true, clickTimesMs },
       )
       if (!started) {
         armedRef.current = false
