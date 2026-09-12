@@ -71,6 +71,11 @@ describe('routes', () => {
     })
     expect(screen.getByRole('navigation', { name: 'Studio' })).toBeTruthy()
     expect(screen.getByRole('link', { name: /Review/ }).getAttribute('aria-current')).toBe('page')
+    cleanup()
+
+    renderAt('/calibrate')
+    expect(screen.getByRole('heading', { name: 'Line up headphones' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Home' }).getAttribute('href')).toBe('/')
   })
 
   it('shows not-found when the project id is missing', async () => {

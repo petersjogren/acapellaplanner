@@ -68,5 +68,8 @@ describe('PreparerShell', () => {
     expect(screen.getByRole('link', { name: /Review/ }).getAttribute('href')).toBe(
       '/project/song-1/review',
     )
+    expect(screen.getByRole('link', { name: 'Line up headphones' }).getAttribute('href')).toBe(
+      '/calibrate',
+    )
   })
 })

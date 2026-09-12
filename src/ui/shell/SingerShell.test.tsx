@@ -46,4 +46,16 @@ describe('SingerShell', () => {
 
     expect(screen.getByRole('link', { name: 'Home' }).getAttribute('href')).toBe('/')
   })
+
+  it('links to headphone lineup', () => {
+    renderShell(
+      <SingerShell songTitle="When I Fall in Love">
+        <p>Booth</p>
+      </SingerShell>,
+    )
+
+    expect(screen.getByRole('link', { name: 'Line up headphones' }).getAttribute('href')).toBe(
+      '/calibrate',
+    )
+  })
 })

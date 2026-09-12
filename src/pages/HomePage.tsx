@@ -46,6 +46,12 @@ export function HomePage() {
     <div className="min-h-screen bg-paper px-10 py-8 font-ui text-ink fade-in">
       <h1 className="font-display text-2xl font-semibold tracking-tight">Acapella Planner</h1>
       <p className="mt-1 text-sm text-ink-muted">Songs on the desk</p>
+      <Link
+        to="/calibrate"
+        className="mt-3 inline-block text-sm text-ink-muted underline-offset-4 hover:underline"
+      >
+        Line up headphones
+      </Link>
       <button
         type="button"
         className="mt-8 rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red disabled:opacity-50"

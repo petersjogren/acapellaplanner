@@ -4,6 +4,7 @@ import {
   ProjectRepositoryContext,
 } from './projectRepositoryContext.tsx'
 import type { ProjectRepository } from '../storage/projectRepository.ts'
+import { CalibrationPage } from '../pages/CalibrationPage.tsx'
 import { HomePage } from '../pages/HomePage.tsx'
 import { NotFound } from '../pages/NotFound.tsx'
 import { PreparePage } from '../pages/PreparePage.tsx'
@@ -12,6 +13,7 @@ import { SingPage } from '../pages/SingPage.tsx'
 
 export const APP_ROUTES = [
   { path: '/', Component: HomePage },
+  { path: '/calibrate', Component: CalibrationPage },
   { path: '/project/:id/prepare', Component: PreparePage },
   { path: '/project/:id/sing', Component: SingPage },
   { path: '/project/:id/review', Component: ReviewPage },

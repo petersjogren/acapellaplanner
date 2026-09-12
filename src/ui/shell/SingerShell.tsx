@@ -24,6 +24,12 @@ export function SingerShell({
             </p>
           ) : null}
           <Link
+            to="/calibrate"
+            className="text-sm text-ink-muted underline-offset-4 hover:underline"
+          >
+            Line up headphones
+          </Link>
+          <Link
             to="/"
             className="text-sm text-ink-muted underline-offset-4 hover:underline"
           >

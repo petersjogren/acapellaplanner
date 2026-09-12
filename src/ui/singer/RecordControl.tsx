@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useProjectRepository } from '../../app/projectRepositoryContext.tsx'
 import type { PlaybackEngine } from '../../audio/engine.ts'
+import { storedLatencyCompMs } from '../../audio/latency.ts'
 import {
   ghostHeadphoneMixSnapshot,
   isEmptyTake,
@@ -91,7 +92,7 @@ export function RecordControl({
       durationMs: result.durationMs,
       notes: takeLabel(voicePart.shortLabel, phraseIndex, takeIndex),
       headphoneMixSnapshot: ghostHeadphoneMixSnapshot(current),
-      latencyCompMs: 0,
+      latencyCompMs: storedLatencyCompMs(),
       peakDb: 0,
       clipFlag: false,
     }

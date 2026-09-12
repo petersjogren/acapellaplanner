@@ -10,6 +10,7 @@ import {
   type VoicePart,
 } from '../../domain/schemas.ts'
 import type { ProjectRepository } from '../../storage/projectRepository.ts'
+import { saveDeviceProfile } from '../../audio/latency.ts'
 import { RecordControl } from './RecordControl.tsx'
 
 const soprano: VoicePart = {
@@ -178,11 +179,13 @@ function renderControl({
 
 describe('RecordControl', () => {
   beforeEach(() => {
+    localStorage.clear()
     stubMedia()
   })
 
   afterEach(() => {
     cleanup()
+    localStorage.clear()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -284,6 +287,35 @@ describe('RecordControl', () => {
     })
     expect(saved?.takes[0]?.recordedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     expect(onProjectChange).toHaveBeenCalledWith(saved)
+  })
+
+  it('writes profile latencyCompMs onto the take', async () => {
+    saveDeviceProfile({
+      latencyCompMs: 87,
+      updatedAt: '2026-09-12T10:00:00.000Z',
+      userAgent: 'TestAgent/1.0',
+    })
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+
+    renderControl({ engine, repo })
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => {
+      expect(engine.play).toHaveBeenCalled()
+    })
+
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+
+    await waitFor(() => {
+      expect(repo.saveProject).toHaveBeenCalledTimes(1)
+    })
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]
+    expect(saved?.takes[0]?.latencyCompMs).toBe(87)
   })
 
   it('stops MediaRecorder at pass complete before persist resolves', async () => {
