@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SectionEditor } from './SectionEditor.tsx'
 import type { Section } from '../../domain/schemas.ts'
@@ -74,5 +74,19 @@ describe('SectionEditor', () => {
     expect(screen.getByText('Verse')).toBeTruthy()
     expect(screen.getAllByText(/Follow the ghost/).length).toBeGreaterThan(0)
     expect(screen.queryByText(/metronome/i)).toBeNull()
+  })
+
+  it('bumps start to the previous end after a successful add', async () => {
+    renderEditor()
+    fireEvent.change(screen.getByLabelText('Section name'), { target: { value: 'Verse' } })
+    fireEvent.change(screen.getByLabelText('Start (ms)'), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText('End (ms)'), { target: { value: '4000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add section' }))
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('Start (ms)') as HTMLInputElement).value).toBe('4000')
+    })
+    expect((screen.getByLabelText('End (ms)') as HTMLInputElement).value).toBe('8000')
+    expect((screen.getByLabelText('Section name') as HTMLInputElement).value).toBe('')
   })
 })

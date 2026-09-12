@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   assertNoPhraseOverlap,
+  assertNoSectionOverlap,
   createEmptyProject,
   PhraseSchema,
   ProjectSchema,
   SectionSchema,
   VoicePartSchema,
   validatePhrases,
+  validateSections,
 } from '../../src/domain/schemas.ts'
 
 function phrase(overrides: { id: string; startMs: number; endMs: number }) {
@@ -19,6 +21,17 @@ function phrase(overrides: { id: string; startMs: number; endMs: number }) {
     partPlan: [],
     loopDefault: { mode: 'phrase-loop' as const, gapMs: 400 },
     postRollMs: 0,
+  }
+}
+
+function section(overrides: { id: string; startMs: number; endMs: number }) {
+  return {
+    id: overrides.id,
+    name: overrides.id,
+    timeMode: 'ghost-follow' as const,
+    startMs: overrides.startMs,
+    endMs: overrides.endMs,
+    clickEnabled: false,
   }
 }
 
@@ -106,6 +119,43 @@ describe('phrase overlap', () => {
   })
 })
 
+describe('section overlap', () => {
+  it('rejects overlapping sections', () => {
+    const sections = [
+      section({ id: 'a', startMs: 0, endMs: 1000 }),
+      section({ id: 'b', startMs: 500, endMs: 1500 }),
+    ]
+    const project = { ...createEmptyProject(), sections }
+
+    expect(ProjectSchema.safeParse(project).success).toBe(false)
+    expect(() => assertNoSectionOverlap(sections)).toThrow()
+    expect(() => validateSections(sections)).toThrow()
+  })
+
+  it('allows adjacent sections that only touch endpoints', () => {
+    const sections = [
+      section({ id: 'a', startMs: 0, endMs: 1000 }),
+      section({ id: 'b', startMs: 1000, endMs: 2000 }),
+    ]
+    const project = { ...createEmptyProject(), sections }
+
+    expect(ProjectSchema.safeParse(project).success).toBe(true)
+    expect(() => assertNoSectionOverlap(sections)).not.toThrow()
+    expect(() => validateSections(sections)).not.toThrow()
+  })
+
+  it('rejects nested overlapping sections', () => {
+    const sections = [
+      section({ id: 'outer', startMs: 0, endMs: 2000 }),
+      section({ id: 'inner', startMs: 250, endMs: 500 }),
+    ]
+    const project = { ...createEmptyProject(), sections }
+
+    expect(ProjectSchema.safeParse(project).success).toBe(false)
+    expect(() => assertNoSectionOverlap(sections)).toThrow()
+  })
+})
+
 describe('schema parse failures', () => {
   it('rejects an invalid section timeMode', () => {
     const result = SectionSchema.safeParse({
@@ -129,5 +179,15 @@ describe('schema parse failures', () => {
       false,
     )
     expect(() => validatePhrases([phrase({ id: 'a', startMs: 1000, endMs: 1000 })])).toThrow()
+  })
+
+  it('rejects a section whose startMs is not before endMs', () => {
+    expect(SectionSchema.safeParse(section({ id: 'a', startMs: 1000, endMs: 500 })).success).toBe(
+      false,
+    )
+    expect(SectionSchema.safeParse(section({ id: 'a', startMs: 1000, endMs: 1000 })).success).toBe(
+      false,
+    )
+    expect(() => validateSections([section({ id: 'a', startMs: 1000, endMs: 1000 })])).toThrow()
   })
 })

@@ -30,8 +30,9 @@ function sectionsForPhrase(phrase: ClickPhrase, sections: Section[]): Section[] 
 
 /** Quarter-note click grid in the section window. Exclusive end: t < endMs. */
 export function clickTimesMs({ startMs, endMs, bpm }: ClickTimesInput): number[] {
-  if (!(bpm > 0) || !(endMs > startMs)) return []
+  if (!Number.isFinite(bpm) || !(bpm > 0) || !(endMs > startMs)) return []
   const intervalMs = 60000 / bpm
+  if (!Number.isFinite(intervalMs) || !(intervalMs > 0)) return []
   const times: number[] = []
   for (let i = 0, t = startMs; t < endMs; i += 1, t = startMs + i * intervalMs) {
     times.push(t)

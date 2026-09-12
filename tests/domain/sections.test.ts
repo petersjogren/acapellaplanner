@@ -55,6 +55,56 @@ describe('addSection', () => {
       }),
     ).toThrow(/bpm/i)
   })
+
+  it('rejects inverted windows', () => {
+    expect(() =>
+      addSection(createEmptyProject(), {
+        name: 'Verse',
+        timeMode: 'ghost-follow',
+        startMs: 1000,
+        endMs: 500,
+        clickEnabled: false,
+      }),
+    ).toThrow(/start must be before end/i)
+  })
+
+  it('throws on overlap and leaves the original project unchanged', () => {
+    const project = addSection(createEmptyProject(), {
+      name: 'A',
+      timeMode: 'ghost-follow',
+      startMs: 0,
+      endMs: 1000,
+      clickEnabled: false,
+    })
+    expect(() =>
+      addSection(project, {
+        name: 'B',
+        timeMode: 'ghost-follow',
+        startMs: 500,
+        endMs: 1500,
+        clickEnabled: false,
+      }),
+    ).toThrow(/overlap/i)
+    expect(project.sections).toHaveLength(1)
+  })
+
+  it('allows adjacent sections that only touch endpoints', () => {
+    let project = addSection(createEmptyProject(), {
+      name: 'A',
+      timeMode: 'ghost-follow',
+      startMs: 0,
+      endMs: 1000,
+      clickEnabled: false,
+    })
+    project = addSection(project, {
+      name: 'B',
+      timeMode: 'ghost-follow',
+      startMs: 1000,
+      endMs: 2000,
+      clickEnabled: false,
+    })
+    expect(project.sections.map((item) => item.name)).toEqual(['A', 'B'])
+  })
 })
 
 describe('updateSection / removeSection', () => {
@@ -73,5 +123,25 @@ describe('updateSection / removeSection', () => {
     )
     project = removeSection(project, id)
     expect(project.sections).toEqual([])
+  })
+
+  it('rejects an update that would overlap another section', () => {
+    let project = addSection(createEmptyProject(), {
+      name: 'A',
+      timeMode: 'ghost-follow',
+      startMs: 0,
+      endMs: 1000,
+      clickEnabled: false,
+    })
+    project = addSection(project, {
+      name: 'B',
+      timeMode: 'ghost-follow',
+      startMs: 2000,
+      endMs: 3000,
+      clickEnabled: false,
+    })
+    const id = project.sections[1]!.id
+    expect(() => updateSection(project, id, { startMs: 500, endMs: 1500 })).toThrow(/overlap/i)
+    expect(project.sections[1]?.startMs).toBe(2000)
   })
 })

@@ -48,18 +48,22 @@ export function SectionEditor({
     event?.preventDefault()
     const nextName = name.trim()
     if (!nextName) return
+    const nextStart = parseMs(startMs, 0)
+    const nextEnd = parseMs(endMs, durationMs)
     try {
       await onAddSection({
         name: nextName,
         timeMode,
         fixedBpm: inTime ? parseBpm(bpm) : undefined,
-        startMs: parseMs(startMs, 0),
-        endMs: parseMs(endMs, durationMs),
+        startMs: nextStart,
+        endMs: nextEnd,
         clickEnabled: inTime && clickEnabled,
       })
       setError(null)
       setName('')
       setClickEnabled(false)
+      setStartMs(String(nextEnd))
+      setEndMs(String(durationMs))
     } catch (err: unknown) {
       setError(messageFrom(err, 'Could not add section'))
     }

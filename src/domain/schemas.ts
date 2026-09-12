@@ -31,6 +31,37 @@ export function validatePhrases(phrases: PhraseInterval[]): void {
   assertNoPhraseOverlap(phrases)
 }
 
+export type SectionInterval = {
+  id?: string
+  startMs: number
+  endMs: number
+}
+
+export function assertNoSectionOverlap(sections: SectionInterval[]): void {
+  for (let i = 0; i < sections.length; i++) {
+    for (let j = i + 1; j < sections.length; j++) {
+      const a = sections[i]
+      const b = sections[j]
+      if (a.startMs < b.endMs && b.startMs < a.endMs) {
+        throw new Error(
+          `Sections overlap: ${a.id ?? 'section'} [${a.startMs}, ${a.endMs}] and ${b.id ?? 'section'} [${b.startMs}, ${b.endMs}]`,
+        )
+      }
+    }
+  }
+}
+
+export function validateSections(sections: SectionInterval[]): void {
+  for (const section of sections) {
+    if (!(section.startMs < section.endMs)) {
+      throw new Error(
+        `Section ${section.id ?? ''} startMs must be less than endMs (got ${section.startMs}..${section.endMs})`,
+      )
+    }
+  }
+  assertNoSectionOverlap(sections)
+}
+
 export const LoopPolicySchema = z.object({
   mode: z.enum(['phrase-loop', 'section-continuous', 'once']),
   gapMs: z.number().nonnegative(),
@@ -46,15 +77,20 @@ export const VoicePartSchema = z.object({
   isGhost: z.boolean().optional(),
 })
 
-export const SectionSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  timeMode: z.enum(['ghost-follow', 'fixed-tempo']),
-  fixedBpm: z.number().positive().optional(),
-  startMs: z.number(),
-  endMs: z.number(),
-  clickEnabled: z.boolean(),
-})
+export const SectionSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    timeMode: z.enum(['ghost-follow', 'fixed-tempo']),
+    fixedBpm: z.number().positive().optional(),
+    startMs: z.number(),
+    endMs: z.number(),
+    clickEnabled: z.boolean(),
+  })
+  .refine((section) => section.startMs < section.endMs, {
+    message: 'Section startMs must be less than endMs',
+    path: ['endMs'],
+  })
 
 export const RegionNormSchema = z.object({
   x: z.number().min(0).max(1),
@@ -210,6 +246,11 @@ export const ProjectSchema = z
       validatePhrases(project.phrases)
     } catch (error) {
       ctx.addIssue(error instanceof Error ? error.message : 'Invalid phrases')
+    }
+    try {
+      validateSections(project.sections)
+    } catch (error) {
+      ctx.addIssue(error instanceof Error ? error.message : 'Invalid sections')
     }
   })
 

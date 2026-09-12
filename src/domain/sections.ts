@@ -1,4 +1,4 @@
-import type { Project, Section } from './schemas.ts'
+import { validateSections, type Project, type Section } from './schemas.ts'
 
 export type NewSectionInput = {
   name: string
@@ -54,7 +54,9 @@ export function sortSections<T extends { startMs: number }>(sections: T[]): T[] 
 
 export function addSection(project: Project, input: NewSectionInput): Project {
   const section = buildSection(crypto.randomUUID(), input)
-  return { ...project, sections: sortSections([...project.sections, section]) }
+  const sections = sortSections([...project.sections, section])
+  validateSections(sections)
+  return { ...project, sections }
 }
 
 export function updateSection(project: Project, id: string, patch: SectionPatch): Project {
@@ -68,10 +70,9 @@ export function updateSection(project: Project, id: string, patch: SectionPatch)
     endMs: patch.endMs ?? current.endMs,
     clickEnabled: patch.clickEnabled ?? current.clickEnabled,
   })
-  return {
-    ...project,
-    sections: sortSections(project.sections.map((item) => (item.id === id ? next : item))),
-  }
+  const sections = sortSections(project.sections.map((item) => (item.id === id ? next : item)))
+  validateSections(sections)
+  return { ...project, sections }
 }
 
 export function removeSection(project: Project, id: string): Project {

@@ -40,6 +40,12 @@ describe('clickTimesMs', () => {
     expect(clickTimesMs({ startMs: 1000, endMs: 500, bpm: 60 })).toEqual([])
     expect(clickTimesMs({ startMs: 0, endMs: 2000, bpm: 0 })).toEqual([])
   })
+
+  it('returns no times when bpm is non-finite or the interval would be 0', () => {
+    expect(clickTimesMs({ startMs: 0, endMs: 2000, bpm: Number.POSITIVE_INFINITY })).toEqual([])
+    expect(clickTimesMs({ startMs: 0, endMs: 2000, bpm: Number.NaN })).toEqual([])
+    expect(clickTimesMs({ startMs: 0, endMs: 2000, bpm: Number.NEGATIVE_INFINITY })).toEqual([])
+  })
 })
 
 describe('clicksForPhrase', () => {
