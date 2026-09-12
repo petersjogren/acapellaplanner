@@ -57,6 +57,7 @@ export function ReviewPage() {
   const writeQueueRef = useRef(Promise.resolve())
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
+  const playGenerationRef = useRef(0)
 
   bufferRef.current = buffer
 
@@ -150,6 +151,7 @@ export function ReviewPage() {
     const take = current.takes.find((item) => item.id === takeId)
     const phrase = current.phrases.find((item) => item.id === take?.phraseId)
     if (!take) return
+    const generation = ++playGenerationRef.current
     setPlayError(null)
     if (!bufferRef.current) {
       setPlayError('No ghost track to play against')
@@ -157,11 +159,13 @@ export function ReviewPage() {
     }
     try {
       const record = await repo.getAudioBlob(take.audioBlobId)
+      if (generation !== playGenerationRef.current) return
       if (!record) {
         setPlayError('Could not load take')
         return
       }
       const decoded = await decodeAudioFile(record.blob)
+      if (generation !== playGenerationRef.current) return
       const started = await getEngine().play(
         {
           startMs: phrase?.startMs ?? 0,
@@ -172,18 +176,23 @@ export function ReviewPage() {
           loop: false,
         },
         {
-          onEnded: () => setPlayingTakeId(null),
+          onEnded: () => {
+            if (generation === playGenerationRef.current) setPlayingTakeId(null)
+          },
         },
         mixForReviewedTake(mixPresetId, decoded.buffer),
       )
+      if (generation !== playGenerationRef.current) return
       setPlayingTakeId(started ? takeId : null)
     } catch (err: unknown) {
+      if (generation !== playGenerationRef.current) return
       setPlayingTakeId(null)
       setPlayError(messageFrom(err, 'Could not play take'))
     }
   }
 
   function handleStop() {
+    playGenerationRef.current += 1
     engineRef.current?.stop()
     setPlayingTakeId(null)
   }

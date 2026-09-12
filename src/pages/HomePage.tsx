@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import { createEmptyProject, type Project } from '../domain/schemas.ts'
 import {
+  collectProjectBlobIds,
   downloadBlob,
   exportProjectZip,
   importProjectZip,
@@ -71,7 +72,9 @@ export function HomePage() {
     setError(null)
     try {
       const { project, blobs } = await importProjectZip(file)
+      const allowed = new Set(collectProjectBlobIds(project))
       for (const item of blobs) {
+        if (!allowed.has(item.id)) continue
         await repo.putAudioBlob({
           id: item.id,
           projectId: project.id,

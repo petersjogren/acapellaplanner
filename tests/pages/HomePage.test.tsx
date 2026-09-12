@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { strToU8, unzipSync, zipSync } from 'fflate'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from '../../src/app/routes.tsx'
@@ -144,5 +145,65 @@ describe('HomePage', () => {
     expect(loadedBlob?.kind).toBe('ghost')
     expect(loadedBlob?.mimeType).toBe('audio/webm')
     expect(loadedBlob?.byteSize).toBe(11)
+  })
+
+  it('does not save when project.json is invalid JSON', async () => {
+    const broken = new Blob(
+      [zipSync({ 'project.json': strToU8('{not json') })],
+      { type: 'application/zip' },
+    )
+
+    renderHome()
+    await waitFor(() => {
+      expect(screen.getByText('No songs yet')).toBeTruthy()
+    })
+
+    const file = new File([broken], 'bad.acapella.zip', { type: 'application/zip' })
+    fireEvent.change(screen.getByLabelText('Import zip'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy()
+    })
+    expect(await repo.listProjects()).toHaveLength(0)
+  })
+
+  it('does not store zip-slip or extra blobs that are not in the project', async () => {
+    const source = await repo.saveProject({
+      ...createEmptyProject('Imported song'),
+      ghostTrackId: 'blob-tiny',
+    })
+    const audio = new Blob(['ghost-audio'], { type: 'audio/webm' })
+    await repo.putAudioBlob({
+      id: 'blob-tiny',
+      projectId: source.id,
+      kind: 'ghost',
+      mimeType: 'audio/webm',
+      byteSize: audio.size,
+      createdAt: source.createdAt,
+      blob: audio,
+    })
+    const zip = await exportProjectZip(source, async () => audio)
+    const files = unzipSync(new Uint8Array(await zip.arrayBuffer()))
+    files['audio/extra-not-referenced.webm'] = new Uint8Array([9, 9, 9])
+    files['audio/nested/../slip.webm'] = new Uint8Array([8])
+    files['audio/../evil.webm'] = new Uint8Array([7])
+    const padded = new Blob([zipSync(files)], { type: 'application/zip' })
+    await repo.deleteProject(source.id)
+
+    renderHome()
+    await waitFor(() => {
+      expect(screen.getByText('No songs yet')).toBeTruthy()
+    })
+
+    const file = new File([padded], 'song.acapella.zip', { type: 'application/zip' })
+    fireEvent.change(screen.getByLabelText('Import zip'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByText('Imported song')).toBeTruthy()
+    })
+    expect(await repo.getAudioBlob('blob-tiny')).toBeTruthy()
+    expect(await repo.getAudioBlob('extra-not-referenced')).toBeUndefined()
+    expect(await repo.getAudioBlob('slip')).toBeUndefined()
+    expect(await repo.getAudioBlob('evil')).toBeUndefined()
   })
 })

@@ -108,7 +108,22 @@ export function downloadBlob(blob: Blob, filename: string): void {
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
-  URL.revokeObjectURL(url)
+  // Safari/Firefox may not start the download if the object URL is revoked
+  // in the same turn as click().
+  setTimeout(() => {
+    URL.revokeObjectURL(url)
+  }, 1000)
+}
+
+/** Zip audio entry id, or null when the path is nested, zip-slip, or not audio/*. */
+export function audioBlobIdFromZipPath(path: string): string | null {
+  const normalized = path.replace(/\\/g, '/')
+  if (!normalized.startsWith('audio/')) return null
+  const filename = normalized.slice('audio/'.length)
+  if (!filename || filename.includes('/') || filename.includes('..')) return null
+  const dot = filename.lastIndexOf('.')
+  const id = dot > 0 ? filename.slice(0, dot) : filename
+  return id || null
 }
 
 function findProjectJson(files: Record<string, Uint8Array>): Uint8Array | undefined {
@@ -150,16 +165,15 @@ export async function importProjectZip(
     throw new Error('Missing project.json')
   }
   const project = ProjectSchema.parse(JSON.parse(strFromU8(projectBytes)))
+  const allowed = new Set(collectProjectBlobIds(project))
   const blobs: ImportedProjectBlob[] = []
   for (const [path, data] of Object.entries(files)) {
+    const id = audioBlobIdFromZipPath(path)
+    if (!id || !allowed.has(id)) continue
     const normalized = path.replace(/\\/g, '/')
-    if (!normalized.startsWith('audio/')) continue
     const filename = normalized.slice('audio/'.length)
-    if (!filename || filename.includes('/')) continue
     const dot = filename.lastIndexOf('.')
-    const id = dot > 0 ? filename.slice(0, dot) : filename
     const ext = dot > 0 ? filename.slice(dot + 1) : 'bin'
-    if (!id) continue
     const mimeType = mimeForExtension(ext)
     blobs.push({
       id,
