@@ -19,7 +19,7 @@ The booth is that room. The preparer is the producer-arranger. Audio time on the
 
 ### Ghost timeline is truth
 
-Every phrase lives as start and end on the ghost. *In time* and *Follow the ghost* are feels on that same stretch — never a second clock the singer has to fight. A click, when used, only ticks inside an in-time section window. Rubato phrases pre-roll from the ghost itself: you hear the breath before the line, then you sing.
+Every phrase lives as start and end on the ghost. *In time* and *Follow the ghost* are feels on that same stretch — never a second clock the singer has to fight. A click, when used, only ticks inside an in-time section window. Pre-roll is whatever you include in the phrase mark; there is no extra pre-roll by default. Mark the breath before the line if you want to hear it, then sing.
 
 Headphones are the score. Sheet crops and lyric text are cues. Timing comes from what you hear.
 
