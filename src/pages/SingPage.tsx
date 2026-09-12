@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import { decodeAudioFile } from '../audio/decode.ts'
 import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
+import { GHOST_FOCUS_PRESET_ID } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import { markEnough, suggestNext } from '../domain/sessionPlan.ts'
 import type { Phrase, Project, VoicePart } from '../domain/schemas.ts'
@@ -10,6 +11,7 @@ import { PartPicker } from '../ui/singer/PartPicker.tsx'
 import { PhraseStage } from '../ui/singer/PhraseStage.tsx'
 import { ProgressRibbon } from '../ui/singer/ProgressRibbon.tsx'
 import { RecordControl, type RecordControlHandle } from '../ui/singer/RecordControl.tsx'
+import { MixPresetSelect } from '../ui/shared/MixPresetSelect.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
@@ -46,6 +48,7 @@ export function SingPage() {
   const [voicePartId, setVoicePartId] = useState<string | null>(null)
   const [phraseId, setPhraseId] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
   const projectRef = useRef<Project | null>(null)
@@ -236,6 +239,9 @@ export function SingPage() {
               partName={part.name}
             />
           </div>
+          <div className="mt-8">
+            <MixPresetSelect value={mixPresetId} onChange={setMixPresetId} />
+          </div>
           <RecordControl
             key={`${phrase.id}:${part.id}`}
             ref={recordControlRef}
@@ -244,6 +250,7 @@ export function SingPage() {
             project={loaded}
             onProjectChange={handleProjectChange}
             engine={getEngine()}
+            mixPresetId={mixPresetId}
           />
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <button

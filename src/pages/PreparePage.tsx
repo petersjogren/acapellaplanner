@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { PreparerShell } from '../ui/shell/PreparerShell.tsx'
 import { decodeAudioFile, formatDuration } from '../audio/decode.ts'
 import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
+import {
+  createAudioBlobLoader,
+  GHOST_FOCUS_PRESET_ID,
+  loadPlaybackMixForPhrase,
+} from '../audio/mix.ts'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import {
   GhostImporter,
@@ -20,6 +25,7 @@ import {
 import type { Project } from '../domain/schemas.ts'
 import { CompletionMatrix } from '../ui/preparer/CompletionMatrix.tsx'
 import { VoiceRosterEditor } from '../ui/preparer/VoiceRosterEditor.tsx'
+import { MixPresetSelect } from '../ui/shared/MixPresetSelect.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
@@ -31,6 +37,7 @@ export function PreparePage() {
   const [selectedPhraseId, setSelectedPhraseId] = useState<string | null>(null)
   const [playing, setPlaying] = useState(false)
   const [playError, setPlayError] = useState<string | null>(null)
+  const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
   const projectRef = useRef<Project | null>(null)
   const writeQueueRef = useRef(Promise.resolve())
   const bufferRef = useRef<AudioBuffer | null>(null)
@@ -187,6 +194,12 @@ export function PreparePage() {
     if (!selectedPhrase) return
     setPlayError(null)
     try {
+      const mix = await loadPlaybackMixForPhrase(
+        loaded,
+        selectedPhrase.id,
+        mixPresetId,
+        createAudioBlobLoader((id) => repo.getAudioBlob(id)),
+      )
       const started = await getEngine().play(
         {
           startMs: selectedPhrase.startMs,
@@ -199,6 +212,7 @@ export function PreparePage() {
         {
           onEnded: () => setPlaying(false),
         },
+        mix,
       )
       // play() returns false if Stop cancelled during AudioContext resume
       setPlaying(started)
@@ -239,6 +253,9 @@ export function PreparePage() {
             <section className="mt-6" aria-label="Phrase playback">
               <h3 className="font-medium">Listen</h3>
               <p className="mt-1 text-sm text-ink-muted">{selectedPhrase.name}</p>
+              <div className="mt-3">
+                <MixPresetSelect value={mixPresetId} onChange={setMixPresetId} />
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"

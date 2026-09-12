@@ -1,4 +1,4 @@
-import type { HeadphoneMixSnapshot, Project, Take } from '../domain/schemas.ts'
+import type { Take } from '../domain/schemas.ts'
 
 export const EMPTY_TAKE_MAX_BYTES = 1024
 export const EMPTY_TAKE_MIN_DURATION_MS = 200
@@ -19,20 +19,6 @@ export function isEmptyTake(input: { byteSize: number; durationMs: number }): bo
 
 export function takeLabel(shortLabel: string, phraseIndex: number, takeIndex: number): string {
   return `${shortLabel}_p${phraseIndex}_t${takeIndex}`
-}
-
-export function ghostHeadphoneMixSnapshot(project: Project): HeadphoneMixSnapshot {
-  const ghost = project.guides.find((guide) => guide.kind === 'ghost')
-  return {
-    layers: [
-      {
-        guideOrTakeRef: ghost?.id ?? 'ghost',
-        gainDb: 0,
-        pan: 0,
-        mute: false,
-      },
-    ],
-  }
 }
 
 export function pickRecorderMimeType(): string {

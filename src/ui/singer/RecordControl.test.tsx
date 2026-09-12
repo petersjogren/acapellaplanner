@@ -141,11 +141,13 @@ function renderControl({
   engine,
   project = projectWith(),
   onProjectChange = vi.fn(),
+  mixPresetId,
 }: {
   repo?: ProjectRepository
   engine: PlaybackEngine
   project?: Project
   onProjectChange?: (project: Project) => void
+  mixPresetId?: string
 } = { engine: mockEngine().engine }) {
   const view = render(
     <ProjectRepositoryContext.Provider value={repo}>
@@ -155,6 +157,7 @@ function renderControl({
         project={project}
         onProjectChange={onProjectChange}
         engine={engine}
+        mixPresetId={mixPresetId}
       />
     </ProjectRepositoryContext.Provider>,
   )
@@ -170,6 +173,7 @@ function renderControl({
             project={next}
             onProjectChange={onProjectChange}
             engine={engine}
+            mixPresetId={mixPresetId}
           />
         </ProjectRepositoryContext.Provider>,
       )
@@ -223,6 +227,11 @@ describe('RecordControl', () => {
       expect.objectContaining({
         onPassStart: expect.any(Function),
         onPassComplete: expect.any(Function),
+      }),
+      expect.objectContaining({
+        ghostGainDb: 0,
+        ghostMute: false,
+        extra: [],
       }),
     )
     expect(screen.getByRole('button', { name: 'Record' }).getAttribute('aria-pressed')).toBe(
@@ -287,6 +296,42 @@ describe('RecordControl', () => {
     })
     expect(saved?.takes[0]?.recordedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     expect(onProjectChange).toHaveBeenCalledWith(saved)
+  })
+
+  it('snapshots the selected mix preset including keeper takes', async () => {
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+
+    renderControl({
+      engine,
+      repo,
+      mixPresetId: 'stack-build',
+      project: projectWith({
+        takes: [sampleTake({ id: 'k1', rating: 'keeper' })],
+      }),
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+    await waitFor(() => {
+      expect(engine.play).toHaveBeenCalled()
+    })
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+
+    await waitFor(() => {
+      expect(repo.saveProject).toHaveBeenCalledTimes(1)
+    })
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]
+    expect(saved?.takes.at(-1)?.headphoneMixSnapshot).toEqual({
+      layers: [
+        { guideOrTakeRef: 'ghost-guide', gainDb: -6, pan: 0, mute: false },
+        { guideOrTakeRef: 'k1', gainDb: 0, pan: 0, mute: false },
+      ],
+    })
   })
 
   it('writes profile latencyCompMs onto the take', async () => {

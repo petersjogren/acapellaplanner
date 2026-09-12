@@ -285,4 +285,51 @@ describe('createPlaybackEngine', () => {
     await vi.advanceTimersByTimeAsync(100)
     expect(onPassStart).toHaveBeenCalledTimes(2)
   })
+
+  it('schedules ghost and keeper layers with per-layer gains', async () => {
+    const engine = engineWith(buffer())
+    const keeper = buffer()
+    await engine.play(spec(), undefined, {
+      ghostGainDb: 0,
+      ghostMute: false,
+      extra: [{ buffer: keeper, gainDb: -6, mute: false }],
+    })
+
+    expect(sources).toHaveLength(2)
+    expect(gains).toHaveLength(2)
+    expect(gains[0]?.gain.value).toBe(1)
+    expect(gains[1]?.gain.value).toBeCloseTo(10 ** (-6 / 20))
+    expect(sources[0]?.start).toHaveBeenCalledWith(1, 0, 2)
+    expect(sources[1]?.start).toHaveBeenCalledWith(1, 0, 2)
+    expect(sources[0]?.connect).toHaveBeenCalledWith(gains[0])
+    expect(sources[1]?.connect).toHaveBeenCalledWith(gains[1])
+  })
+
+  it('skips extra layers whose buffers are missing', async () => {
+    const engine = engineWith(buffer())
+    await engine.play(spec(), undefined, {
+      extra: [{ buffer: null, gainDb: 0, mute: false }],
+    })
+    expect(sources).toHaveLength(1)
+    expect(gains).toHaveLength(1)
+  })
+
+  it('applies mute as zero gain on the ghost layer', async () => {
+    const engine = engineWith(buffer())
+    await engine.play(spec(), undefined, { ghostGainDb: 0, ghostMute: true })
+    expect(sources).toHaveLength(1)
+    expect(gains[0]?.gain.value).toBe(0)
+  })
+
+  it('stop() stops keeper sources as well as ghost', async () => {
+    const engine = engineWith(buffer())
+    await engine.play(spec(), undefined, {
+      extra: [{ buffer: buffer(), gainDb: -24, mute: true }],
+    })
+    engine.stop()
+    expect(sources[0]?.stop).toHaveBeenCalled()
+    expect(sources[1]?.stop).toHaveBeenCalled()
+    expect(gains[0]?.disconnect).toHaveBeenCalled()
+    expect(gains[1]?.disconnect).toHaveBeenCalled()
+  })
 })

@@ -3,7 +3,14 @@ import { useProjectRepository } from '../../app/projectRepositoryContext.tsx'
 import type { PlaybackEngine } from '../../audio/engine.ts'
 import { storedLatencyCompMs } from '../../audio/latency.ts'
 import {
-  ghostHeadphoneMixSnapshot,
+  createAudioBlobLoader,
+  ghostGuideId,
+  headphoneMixSnapshotFor,
+  keeperTakesForPhrase,
+  loadPlaybackMixForPhrase,
+  mixPresetById,
+} from '../../audio/mix.ts'
+import {
   isEmptyTake,
   nextTakeIndex,
   requestMicStream,
@@ -26,6 +33,7 @@ export type RecordControlProps = {
   project: Project
   onProjectChange: (project: Project) => void
   engine: PlaybackEngine
+  mixPresetId?: string
   ref?: Ref<RecordControlHandle>
 }
 
@@ -45,6 +53,7 @@ export function RecordControl({
   project,
   onProjectChange,
   engine,
+  mixPresetId,
   ref,
 }: RecordControlProps) {
   const repo = useProjectRepository()
@@ -58,9 +67,11 @@ export function RecordControl({
   const pendingRef = useRef<StartedRecording[]>([])
   const saveChainRef = useRef(Promise.resolve())
   const toggleArmRef = useRef<() => void>(() => undefined)
+  const mixPresetIdRef = useRef(mixPresetId)
 
   projectRef.current = project
   onProjectChangeRef.current = onProjectChange
+  mixPresetIdRef.current = mixPresetId
 
   useImperativeHandle(ref, () => ({
     flushSaves: () => saveChainRef.current,
@@ -102,7 +113,10 @@ export function RecordControl({
       recordedAt: new Date().toISOString(),
       durationMs: result.durationMs,
       notes: takeLabel(voicePart.shortLabel, phraseIndex, takeIndex),
-      headphoneMixSnapshot: ghostHeadphoneMixSnapshot(current),
+      headphoneMixSnapshot: headphoneMixSnapshotFor(mixPresetById(mixPresetIdRef.current), {
+        ghostGuideId: ghostGuideId(current),
+        keeperTakeIds: keeperTakesForPhrase(current.takes, phrase.id).map((item) => item.id),
+      }),
       latencyCompMs: storedLatencyCompMs(),
       peakDb: 0,
       clipFlag: false,
@@ -167,6 +181,17 @@ export function RecordControl({
       }
 
       armedRef.current = true
+      const mix = await loadPlaybackMixForPhrase(
+        projectRef.current,
+        phrase.id,
+        mixPresetById(mixPresetIdRef.current).id,
+        createAudioBlobLoader((id) => repo.getAudioBlob(id)),
+      )
+      if (!armedRef.current) {
+        discardPending()
+        stopMic()
+        return
+      }
       const started = await engine.play(
         {
           startMs: phrase.startMs,
@@ -193,6 +218,7 @@ export function RecordControl({
             stopMic()
           },
         },
+        mix,
       )
       if (!started) {
         armedRef.current = false

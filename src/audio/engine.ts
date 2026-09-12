@@ -1,4 +1,5 @@
 import { getAudioContext, resumeAudioContext } from './context.ts'
+import { dbToGain, type PlaybackMix } from './mix.ts'
 import {
   computeLoopDeadlines,
   computePlayWindow,
@@ -7,6 +8,7 @@ import {
 } from './schedule.ts'
 
 export type { PhrasePlaySpec, PlayWindow } from './schedule.ts'
+export type { PlaybackMix } from './mix.ts'
 export { computeLoopDeadlines, computePlayWindow, phraseEnterDelayMs } from './schedule.ts'
 
 /** How far ahead of a loop deadline we create/start the next BufferSource. */
@@ -23,8 +25,18 @@ export type PlaybackListeners = {
 
 export type PlaybackEngine = {
   /** Resolves true when playback actually started; false if cancelled during resume. */
-  play: (spec: PhrasePlaySpec, listeners?: PlaybackListeners) => Promise<boolean>
+  play: (
+    spec: PhrasePlaySpec,
+    listeners?: PlaybackListeners,
+    mix?: PlaybackMix,
+  ) => Promise<boolean>
   stop: () => void
+}
+
+type ScheduledLayer = {
+  buffer: AudioBuffer
+  output: GainNode
+  offsetMs: number
 }
 
 export type PlaybackEngineOptions = {
@@ -35,7 +47,7 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
   let generation = 0
   const sources = new Set<AudioBufferSourceNode>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
-  let gain: GainNode | null = null
+  const outputGains = new Set<GainNode>()
 
   function clearTimers() {
     for (const id of timers) clearTimeout(id)
@@ -55,6 +67,14 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     }
   }
 
+  function disconnectGain(node: GainNode) {
+    try {
+      node.disconnect()
+    } catch {
+      // already disconnected
+    }
+  }
+
   function stop() {
     generation += 1
     clearTimers()
@@ -62,14 +82,10 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       disconnectSource(source)
     }
     sources.clear()
-    if (gain) {
-      try {
-        gain.disconnect()
-      } catch {
-        // already disconnected
-      }
-      gain = null
+    for (const node of outputGains) {
+      disconnectGain(node)
     }
+    outputGains.clear()
   }
 
   function armTimer(delayMs: number, gen: number, fn: () => void) {
@@ -81,23 +97,22 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     timers.add(id)
   }
 
-  function startIteration(
+  function startLayer(
     ctx: AudioContext,
-    buffer: AudioBuffer,
-    spec: PhrasePlaySpec,
-    listeners: PlaybackListeners | undefined,
-    output: GainNode,
+    layer: ScheduledLayer,
     window: { offsetMs: number; durationMs: number },
     when: number,
     gen: number,
+    onEnded?: () => void,
   ) {
-    if (gen !== generation) return
+    const offsetSec = layer.offsetMs / 1000
+    const remainingSec = layer.buffer.duration - offsetSec
+    const durationSec = Math.min(window.durationMs / 1000, remainingSec)
+    if (!(durationSec > 0)) return
 
-    const offsetSec = window.offsetMs / 1000
-    const durationSec = window.durationMs / 1000
     const source = ctx.createBufferSource()
-    source.buffer = buffer
-    source.connect(output)
+    source.buffer = layer.buffer
+    source.connect(layer.output)
     // `when` must be in the future (or now for the first shot) on the audio clock.
     source.start(when, offsetSec, durationSec)
     sources.add(source)
@@ -109,7 +124,27 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
         // already disconnected by stop()
       }
       if (gen !== generation) return
+      onEnded?.()
+    }
+  }
+
+  function startIteration(
+    ctx: AudioContext,
+    ghost: ScheduledLayer,
+    extras: ScheduledLayer[],
+    spec: PhrasePlaySpec,
+    listeners: PlaybackListeners | undefined,
+    window: { offsetMs: number; durationMs: number },
+    when: number,
+    gen: number,
+  ) {
+    if (gen !== generation) return
+
+    startLayer(ctx, ghost, window, when, gen, () => {
       if (!spec.loop) listeners?.onEnded?.()
+    })
+    for (const extra of extras) {
+      startLayer(ctx, extra, window, when, gen)
     }
 
     const startDelayMs = Math.max(0, (when - ctx.currentTime) * 1000)
@@ -141,12 +176,16 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       // Fire early enough that start() still sees a future audio-clock `when`.
       const delayMs = (nextWhen - ctx.currentTime) * 1000 - LOOP_LOOKAHEAD_MS
       armTimer(delayMs, gen, () => {
-        startIteration(ctx, buffer, spec, listeners, output, window, nextWhen, gen)
+        startIteration(ctx, ghost, extras, spec, listeners, window, nextWhen, gen)
       })
     }
   }
 
-  async function play(spec: PhrasePlaySpec, listeners?: PlaybackListeners): Promise<boolean> {
+  async function play(
+    spec: PhrasePlaySpec,
+    listeners?: PlaybackListeners,
+    mix?: PlaybackMix,
+  ): Promise<boolean> {
     stop()
     const gen = generation
     const buffer = getBuffer()
@@ -158,10 +197,33 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     await resumeAudioContext(ctx)
     if (gen !== generation) return false
 
-    const output = ctx.createGain()
-    output.connect(ctx.destination)
-    gain = output
-    startIteration(ctx, buffer, spec, listeners, output, window, ctx.currentTime, gen)
+    const ghostOutput = ctx.createGain()
+    ghostOutput.gain.value = mix
+      ? dbToGain(mix.ghostGainDb ?? 0, mix.ghostMute ?? false)
+      : 1
+    ghostOutput.connect(ctx.destination)
+    outputGains.add(ghostOutput)
+
+    const extras: ScheduledLayer[] = []
+    for (const layer of mix?.extra ?? []) {
+      if (!layer.buffer) continue
+      const output = ctx.createGain()
+      output.gain.value = dbToGain(layer.gainDb, layer.mute ?? false)
+      output.connect(ctx.destination)
+      outputGains.add(output)
+      extras.push({ buffer: layer.buffer, output, offsetMs: 0 })
+    }
+
+    startIteration(
+      ctx,
+      { buffer, output: ghostOutput, offsetMs: window.offsetMs },
+      extras,
+      spec,
+      listeners,
+      window,
+      ctx.currentTime,
+      gen,
+    )
     return true
   }
 
