@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { useProjectRepository } from '../../app/projectRepositoryContext.tsx'
 import type { PlaybackEngine } from '../../audio/engine.ts'
 import { storedLatencyCompMs } from '../../audio/latency.ts'
@@ -16,12 +16,17 @@ import { deriveCompletion } from '../../domain/completion.ts'
 import { markInProgress } from '../../domain/sessionPlan.ts'
 import type { Phrase, Project, Take, VoicePart } from '../../domain/schemas.ts'
 
+export type RecordControlHandle = {
+  flushSaves: () => Promise<void>
+}
+
 export type RecordControlProps = {
   phrase: Phrase
   voicePart: VoicePart
   project: Project
   onProjectChange: (project: Project) => void
   engine: PlaybackEngine
+  ref?: Ref<RecordControlHandle>
 }
 
 function messageFrom(error: unknown, fallback: string): string {
@@ -40,6 +45,7 @@ export function RecordControl({
   project,
   onProjectChange,
   engine,
+  ref,
 }: RecordControlProps) {
   const repo = useProjectRepository()
   const [armed, setArmed] = useState(false)
@@ -55,6 +61,10 @@ export function RecordControl({
 
   projectRef.current = project
   onProjectChangeRef.current = onProjectChange
+
+  useImperativeHandle(ref, () => ({
+    flushSaves: () => saveChainRef.current,
+  }))
 
   const targetTakes =
     phrase.partPlan.find((item) => item.voicePartId === voicePart.id)?.targetTakes ??

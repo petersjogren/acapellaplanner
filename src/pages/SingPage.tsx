@@ -9,7 +9,7 @@ import { SingerShell } from '../ui/shell/SingerShell.tsx'
 import { PartPicker } from '../ui/singer/PartPicker.tsx'
 import { PhraseStage } from '../ui/singer/PhraseStage.tsx'
 import { ProgressRibbon } from '../ui/singer/ProgressRibbon.tsx'
-import { RecordControl } from '../ui/singer/RecordControl.tsx'
+import { RecordControl, type RecordControlHandle } from '../ui/singer/RecordControl.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
@@ -48,10 +48,19 @@ export function SingPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
+  const projectRef = useRef<Project | null>(null)
+  const writeQueueRef = useRef(Promise.resolve())
+  const recordControlRef = useRef<RecordControlHandle>(null)
 
   bufferRef.current = buffer
 
   const projectId = project && typeof project === 'object' ? project.id : undefined
+
+  useEffect(() => {
+    if (project && typeof project === 'object') {
+      projectRef.current = project
+    }
+  }, [project])
 
   useEffect(() => {
     setVoicePartId(null)
@@ -127,14 +136,41 @@ export function SingPage() {
     setPhraseId(suggestion.phraseId)
   }
 
+  function latestProject(): Project {
+    return projectRef.current ?? loaded
+  }
+
+  function handleProjectChange(next: Project) {
+    projectRef.current = next
+    setProject(next)
+  }
+
+  function persistProject(mutate: (current: Project) => Project): Promise<void> {
+    const run = writeQueueRef.current.then(async () => {
+      const current = latestProject()
+      const next = mutate(current)
+      const saved = await repo.saveProject({
+        ...next,
+        completion: deriveCompletion(next),
+      })
+      projectRef.current = saved
+      setProject(saved)
+    })
+    writeQueueRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
   function handlePick(id: string) {
     setSaveError(null)
-    applySuggestion(suggestNext(loaded, { voicePartId: id }), id)
+    applySuggestion(suggestNext(latestProject(), { voicePartId: id }), id)
   }
 
   function handleSurprise() {
     setSaveError(null)
-    applySuggestion(suggestNext(loaded))
+    applySuggestion(suggestNext(latestProject()))
   }
 
   function handleChooseAnother() {
@@ -147,13 +183,9 @@ export function SingPage() {
     if (!part || !phrase) return
     setSaveError(null)
     try {
-      const next = markEnough(loaded, phrase.id, part.id)
-      const saved = await repo.saveProject({
-        ...next,
-        completion: deriveCompletion(next),
-      })
-      setProject(saved)
-      applySuggestion(suggestNext(saved, { voicePartId: part.id }), part.id)
+      await recordControlRef.current?.flushSaves()
+      await persistProject((current) => markEnough(current, phrase.id, part.id))
+      applySuggestion(suggestNext(latestProject(), { voicePartId: part.id }), part.id)
     } catch (err: unknown) {
       setSaveError(err instanceof Error && err.message ? err.message : 'Could not save')
     }
@@ -162,13 +194,12 @@ export function SingPage() {
   function handleNext() {
     if (!part || !phrase) return
     setSaveError(null)
-    const suggestion = suggestNext(markEnough(loaded, phrase.id, part.id), {
-      voicePartId: part.id,
-    })
-    if (suggestion) {
-      setVoicePartId(suggestion.voicePartId)
-      setPhraseId(suggestion.phraseId)
-    }
+    applySuggestion(
+      suggestNext(markEnough(latestProject(), phrase.id, part.id), {
+        voicePartId: part.id,
+      }),
+      part.id,
+    )
   }
 
   const phraseIndex = phrase ? phrases.findIndex((item) => item.id === phrase.id) + 1 : 0
@@ -207,17 +238,18 @@ export function SingPage() {
           </div>
           <RecordControl
             key={`${phrase.id}:${part.id}`}
+            ref={recordControlRef}
             phrase={phrase}
             voicePart={part}
             project={loaded}
-            onProjectChange={(next) => setProject(next)}
+            onProjectChange={handleProjectChange}
             engine={getEngine()}
           />
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <button
               type="button"
               onClick={() => void handleGoodEnough()}
-              className="rounded-pill border border-ink/20 px-5 py-2 text-sm studio-transition hover:border-ink/50"
+              className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50"
             >
               Good enough
             </button>
