@@ -102,6 +102,7 @@ function stubMedia(byteSize = 2048) {
     configurable: true,
     value: { getUserMedia },
   })
+  const stopGate: { current: Promise<void> | null } = { current: null }
 
   class FakeMediaRecorder {
     state = 'inactive'
@@ -114,17 +115,24 @@ function stubMedia(byteSize = 2048) {
     stop() {
       recorderStop()
       this.state = 'inactive'
-      this.ondataavailable?.({
-        data: new Blob([new Uint8Array(byteSize)], { type: this.mimeType }),
-      })
-      this.onstop?.()
+      const finish = () => {
+        this.ondataavailable?.({
+          data: new Blob([new Uint8Array(byteSize)], { type: this.mimeType }),
+        })
+        this.onstop?.()
+      }
+      if (stopGate.current) {
+        void stopGate.current.then(finish)
+      } else {
+        finish()
+      }
     }
     static isTypeSupported() {
       return true
     }
   }
   vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
-  return { getUserMedia, trackStop, recorderStop, stream }
+  return { getUserMedia, trackStop, recorderStop, stream, stopGate }
 }
 
 function renderControl({
@@ -522,5 +530,172 @@ describe('RecordControl', () => {
     expect(typed.defaultPrevented).toBe(false)
     expect(engine.play).toHaveBeenCalledTimes(1)
     input.remove()
+  })
+
+  it('persists a finished take if onEnded fires before MediaRecorder.stop resolves', async () => {
+    const { recorderStop, stopGate } = stubMedia()
+    let releaseStop!: () => void
+    stopGate.current = new Promise<void>((resolve) => {
+      releaseStop = resolve
+    })
+    const repo = mockRepo()
+    const { engine, listeners } = mockEngine()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+
+    renderControl({ engine, repo })
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => {
+      expect(engine.play).toHaveBeenCalled()
+    })
+
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+
+    await waitFor(() => {
+      expect(recorderStop).toHaveBeenCalledTimes(1)
+    })
+    expect(repo.putAudioBlob).not.toHaveBeenCalled()
+
+    listeners.current?.onEnded?.()
+    expect(repo.putAudioBlob).not.toHaveBeenCalled()
+
+    releaseStop()
+    await waitFor(() => {
+      expect(repo.saveProject).toHaveBeenCalledTimes(1)
+    })
+    expect(vi.mocked(repo.saveProject).mock.calls[0]?.[0]?.takes).toHaveLength(1)
+  })
+
+  it('persists a finished take if Space disarms during MediaRecorder.stop', async () => {
+    const { recorderStop, stopGate } = stubMedia()
+    let releaseStop!: () => void
+    stopGate.current = new Promise<void>((resolve) => {
+      releaseStop = resolve
+    })
+    const repo = mockRepo()
+    const { engine, listeners } = mockEngine()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+
+    renderControl({ engine, repo })
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => {
+      expect(engine.play).toHaveBeenCalled()
+    })
+
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+
+    await waitFor(() => {
+      expect(recorderStop).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    expect(engine.stop).toHaveBeenCalled()
+    expect(repo.putAudioBlob).not.toHaveBeenCalled()
+
+    releaseStop()
+    await waitFor(() => {
+      expect(repo.saveProject).toHaveBeenCalledTimes(1)
+    })
+    expect(vi.mocked(repo.saveProject).mock.calls[0]?.[0]?.takes).toHaveLength(1)
+  })
+
+  it('discards an in-progress pass if disarmed before pass complete', async () => {
+    const { recorderStop } = stubMedia()
+    const repo = mockRepo()
+    const { engine, listeners } = mockEngine()
+
+    renderControl({ engine, repo })
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => {
+      expect(engine.play).toHaveBeenCalled()
+    })
+
+    listeners.current?.onPassStart?.()
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+    expect(recorderStop).toHaveBeenCalledTimes(1)
+    expect(repo.putAudioBlob).not.toHaveBeenCalled()
+    expect(repo.saveProject).not.toHaveBeenCalled()
+  })
+
+  it('persists a still-pending take when once-mode onEnded beats onPassComplete', async () => {
+    const repo = mockRepo()
+    const { engine, listeners } = mockEngine()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+
+    renderControl({ engine, repo })
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => {
+      expect(engine.play).toHaveBeenCalled()
+    })
+
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onEnded?.()
+
+    await waitFor(() => {
+      expect(repo.saveProject).toHaveBeenCalledTimes(1)
+    })
+    expect(vi.mocked(repo.saveProject).mock.calls[0]?.[0]?.takes).toHaveLength(1)
+  })
+
+  it('stops the mic and stays retryable when play returns false after getUserMedia', async () => {
+    const { trackStop, getUserMedia } = stubMedia()
+    const { engine } = mockEngine()
+    vi.mocked(engine.play).mockResolvedValueOnce(false)
+
+    renderControl({ engine })
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+    await waitFor(() => {
+      expect(engine.play).toHaveBeenCalledTimes(1)
+    })
+    expect(trackStop).toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Record' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => {
+      expect(engine.play).toHaveBeenCalledTimes(2)
+    })
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('button', { name: 'Record' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+  })
+
+  it('stops the mic when play throws after getUserMedia and leaves Record retryable', async () => {
+    const { trackStop, getUserMedia } = stubMedia()
+    const { engine } = mockEngine()
+    vi.mocked(engine.play).mockRejectedValueOnce(new Error('No audio buffer'))
+
+    renderControl({ engine })
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('No audio buffer')
+    })
+    expect(trackStop).toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Record' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => {
+      expect(engine.play).toHaveBeenCalledTimes(2)
+    })
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

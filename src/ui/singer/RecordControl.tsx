@@ -107,9 +107,28 @@ export function RecordControl({
     onProjectChangeRef.current(saved)
   }
 
+  function queuePersist(rec: StartedRecording) {
+    const stopped = rec.stop()
+    saveChainRef.current = saveChainRef.current
+      .then(async () => {
+        const result = await stopped
+        await persistTake(result)
+      })
+      .catch((err: unknown) => {
+        setError(messageFrom(err, 'Could not save take'))
+      })
+  }
+
+  // Abandon in-progress passes still in pendingRef. Takes whose stop() was
+  // already initiated (pass complete / natural end) stay on the save chain.
   function discardPending() {
     const pending = pendingRef.current.splice(0)
     for (const rec of pending) void rec.stop()
+  }
+
+  function persistPending() {
+    const pending = pendingRef.current.splice(0)
+    for (const rec of pending) queuePersist(rec)
   }
 
   function stopMic() {
@@ -152,21 +171,12 @@ export function RecordControl({
           onPassComplete: () => {
             const rec = pendingRef.current.shift()
             if (!rec) return
-            const stopped = rec.stop()
-            saveChainRef.current = saveChainRef.current
-              .then(async () => {
-                const result = await stopped
-                if (!armedRef.current) return
-                await persistTake(result)
-              })
-              .catch((err: unknown) => {
-                setError(messageFrom(err, 'Could not save take'))
-              })
+            queuePersist(rec)
           },
           onEnded: () => {
             armedRef.current = false
             setArmed(false)
-            discardPending()
+            persistPending()
             stopMic()
           },
         },
@@ -175,17 +185,20 @@ export function RecordControl({
         armedRef.current = false
         setArmed(false)
         discardPending()
+        stopMic()
         return
       }
       setArmed(true)
     } catch (err: unknown) {
+      const hadMic = streamRef.current != null
       armedRef.current = false
       setArmed(false)
       discardPending()
+      stopMic()
       setError(
         messageFrom(
           err,
-          streamRef.current ? 'Could not start recording' : 'Microphone permission is needed to record',
+          hadMic ? 'Could not start recording' : 'Microphone permission is needed to record',
         ),
       )
     } finally {
