@@ -56,7 +56,11 @@ export function loadDeviceProfile(): DeviceProfile | null {
     ) {
       return null
     }
-    return parsed as DeviceProfile
+    const profile = parsed as DeviceProfile
+    if (profile.latencyCompMs < 0 || profile.latencyCompMs > MAX_LATENCY_MS) {
+      return null
+    }
+    return profile
   } catch {
     return null
   }

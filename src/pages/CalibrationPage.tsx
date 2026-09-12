@@ -78,8 +78,8 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
         ) : (
           <button
             type="button"
-            aria-label="Measure"
             disabled={status === 'listening'}
+            aria-live="polite"
             onClick={() => void handleMeasure()}
             className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red disabled:opacity-50"
           >
@@ -87,10 +87,18 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
           </button>
         )}
       </div>
-      {measuredMs != null ? (
-        <p className="mt-6 font-display text-xl" aria-label="Measured latency">
-          {measuredMs} ms
+      {status === 'listening' ? (
+        <p role="status" aria-live="polite" className="sr-only">
+          Listening…
         </p>
+      ) : null}
+      {measuredMs != null ? (
+        <div className="mt-6">
+          <h2 className="text-sm text-ink-muted">Measured latency</h2>
+          <p className="font-display text-xl" aria-live="polite">
+            {measuredMs} ms
+          </p>
+        </div>
       ) : null}
       {status === 'failed' ? (
         <p role="alert" className="mt-6 text-record-red">

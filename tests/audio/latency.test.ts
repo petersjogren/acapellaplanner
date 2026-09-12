@@ -6,6 +6,7 @@ import {
   loadDeviceProfile,
   measureClapLatency,
   saveDeviceProfile,
+  storedLatencyCompMs,
   type DeviceProfile,
 } from '../../src/audio/latency.ts'
 
@@ -97,6 +98,38 @@ describe('device profile storage', () => {
     const { store } = mockLocalStorage()
     store.set(DEVICE_PROFILE_STORAGE_KEY, JSON.stringify({ latencyCompMs: 12 }))
     expect(loadDeviceProfile()).toBeNull()
+  })
+
+  it('treats shaped JSON with out-of-range latencyCompMs as no profile', () => {
+    const { store } = mockLocalStorage()
+    const base = {
+      updatedAt: '2026-09-12T10:00:00.000Z',
+      userAgent: 'TestAgent/1.0',
+    }
+
+    store.set(DEVICE_PROFILE_STORAGE_KEY, JSON.stringify({ ...base, latencyCompMs: -1 }))
+    expect(loadDeviceProfile()).toBeNull()
+    expect(storedLatencyCompMs()).toBe(0)
+
+    store.set(DEVICE_PROFILE_STORAGE_KEY, JSON.stringify({ ...base, latencyCompMs: 1e9 }))
+    expect(loadDeviceProfile()).toBeNull()
+    expect(storedLatencyCompMs()).toBe(0)
+  })
+
+  it('loads profiles on the 0ms and 500ms bounds', () => {
+    const { store } = mockLocalStorage()
+    const base = {
+      updatedAt: '2026-09-12T10:00:00.000Z',
+      userAgent: 'TestAgent/1.0',
+    }
+
+    store.set(DEVICE_PROFILE_STORAGE_KEY, JSON.stringify({ ...base, latencyCompMs: 0 }))
+    expect(loadDeviceProfile()?.latencyCompMs).toBe(0)
+    expect(storedLatencyCompMs()).toBe(0)
+
+    store.set(DEVICE_PROFILE_STORAGE_KEY, JSON.stringify({ ...base, latencyCompMs: 500 }))
+    expect(loadDeviceProfile()?.latencyCompMs).toBe(500)
+    expect(storedLatencyCompMs()).toBe(500)
   })
 })
 

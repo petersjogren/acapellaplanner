@@ -37,7 +37,34 @@ describe('CalibrationPage', () => {
     expect(
       screen.getByText('Clap with the tone so we can line up your headphones.'),
     ).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Measure' })).toBeTruthy()
+    const measure = screen.getByRole('button', { name: 'Play the tone' })
+    expect(measure.getAttribute('aria-label')).toBeNull()
+  })
+
+  it('announces Listening while measuring', async () => {
+    let resolveListen: (ms: number) => void = () => undefined
+    const io: ClapListenIo = {
+      playBeep: vi.fn().mockResolvedValue(1000),
+      listenUntilPeak: vi.fn(
+        () =>
+          new Promise<number>((resolve) => {
+            resolveListen = resolve
+          }),
+      ),
+    }
+
+    renderPage(io)
+    fireEvent.click(screen.getByRole('button', { name: 'Play the tone' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Listening…' })).toBeTruthy()
+    })
+    expect(screen.getByRole('status').textContent).toMatch(/Listening/)
+
+    resolveListen(1040)
+    await waitFor(() => {
+      expect(screen.getByText('40 ms')).toBeTruthy()
+    })
   })
 
   it('shows the measured ms after a clap and Keep saves the profile', async () => {
@@ -47,11 +74,13 @@ describe('CalibrationPage', () => {
     }
 
     renderPage(io)
-    fireEvent.click(screen.getByRole('button', { name: 'Measure' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play the tone' }))
 
     await waitFor(() => {
-      expect(screen.getByText(/87\s*ms/)).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Measured latency' })).toBeTruthy()
+      expect(screen.getByText('87 ms')).toBeTruthy()
     })
+    expect(screen.getByText('87 ms').getAttribute('aria-label')).toBeNull()
     expect(io.playBeep).toHaveBeenCalledTimes(1)
     expect(io.listenUntilPeak).toHaveBeenCalledWith(2000)
 
@@ -71,14 +100,14 @@ describe('CalibrationPage', () => {
     }
 
     renderPage(io)
-    fireEvent.click(screen.getByRole('button', { name: 'Measure' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play the tone' }))
     await waitFor(() => {
-      expect(screen.getByText(/40\s*ms/)).toBeTruthy()
+      expect(screen.getByText('40 ms')).toBeTruthy()
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     await waitFor(() => {
-      expect(screen.getByText(/91\s*ms/)).toBeTruthy()
+      expect(screen.getByText('91 ms')).toBeTruthy()
     })
     expect(io.playBeep).toHaveBeenCalledTimes(2)
   })
@@ -89,7 +118,7 @@ describe('CalibrationPage', () => {
       listenUntilPeak: vi.fn().mockResolvedValue(2000),
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Measure' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play the tone' }))
 
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toMatch(/missed that clap/i)
