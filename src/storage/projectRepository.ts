@@ -40,6 +40,10 @@ export function createProjectRepository(database: AcapellaDB = defaultDb) {
     async getAudioBlob(id: string): Promise<AudioBlobRecord | undefined> {
       return database.audioBlobs.get(id)
     },
+
+    async deleteAudioBlob(id: string): Promise<void> {
+      await database.audioBlobs.delete(id)
+    },
   }
 }
 
@@ -53,3 +57,4 @@ export const saveProject = defaultRepository.saveProject
 export const deleteProject = defaultRepository.deleteProject
 export const putAudioBlob = defaultRepository.putAudioBlob
 export const getAudioBlob = defaultRepository.getAudioBlob
+export const deleteAudioBlob = defaultRepository.deleteAudioBlob

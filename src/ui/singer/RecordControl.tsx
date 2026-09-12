@@ -2,6 +2,7 @@ import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'reac
 import { useProjectRepository } from '../../app/projectRepositoryContext.tsx'
 import type { PlaybackEngine } from '../../audio/engine.ts'
 import { clicksForPhrase } from '../../audio/click.ts'
+import { decodeAudioFile } from '../../audio/decode.ts'
 import { storedLatencyCompMs } from '../../audio/latency.ts'
 import {
   createAudioBlobLoader,
@@ -10,6 +11,7 @@ import {
   keeperTakesForPhrase,
   loadPlaybackMixForPhrase,
   mixPresetById,
+  type PlaybackMix,
 } from '../../audio/mix.ts'
 import {
   isEmptyTake,
@@ -22,6 +24,7 @@ import {
 } from '../../audio/record.ts'
 import { deriveCompletion } from '../../domain/completion.ts'
 import { markInProgress } from '../../domain/sessionPlan.ts'
+import { rateTake, removeTake } from '../../domain/takes.ts'
 import type { Phrase, Project, Take, VoicePart } from '../../domain/schemas.ts'
 
 export type RecordControlHandle = {
@@ -48,6 +51,15 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
 }
 
+function takeAgainstGhostMix(takeBuffer: AudioBuffer): PlaybackMix {
+  return {
+    ghostGainDb: 0,
+    ghostMute: false,
+    extra: [{ buffer: takeBuffer, gainDb: 0, mute: false, pan: 0 }],
+    click: false,
+  }
+}
+
 export function RecordControl({
   phrase,
   voicePart,
@@ -60,6 +72,9 @@ export function RecordControl({
   const repo = useProjectRepository()
   const [armed, setArmed] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lastTakeId, setLastTakeId] = useState<string | null>(null)
+  const [hearing, setHearing] = useState(false)
+  const [busy, setBusy] = useState(false)
   const armedRef = useRef(false)
   const armingRef = useRef(false)
   const projectRef = useRef(project)
@@ -69,10 +84,13 @@ export function RecordControl({
   const saveChainRef = useRef(Promise.resolve())
   const toggleArmRef = useRef<() => void>(() => undefined)
   const mixPresetIdRef = useRef(mixPresetId)
+  const hearGenerationRef = useRef(0)
+  const lastTakeIdRef = useRef<string | null>(null)
 
   projectRef.current = project
   onProjectChangeRef.current = onProjectChange
   mixPresetIdRef.current = mixPresetId
+  lastTakeIdRef.current = lastTakeId
 
   useImperativeHandle(ref, () => ({
     flushSaves: () => saveChainRef.current,
@@ -81,14 +99,17 @@ export function RecordControl({
   const targetTakes =
     phrase.partPlan.find((item) => item.voicePartId === voicePart.id)?.targetTakes ??
     voicePart.targetTakes
-  const takeCount = project.takes.filter(
+  const cellTakes = project.takes.filter(
     (item) => item.phraseId === phrase.id && item.voicePartId === voicePart.id,
-  ).length
+  )
+  const takeCount = cellTakes.length
+  const lastTake = lastTakeId ? cellTakes.find((item) => item.id === lastTakeId) : undefined
+  const reviewing = lastTake != null
 
-  async function persistTake(result: RecordingResult) {
+  async function persistTake(result: RecordingResult): Promise<string | null> {
     if (isEmptyTake(result)) {
       setError('nothing caught — try again')
-      return
+      return null
     }
     setError(null)
     const audioBlobId = crypto.randomUUID()
@@ -133,6 +154,7 @@ export function RecordControl({
     })
     projectRef.current = saved
     onProjectChangeRef.current(saved)
+    return take.id
   }
 
   function queuePersist(rec: StartedRecording) {
@@ -140,7 +162,11 @@ export function RecordControl({
     saveChainRef.current = saveChainRef.current
       .then(async () => {
         const result = await stopped
-        await persistTake(result)
+        const takeId = await persistTake(result)
+        if (takeId) {
+          setLastTakeId(takeId)
+          lastTakeIdRef.current = takeId
+        }
       })
       .catch((err: unknown) => {
         setError(messageFrom(err, 'Could not save take'))
@@ -164,6 +190,11 @@ export function RecordControl({
     streamRef.current = null
   }
 
+  function stopHearing() {
+    hearGenerationRef.current += 1
+    setHearing(false)
+  }
+
   function disarm() {
     armedRef.current = false
     setArmed(false)
@@ -173,9 +204,11 @@ export function RecordControl({
   }
 
   async function arm() {
-    if (armingRef.current || armedRef.current) return
+    // Use lastTakeIdRef — React state `reviewing` can still be true in the same tick as scrap.
+    if (armingRef.current || armedRef.current || lastTakeIdRef.current) return
     armingRef.current = true
     setError(null)
+    stopHearing()
     try {
       if (!streamRef.current) {
         streamRef.current = await requestMicStream()
@@ -194,6 +227,7 @@ export function RecordControl({
         return
       }
       const clickTimesMs = clicksForPhrase(phrase, projectRef.current.sections)
+      // One pass per Record press so the singer can hear the take before another.
       const started = await engine.play(
         {
           startMs: phrase.startMs,
@@ -201,7 +235,7 @@ export function RecordControl({
           preRollMs: phrase.preRollMs ?? 0,
           postRollMs: phrase.postRollMs,
           gapMs: phrase.loopDefault.gapMs,
-          loop: phrase.loopDefault.mode === 'phrase-loop',
+          loop: false,
         },
         {
           onPassStart: () => {
@@ -248,12 +282,128 @@ export function RecordControl({
   }
 
   function toggleArm() {
-    if (armingRef.current) return
+    if (armingRef.current || busy) return
+    if (lastTakeIdRef.current) return
     if (armedRef.current) disarm()
     else void arm()
   }
 
   toggleArmRef.current = toggleArm
+
+  async function handleHear() {
+    if (!lastTakeIdRef.current || busy) return
+    const takeId = lastTakeIdRef.current
+    const generation = ++hearGenerationRef.current
+    setError(null)
+    setHearing(true)
+    try {
+      const take = projectRef.current.takes.find((item) => item.id === takeId)
+      if (!take) {
+        setHearing(false)
+        return
+      }
+      const record = await repo.getAudioBlob(take.audioBlobId)
+      if (generation !== hearGenerationRef.current) return
+      if (!record) {
+        setError('Could not load take')
+        setHearing(false)
+        return
+      }
+      const decoded = await decodeAudioFile(record.blob)
+      if (generation !== hearGenerationRef.current) return
+      const started = await engine.play(
+        {
+          startMs: phrase.startMs,
+          endMs: phrase.endMs,
+          preRollMs: 0,
+          postRollMs: 0,
+          gapMs: 0,
+          loop: false,
+        },
+        {
+          onEnded: () => {
+            if (generation === hearGenerationRef.current) setHearing(false)
+          },
+        },
+        takeAgainstGhostMix(decoded.buffer),
+      )
+      if (generation !== hearGenerationRef.current) return
+      if (!started) setHearing(false)
+    } catch (err: unknown) {
+      if (generation !== hearGenerationRef.current) return
+      setHearing(false)
+      setError(messageFrom(err, 'Could not play take'))
+    }
+  }
+
+  function handleStopHear() {
+    stopHearing()
+    engine.stop()
+  }
+
+  async function handleKeep() {
+    if (!lastTakeIdRef.current || busy) return
+    const takeId = lastTakeIdRef.current
+    setBusy(true)
+    setError(null)
+    stopHearing()
+    engine.stop()
+    try {
+      await saveChainRef.current
+      const current = projectRef.current
+      const next = rateTake(current, takeId, 'keeper')
+      const saved = await repo.saveProject({
+        ...next,
+        completion: deriveCompletion(next),
+      })
+      projectRef.current = saved
+      onProjectChangeRef.current(saved)
+      setLastTakeId(null)
+      lastTakeIdRef.current = null
+    } catch (err: unknown) {
+      setError(messageFrom(err, 'Could not keep take'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleScrap(andArm: boolean) {
+    if (!lastTakeIdRef.current || busy) return
+    const takeId = lastTakeIdRef.current
+    setBusy(true)
+    setError(null)
+    stopHearing()
+    engine.stop()
+    try {
+      await saveChainRef.current
+      const current = projectRef.current
+      const { project: without, audioBlobId } = removeTake(current, takeId)
+      const saved = await repo.saveProject({
+        ...without,
+        completion: deriveCompletion(without),
+      })
+      projectRef.current = saved
+      onProjectChangeRef.current(saved)
+      if (audioBlobId) {
+        try {
+          await repo.deleteAudioBlob(audioBlobId)
+        } catch {
+          // Blob cleanup is best-effort; take metadata is already gone.
+        }
+      }
+      setLastTakeId(null)
+      lastTakeIdRef.current = null
+      if (andArm) {
+        setBusy(false)
+        void arm()
+        return
+      }
+    } catch (err: unknown) {
+      setError(messageFrom(err, 'Could not scrap take'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -261,6 +411,7 @@ export function RecordControl({
       if (isTextEntryTarget(event.target)) return
       event.preventDefault()
       if (event.repeat) return
+      if (lastTakeIdRef.current) return
       toggleArmRef.current()
     }
     window.addEventListener('keydown', onKeyDown)
@@ -272,6 +423,7 @@ export function RecordControl({
   useEffect(() => {
     return () => {
       armedRef.current = false
+      hearGenerationRef.current += 1
       engine.stop()
       discardPending()
       streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -284,17 +436,76 @@ export function RecordControl({
       <p className="text-sm text-ink-muted" aria-label="Takes">
         {takeCount} / {targetTakes}
       </p>
-      <button
-        type="button"
-        aria-label="Record"
-        aria-pressed={armed}
-        onClick={() => toggleArm()}
-        className={`flex h-24 w-24 items-center justify-center rounded-full text-sm font-medium text-paper studio-transition ${
-          armed ? 'record-lamp' : 'bg-record-red hover:bg-ink'
-        }`}
-      >
-        Record
-      </button>
+
+      {reviewing && lastTake ? (
+        <div
+          className="w-full max-w-md rounded-lg border border-ink/15 bg-paper px-5 py-4 shadow-sm"
+          aria-label="Last take"
+        >
+          <p className="font-display text-lg font-semibold tracking-tight">
+            Take {lastTake.takeIndex} saved
+          </p>
+          <p className="mt-1 text-sm text-ink/70">Hear it back. Keep it, or scrap and sing again.</p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            {hearing ? (
+              <button
+                type="button"
+                onClick={handleStopHear}
+                className="min-h-11 rounded-pill border border-ink/20 px-5 py-2.5 text-sm font-medium studio-transition hover:border-ink/50"
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleHear()}
+                disabled={busy}
+                className="min-h-11 rounded-pill border border-ink/20 px-5 py-2.5 text-sm font-medium studio-transition hover:border-ink/50 disabled:opacity-50"
+              >
+                Hear it
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleKeep()}
+              disabled={busy}
+              className="min-h-11 rounded-pill bg-gold/90 px-5 py-2.5 text-sm font-medium text-ink studio-transition hover:bg-gold disabled:opacity-50"
+            >
+              Keep it
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleScrap(true)}
+              disabled={busy}
+              className="min-h-11 rounded-pill bg-record-red px-5 py-2.5 text-sm font-medium text-paper studio-transition hover:bg-ink disabled:opacity-50"
+            >
+              Scrap &amp; again
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleScrap(false)}
+              disabled={busy}
+              className="min-h-11 text-sm text-ink-muted underline-offset-4 hover:underline disabled:opacity-50"
+            >
+              Scrap
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          aria-label="Record"
+          aria-pressed={armed}
+          onClick={() => toggleArm()}
+          disabled={busy}
+          className={`flex h-24 w-24 items-center justify-center rounded-full text-sm font-medium text-paper studio-transition disabled:opacity-50 ${
+            armed ? 'record-lamp' : 'bg-record-red hover:bg-ink'
+          }`}
+        >
+          Record
+        </button>
+      )}
+
       {error ? (
         <p role="alert" className="text-record-red">
           {error}

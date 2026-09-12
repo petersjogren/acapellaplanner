@@ -75,6 +75,7 @@ function mockRepo(overrides: Partial<ProjectRepository> = {}): ProjectRepository
     deleteProject: vi.fn(),
     putAudioBlob: vi.fn(async (record) => record.id),
     getAudioBlob: vi.fn(),
+    deleteAudioBlob: vi.fn(async () => undefined),
     ...overrides,
   }
 }
@@ -222,7 +223,7 @@ describe('RecordControl', () => {
         preRollMs: 250,
         postRollMs: 100,
         gapMs: 400,
-        loop: true,
+        loop: false,
       }),
       expect.objectContaining({
         onPassStart: expect.any(Function),
@@ -232,6 +233,7 @@ describe('RecordControl', () => {
         ghostGainDb: 0,
         ghostMute: false,
         extra: [],
+        click: true,
       }),
     )
     expect(screen.getByRole('button', { name: 'Record' }).getAttribute('aria-pressed')).toBe(
@@ -396,49 +398,168 @@ describe('RecordControl', () => {
     expect(recorderStop).toHaveBeenCalledTimes(1)
     expect(repo.saveProject).not.toHaveBeenCalled()
 
+    release()
+    await waitFor(() => {
+      expect(repo.saveProject).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('shows listen-back after a take is saved', async () => {
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { onProjectChange, rerender } = renderControl({ engine, repo })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
     now += 10
     listeners.current?.onPassStart?.()
     now += 500
     listeners.current?.onPassComplete?.()
+    listeners.current?.onEnded?.()
 
-    expect(recorderStop).toHaveBeenCalledTimes(2)
-    expect(repo.saveProject).not.toHaveBeenCalled()
-
-    release()
     await waitFor(() => {
-      expect(repo.saveProject).toHaveBeenCalledTimes(2)
+      expect(repo.saveProject).toHaveBeenCalledTimes(1)
     })
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
+    rerender(saved)
+    expect(onProjectChange).toHaveBeenCalledWith(saved)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Last take')).toBeTruthy()
+    })
+    expect(screen.getByRole('button', { name: 'Hear it' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Keep it' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Scrap & again/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Record' })).toBeNull()
   })
 
-  it('increments takeIndex for each completed pass', async () => {
+  it('Keep it marks the take as keeper and returns to Record', async () => {
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { rerender } = renderControl({ engine, repo })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+    listeners.current?.onEnded?.()
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
+    rerender(saved)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Keep it' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it' }))
+
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(2))
+    const kept = vi.mocked(repo.saveProject).mock.calls[1]?.[0]
+    expect(kept?.takes[0]?.rating).toBe('keeper')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Record' })).toBeTruthy())
+  })
+
+  it('Scrap removes the take and its blob', async () => {
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { rerender } = renderControl({ engine, repo })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+    listeners.current?.onEnded?.()
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
+    const blobId = saved.takes[0]!.audioBlobId
+    rerender(saved)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Scrap' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Scrap' }))
+
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(2))
+    const after = vi.mocked(repo.saveProject).mock.calls[1]?.[0]
+    expect(after?.takes).toHaveLength(0)
+    expect(repo.deleteAudioBlob).toHaveBeenCalledWith(blobId)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Record' })).toBeTruthy())
+  })
+
+  it('Scrap & again removes the take and can record again', async () => {
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    let current = projectWith()
+    const onProjectChange = vi.fn((next: Project) => {
+      current = next
+      rerender(next)
+    })
+    const { rerender } = renderControl({ engine, repo, project: current, onProjectChange })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+    listeners.current?.onEnded?.()
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
+    // Parent would push the saved take back; do the same so review UI mounts.
+    onProjectChange(vi.mocked(repo.saveProject).mock.calls[0]![0])
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Scrap & again/ })).toBeTruthy())
+    vi.mocked(engine.play).mockClear()
+    fireEvent.click(screen.getByRole('button', { name: /Scrap & again/ }))
+
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(repo.saveProject).mock.calls[1]?.[0].takes).toHaveLength(0)
+    // onProjectChange from scrap re-renders; arm() should start a new pass.
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
+  })
+
+  it('increments takeIndex across separate record presses', async () => {
     const { engine, listeners } = mockEngine()
     const repo = mockRepo()
     let now = 1_000_000
     vi.spyOn(Date, 'now').mockImplementation(() => now)
 
-    renderControl({ engine, repo })
+    const { rerender } = renderControl({ engine, repo })
     fireEvent.click(screen.getByRole('button', { name: 'Record' }))
-    await waitFor(() => {
-      expect(engine.play).toHaveBeenCalled()
-    })
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
 
     now += 10
     listeners.current?.onPassStart?.()
     now += 500
     listeners.current?.onPassComplete?.()
-    await waitFor(() => {
-      expect(repo.saveProject).toHaveBeenCalledTimes(1)
-    })
+    listeners.current?.onEnded?.()
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
+    const first = vi.mocked(repo.saveProject).mock.calls[0]![0]
+    rerender(first)
 
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Keep it' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it' }))
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(2))
+    const kept = vi.mocked(repo.saveProject).mock.calls[1]![0]
+    rerender(kept)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Record' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalledTimes(2))
     now += 10
     listeners.current?.onPassStart?.()
     now += 500
     listeners.current?.onPassComplete?.()
-    await waitFor(() => {
-      expect(repo.saveProject).toHaveBeenCalledTimes(2)
-    })
+    listeners.current?.onEnded?.()
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(3))
 
-    const second = vi.mocked(repo.saveProject).mock.calls[1]?.[0]
+    const second = vi.mocked(repo.saveProject).mock.calls[2]?.[0]
     expect(second?.takes).toHaveLength(2)
     expect(second?.takes.map((item) => item.takeIndex)).toEqual([1, 2])
     expect(second?.takes[1]?.notes).toBe('S1_p1_t2')
