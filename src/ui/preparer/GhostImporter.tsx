@@ -39,6 +39,7 @@ export function GhostImporter({
     setDecoding(true)
     setError(null)
     try {
+      // Decodes on the playback singleton AudioContext (decodeAudioFile default).
       const decoded = await decodeAudioFile(file)
       await onImported({
         blob: file,

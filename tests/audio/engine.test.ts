@@ -34,6 +34,7 @@ describe('createPlaybackEngine', () => {
   let sources: FakeSource[]
   let gains: FakeGain[]
   let destination: { kind: string }
+  let fakeCtx: { currentTime: number; state: AudioContextState; resume: ReturnType<typeof vi.fn> }
 
   beforeEach(() => {
     sources = []
@@ -75,6 +76,7 @@ describe('createPlaybackEngine', () => {
 
     vi.stubGlobal('AudioContext', FakeAudioContext)
     vi.useFakeTimers()
+    fakeCtx = getAudioContext() as unknown as typeof fakeCtx
   })
 
   afterEach(async () => {
@@ -94,10 +96,11 @@ describe('createPlaybackEngine', () => {
 
   it('starts a BufferSource once with offset and duration in seconds', async () => {
     const engine = engineWith(buffer())
-    await engine.play(
+    const started = await engine.play(
       spec({ startMs: 1000, endMs: 3000, preRollMs: 250, postRollMs: 100, loop: false }),
     )
 
+    expect(started).toBe(true)
     expect(sources).toHaveLength(1)
     expect(gains).toHaveLength(1)
     expect(gains[0]?.connect).toHaveBeenCalledWith(destination)
@@ -128,13 +131,36 @@ describe('createPlaybackEngine', () => {
     expect(sources).toHaveLength(1)
     expect(sources[0]?.start).toHaveBeenCalledWith(1, 0, 2)
 
-    await vi.advanceTimersByTimeAsync(2400)
+    // period = 2400ms; first lookahead fires ~100ms early (wall +2300ms)
+    fakeCtx.currentTime = 3.3
+    await vi.advanceTimersByTimeAsync(2300)
     expect(sources).toHaveLength(2)
     expect(sources[1]?.start).toHaveBeenCalledWith(3.4, 0, 2)
+    const secondWhen = sources[1]?.start.mock.calls[0]?.[0] as number
+    expect(secondWhen).toBeGreaterThan(fakeCtx.currentTime)
 
+    // Second iteration arms next delay from live currentTime (3.3 → next 5.8 → 2400ms)
+    fakeCtx.currentTime = 5.7
     await vi.advanceTimersByTimeAsync(2400)
     expect(sources).toHaveLength(3)
     expect(sources[2]?.start).toHaveBeenCalledWith(5.8, 0, 2)
+    const thirdWhen = sources[2]?.start.mock.calls[0]?.[0] as number
+    expect(thirdWhen).toBeGreaterThan(fakeCtx.currentTime)
+  })
+
+  it('invokes loop start() with when > currentTime (lookahead on audio clock)', async () => {
+    const engine = engineWith(buffer())
+    await engine.play(spec({ loop: true, gapMs: 400, endMs: 2000 }))
+
+    // First start at audioNow=1; next deadline = 1 + 2.4 = 3.4
+    // Lookahead fires 100ms early. Advance wall clock almost to fire, then set audio clock.
+    fakeCtx.currentTime = 3.3 // still before when=3.4
+    await vi.advanceTimersByTimeAsync(2300)
+
+    expect(sources).toHaveLength(2)
+    const whenAtCall = sources[1]?.start.mock.calls[0]?.[0] as number
+    expect(whenAtCall).toBe(3.4)
+    expect(whenAtCall).toBeGreaterThan(fakeCtx.currentTime)
   })
 
   it('stop() cancels further loop iterations via a generation token', async () => {
@@ -149,6 +175,35 @@ describe('createPlaybackEngine', () => {
 
     await vi.advanceTimersByTimeAsync(10_000)
     expect(sources).toHaveLength(1)
+  })
+
+  it('returns false and does not start audio when stop() cancels during resume', async () => {
+    const engine = engineWith(buffer())
+    const ctx = getAudioContext() as unknown as {
+      resume: ReturnType<typeof vi.fn>
+      state: AudioContextState
+    }
+
+    let resolveResume: (() => void) | undefined
+    ctx.resume = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveResume = () => {
+            ctx.state = 'running'
+            resolve()
+          }
+        }),
+    )
+
+    const playPromise = engine.play(spec())
+    // Allow play() to reach the pending resume
+    await Promise.resolve()
+    engine.stop()
+    resolveResume?.()
+
+    await expect(playPromise).resolves.toBe(false)
+    expect(sources).toHaveLength(0)
+    expect(gains).toHaveLength(0)
   })
 
   it('stop() is idempotent', async () => {

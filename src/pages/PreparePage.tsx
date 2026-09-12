@@ -66,6 +66,7 @@ export function PreparePage() {
       .then(async (record) => {
         if (!record || cancelled) return
         try {
+          // Decode on the playback singleton so the buffer is usable for play().
           const decoded = await decodeAudioFile(record.blob)
           if (!cancelled) setBuffer(decoded.buffer)
         } catch {
@@ -186,7 +187,7 @@ export function PreparePage() {
     if (!selectedPhrase) return
     setPlayError(null)
     try {
-      await getEngine().play(
+      const started = await getEngine().play(
         {
           startMs: selectedPhrase.startMs,
           endMs: selectedPhrase.endMs,
@@ -199,7 +200,8 @@ export function PreparePage() {
           onEnded: () => setPlaying(false),
         },
       )
-      setPlaying(true)
+      // play() returns false if Stop cancelled during AudioContext resume
+      setPlaying(started)
     } catch (err: unknown) {
       setPlaying(false)
       setPlayError(err instanceof Error && err.message ? err.message : 'Could not play phrase')

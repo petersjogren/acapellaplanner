@@ -1,3 +1,5 @@
+import { getAudioContext } from './context.ts'
+
 export type DecodedAudio = {
   buffer: AudioBuffer
   durationMs: number
@@ -13,15 +15,18 @@ export function formatDuration(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}.${tenths}`
 }
 
+/**
+ * Decode audio on the playback AudioContext (singleton by default).
+ * Do not decode on a throwaway context that is then closed — Safari can reject
+ * buffers originating from closed contexts.
+ */
 export async function decodeAudioFile(
   file: File | Blob,
-  audioContext?: AudioContext,
+  audioContext: AudioContext = getAudioContext(),
 ): Promise<DecodedAudio> {
-  const ctx = audioContext ?? new AudioContext()
-  const ownsContext = audioContext === undefined
   try {
     const arrayBuffer = await file.arrayBuffer()
-    const buffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
+    const buffer = await audioContext.decodeAudioData(arrayBuffer.slice(0))
     return {
       buffer,
       durationMs: buffer.duration * 1000,
@@ -31,9 +36,5 @@ export async function decodeAudioFile(
     throw new Error(
       error instanceof Error && error.message ? error.message : 'Could not decode audio file',
     )
-  } finally {
-    if (ownsContext) {
-      await ctx.close()
-    }
   }
 }

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { closeAudioContext, getAudioContext } from '../../src/audio/context.ts'
 import { decodeAudioFile, formatDuration } from '../../src/audio/decode.ts'
 
 describe('formatDuration', () => {
@@ -26,7 +27,8 @@ describe('formatDuration', () => {
 })
 
 describe('decodeAudioFile', () => {
-  afterEach(() => {
+  afterEach(async () => {
+    await closeAudioContext()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -52,39 +54,45 @@ describe('decodeAudioFile', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
-  it('creates and closes an AudioContext when none is provided', async () => {
+  it('uses the playback singleton AudioContext by default and does not close it', async () => {
     const buffer = mockBuffer(1, 44100)
     const decodeAudioData = vi.fn().mockResolvedValue(buffer)
     const close = vi.fn().mockResolvedValue(undefined)
 
     class FakeAudioContext {
+      state: AudioContextState = 'running'
       decodeAudioData = decodeAudioData
       close = close
     }
 
     vi.stubGlobal('AudioContext', FakeAudioContext)
 
+    const singleton = getAudioContext()
     const result = await decodeAudioFile(new Blob([new Uint8Array([9])]))
 
     expect(result.durationMs).toBe(1000)
     expect(result.sampleRate).toBe(44100)
-    expect(close).toHaveBeenCalledTimes(1)
+    expect(decodeAudioData).toHaveBeenCalledTimes(1)
+    expect(close).not.toHaveBeenCalled()
+    expect(getAudioContext()).toBe(singleton)
   })
 
-  it('wraps decode failures and still closes an owned context', async () => {
+  it('wraps decode failures without closing the shared context', async () => {
     const decodeAudioData = vi.fn().mockRejectedValue(new Error('EncodingError'))
     const close = vi.fn().mockResolvedValue(undefined)
 
     class FakeAudioContext {
+      state: AudioContextState = 'running'
       decodeAudioData = decodeAudioData
       close = close
     }
 
     vi.stubGlobal('AudioContext', FakeAudioContext)
+    getAudioContext()
 
     await expect(decodeAudioFile(new Blob([new Uint8Array([9])]))).rejects.toThrow(
       'EncodingError',
     )
-    expect(close).toHaveBeenCalledTimes(1)
+    expect(close).not.toHaveBeenCalled()
   })
 })

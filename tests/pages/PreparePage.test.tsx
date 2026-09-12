@@ -496,16 +496,18 @@ describe('PreparePage phrase playback', () => {
   let repo: ProjectRepository
   let projectId: string
   let sources: Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }>
+  let resumeImpl: (ctx: { state: AudioContextState }) => Promise<void>
 
   beforeEach(async () => {
     sources = []
+    resumeImpl = async (ctx) => {
+      ctx.state = 'running'
+    }
     class FakeAudioContext {
       state: AudioContextState = 'suspended'
       currentTime = 1
       destination = {}
-      resume = vi.fn(async () => {
-        this.state = 'running'
-      })
+      resume = vi.fn(async () => resumeImpl(this))
       close = vi.fn(async () => {
         this.state = 'closed'
       })
@@ -621,6 +623,7 @@ describe('PreparePage phrase playback', () => {
       expect(sources).toHaveLength(1)
     })
     expect(sources[0]?.start).toHaveBeenCalledWith(1, 0.75, 2.35)
+    expect(screen.getByText('Playing')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Loop' }))
     await waitFor(() => {
@@ -631,5 +634,36 @@ describe('PreparePage phrase playback', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     expect(screen.queryByText('Playing')).toBeNull()
+  })
+
+  it('does not stay on Playing when Stop cancels during AudioContext resume', async () => {
+    let resolveResume: (() => void) | undefined
+    resumeImpl = () =>
+      new Promise<void>((resolve) => {
+        resolveResume = () => resolve()
+      })
+
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByText('Phrase 1')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play once' })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play once' }))
+    // Resume is pending — user hits Stop before it completes
+    await waitFor(() => {
+      expect(resolveResume).toBeTypeOf('function')
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    resolveResume?.()
+
+    await waitFor(() => {
+      expect(screen.queryByText('Playing')).toBeNull()
+    })
+    expect(sources).toHaveLength(0)
   })
 })

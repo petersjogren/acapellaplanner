@@ -1,5 +1,6 @@
 import { getAudioContext, resumeAudioContext } from './context.ts'
 import {
+  computeLoopDeadlines,
   computePlayWindow,
   phraseEnterDelayMs,
   type PhrasePlaySpec,
@@ -8,13 +9,17 @@ import {
 export type { PhrasePlaySpec, PlayWindow } from './schedule.ts'
 export { computeLoopDeadlines, computePlayWindow, phraseEnterDelayMs } from './schedule.ts'
 
+/** How far ahead of a loop deadline we create/start the next BufferSource. */
+const LOOP_LOOKAHEAD_MS = 100
+
 export type PlaybackListeners = {
   onEnded?: () => void
   onPhraseEnter?: () => void
 }
 
 export type PlaybackEngine = {
-  play: (spec: PhrasePlaySpec, listeners?: PlaybackListeners) => Promise<void>
+  /** Resolves true when playback actually started; false if cancelled during resume. */
+  play: (spec: PhrasePlaySpec, listeners?: PlaybackListeners) => Promise<boolean>
   stop: () => void
 }
 
@@ -89,6 +94,7 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     const source = ctx.createBufferSource()
     source.buffer = buffer
     source.connect(output)
+    // `when` must be in the future (or now for the first shot) on the audio clock.
     source.start(when, offsetSec, durationSec)
     sources.add(source)
     source.onended = () => {
@@ -109,15 +115,17 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     }
 
     if (spec.loop) {
-      const periodMs = window.durationMs + spec.gapMs
-      const nextWhen = when + periodMs / 1000
-      armTimer(periodMs, gen, () => {
+      const [, nextWhen] = computeLoopDeadlines(window, spec.gapMs, when, 2)
+      if (nextWhen === undefined) return
+      // Fire early enough that start() still sees a future audio-clock `when`.
+      const delayMs = (nextWhen - ctx.currentTime) * 1000 - LOOP_LOOKAHEAD_MS
+      armTimer(delayMs, gen, () => {
         startIteration(ctx, buffer, spec, listeners, output, window, nextWhen, gen)
       })
     }
   }
 
-  async function play(spec: PhrasePlaySpec, listeners?: PlaybackListeners): Promise<void> {
+  async function play(spec: PhrasePlaySpec, listeners?: PlaybackListeners): Promise<boolean> {
     stop()
     const gen = generation
     const buffer = getBuffer()
@@ -127,12 +135,13 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     const window = computePlayWindow(spec, buffer.duration * 1000)
     const ctx = getAudioContext()
     await resumeAudioContext(ctx)
-    if (gen !== generation) return
+    if (gen !== generation) return false
 
     const output = ctx.createGain()
     output.connect(ctx.destination)
     gain = output
     startIteration(ctx, buffer, spec, listeners, output, window, ctx.currentTime, gen)
+    return true
   }
 
   return { play, stop }
