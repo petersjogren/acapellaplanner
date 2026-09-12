@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   applyLatencyCompensation,
+  takePlaybackOffsetMs,
   computeLatencyMs,
   DEVICE_PROFILE_STORAGE_KEY,
   loadDeviceProfile,
@@ -55,6 +56,21 @@ describe('applyLatencyCompensation', () => {
   it('clamps aligned offset at 0', () => {
     expect(applyLatencyCompensation(50, 80)).toBe(0)
     expect(applyLatencyCompensation(80, 80)).toBe(0)
+  })
+})
+
+describe('takePlaybackOffsetMs', () => {
+  it('skips the measured latency at the start of the take buffer', () => {
+    expect(takePlaybackOffsetMs(120)).toBe(120)
+  })
+
+  it('treats missing or non-finite compensation as 0', () => {
+    expect(takePlaybackOffsetMs(undefined)).toBe(0)
+    expect(takePlaybackOffsetMs(Number.NaN)).toBe(0)
+  })
+
+  it('clamps negative compensation at 0', () => {
+    expect(takePlaybackOffsetMs(-12)).toBe(0)
   })
 })
 

@@ -1,4 +1,5 @@
 import { decodeAudioFile } from './decode.ts'
+import { takePlaybackOffsetMs } from './latency.ts'
 import type { HeadphoneMixSnapshot, MixPreset, Project, Take } from '../domain/schemas.ts'
 
 export const GHOST_LAYER_REF = 'ghost'
@@ -20,6 +21,8 @@ export type MixPlaybackLayer = {
   gainDb: number
   mute?: boolean
   pan?: number
+  /** Offset into this layer's buffer (ms). Ghost uses the play window; takes use latency skip. */
+  offsetMs?: number
 }
 
 export type PlaybackMix = {
@@ -128,6 +131,7 @@ export function playbackMixFromResolved(
   resolved: ResolvedMixLayer[],
   guideId: string,
   keeperBuffers: Map<string, AudioBuffer>,
+  keeperOffsetMs: Map<string, number> = new Map(),
 ): PlaybackMix {
   const ghost = resolved.find((layer) => layer.ref === guideId)
   const extra: MixPlaybackLayer[] = []
@@ -140,6 +144,7 @@ export function playbackMixFromResolved(
       gainDb: layer.gainDb,
       mute: layer.mute,
       pan: layer.pan,
+      offsetMs: takePlaybackOffsetMs(keeperOffsetMs.get(layer.ref)),
     })
   }
   return {
@@ -191,6 +196,9 @@ export async function loadPlaybackMixForPhrase(
   const guideId = ghostGuideId(project)
   const keepers = keeperTakesForPhrase(project.takes, phraseId)
   const keeperBuffers = await loadKeeperBuffers(keepers, loadBuffer)
+  const keeperOffsetMs = new Map(
+    keepers.map((take) => [take.id, takePlaybackOffsetMs(take.latencyCompMs)]),
+  )
   return playbackMixFromResolved(
     resolveMix(preset, {
       ghostGuideId: guideId,
@@ -198,5 +206,6 @@ export async function loadPlaybackMixForPhrase(
     }),
     guideId,
     keeperBuffers,
+    keeperOffsetMs,
   )
 }

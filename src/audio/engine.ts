@@ -277,7 +277,7 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       output.gain.value = dbToGain(layer.gainDb, layer.mute ?? false)
       output.connect(ctx.destination)
       outputGains.add(output)
-      extras.push({ buffer: layer.buffer, output, offsetMs: 0 })
+      extras.push({ buffer: layer.buffer, output, offsetMs: layer.offsetMs ?? 0 })
     }
 
     const clickTimesMs =

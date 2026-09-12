@@ -375,7 +375,57 @@ describe('SingPage booth flow', () => {
     })
     expect(screen.getByText(/This part is full enough/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Record' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Need more takes' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Sing another part' })).toBeTruthy()
+  })
+
+  it('Need more takes reopens the part so the singer can record again', async () => {
+    const current = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...current!,
+      phrases: current!.phrases.map((item) => ({
+        ...item,
+        partPlan: [
+          {
+            voicePartId: 's1',
+            priority: 0,
+            targetTakes: 4,
+            requiredGuide: ['ghost'] as const,
+            status: 'enough' as const,
+          },
+        ],
+      })),
+      takes: [
+        sampleTake({ id: 't1', phraseId: 'p1', takeIndex: 1 }),
+        sampleTake({ id: 't2', phraseId: 'p1', takeIndex: 2 }),
+        sampleTake({ id: 't3', phraseId: 'p1', takeIndex: 3 }),
+        sampleTake({ id: 't4', phraseId: 'p1', takeIndex: 4 }),
+      ],
+    })
+
+    renderSing()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /S1/ })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /S1/ }))
+    await waitFor(() => {
+      expect(screen.getByText(/That.s a wrap for Soprano 1/)).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Need more takes' }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Record' })).toBeTruthy()
+    })
+    expect(screen.getByText('when I fall in love')).toBeTruthy()
+    expect(screen.getByLabelText('Takes').textContent).toMatch(/4\s*\/\s*5/)
+
+    const loaded = await repo.getProject(projectId)
+    const plan = loaded?.phrases
+      .find((item) => item.id === 'p1')
+      ?.partPlan.find((row) => row.voicePartId === 's1')
+    expect(plan?.status).toBe('in-progress')
+    expect(plan?.targetTakes).toBe(5)
   })
 
   it('Surprise me opens a remaining phrase', async () => {

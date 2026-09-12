@@ -3,7 +3,7 @@ import { useProjectRepository } from '../../app/projectRepositoryContext.tsx'
 import type { PlaybackEngine } from '../../audio/engine.ts'
 import { clicksForPhrase } from '../../audio/click.ts'
 import { decodeAudioFile } from '../../audio/decode.ts'
-import { storedLatencyCompMs } from '../../audio/latency.ts'
+import { storedLatencyCompMs, takePlaybackOffsetMs } from '../../audio/latency.ts'
 import {
   createAudioBlobLoader,
   ghostGuideId,
@@ -51,11 +51,30 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
 }
 
-function takeAgainstGhostMix(takeBuffer: AudioBuffer): PlaybackMix {
+function boothPlaySpec(phrase: Phrase) {
+  return {
+    startMs: phrase.startMs,
+    endMs: phrase.endMs,
+    preRollMs: phrase.preRollMs ?? 0,
+    postRollMs: phrase.postRollMs,
+    gapMs: phrase.loopDefault.gapMs,
+    loop: false,
+  }
+}
+
+function takeAgainstGhostMix(takeBuffer: AudioBuffer, latencyCompMs?: number): PlaybackMix {
   return {
     ghostGainDb: 0,
     ghostMute: false,
-    extra: [{ buffer: takeBuffer, gainDb: 0, mute: false, pan: 0 }],
+    extra: [
+      {
+        buffer: takeBuffer,
+        gainDb: 0,
+        mute: false,
+        pan: 0,
+        offsetMs: takePlaybackOffsetMs(latencyCompMs),
+      },
+    ],
     click: false,
   }
 }
@@ -229,14 +248,7 @@ export function RecordControl({
       const clickTimesMs = clicksForPhrase(phrase, projectRef.current.sections)
       // One pass per Record press so the singer can hear the take before another.
       const started = await engine.play(
-        {
-          startMs: phrase.startMs,
-          endMs: phrase.endMs,
-          preRollMs: phrase.preRollMs ?? 0,
-          postRollMs: phrase.postRollMs,
-          gapMs: phrase.loopDefault.gapMs,
-          loop: false,
-        },
+        boothPlaySpec(phrase),
         {
           onPassStart: () => {
             if (!armedRef.current || !streamRef.current) return
@@ -312,20 +324,13 @@ export function RecordControl({
       const decoded = await decodeAudioFile(record.blob)
       if (generation !== hearGenerationRef.current) return
       const started = await engine.play(
-        {
-          startMs: phrase.startMs,
-          endMs: phrase.endMs,
-          preRollMs: 0,
-          postRollMs: 0,
-          gapMs: 0,
-          loop: false,
-        },
+        boothPlaySpec(phrase),
         {
           onEnded: () => {
             if (generation === hearGenerationRef.current) setHearing(false)
           },
         },
-        takeAgainstGhostMix(decoded.buffer),
+        takeAgainstGhostMix(decoded.buffer, take.latencyCompMs),
       )
       if (generation !== hearGenerationRef.current) return
       if (!started) setHearing(false)

@@ -11,7 +11,16 @@ import {
 } from '../../domain/schemas.ts'
 import type { ProjectRepository } from '../../storage/projectRepository.ts'
 import { saveDeviceProfile } from '../../audio/latency.ts'
+import { decodeAudioFile } from '../../audio/decode.ts'
 import { RecordControl } from './RecordControl.tsx'
+
+vi.mock('../../audio/decode.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../audio/decode.ts')>()
+  return {
+    ...actual,
+    decodeAudioFile: vi.fn(),
+  }
+})
 
 const soprano: VoicePart = {
   id: 's1',
@@ -433,6 +442,64 @@ describe('RecordControl', () => {
     expect(screen.getByRole('button', { name: 'Keep it' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Scrap & again/ })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Record' })).toBeNull()
+  })
+
+  it('Hear it replays the take on the same play window with latency skip', async () => {
+    vi.mocked(decodeAudioFile).mockResolvedValue({
+      buffer: { duration: 2.35 } as AudioBuffer,
+      durationMs: 2350,
+      sampleRate: 44100,
+    })
+    saveDeviceProfile({
+      latencyCompMs: 87,
+      updatedAt: '2026-09-12T10:00:00.000Z',
+      userAgent: 'TestAgent/1.0',
+    })
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo({
+      getAudioBlob: vi.fn(async () => ({
+        id: 'blob',
+        projectId: 'p',
+        kind: 'take' as const,
+        mimeType: 'audio/webm',
+        byteSize: 2048,
+        createdAt: '2026-09-12T10:00:00.000Z',
+        blob: new Blob([new Uint8Array(8)]),
+      })),
+    })
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { rerender } = renderControl({ engine, repo })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+    listeners.current?.onEnded?.()
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
+    rerender(saved)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Hear it' })).toBeTruthy())
+    vi.mocked(engine.play).mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Hear it' }))
+
+    await waitFor(() => expect(engine.play).toHaveBeenCalledTimes(1))
+    expect(engine.play).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startMs: 1000,
+        endMs: 3000,
+        preRollMs: 250,
+        postRollMs: 100,
+        loop: false,
+      }),
+      expect.anything(),
+      expect.objectContaining({
+        extra: [expect.objectContaining({ offsetMs: 87 })],
+      }),
+    )
   })
 
   it('Keep it marks the take as keeper and returns to Record', async () => {

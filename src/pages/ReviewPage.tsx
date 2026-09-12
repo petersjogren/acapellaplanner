@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import { decodeAudioFile } from '../audio/decode.ts'
 import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
+import { takePlaybackOffsetMs } from '../audio/latency.ts'
 import {
   GHOST_FOCUS_PRESET_ID,
   mixPresetById,
@@ -25,7 +26,11 @@ function messageFrom(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-function mixForReviewedTake(presetId: string, takeBuffer: AudioBuffer): PlaybackMix {
+function mixForReviewedTake(
+  presetId: string,
+  takeBuffer: AudioBuffer,
+  latencyCompMs?: number,
+): PlaybackMix {
   const preset = mixPresetById(presetId)
   const ghostLayer = preset.layers.find((layer) => layer.guideOrTakeRef === 'ghost')
   const keeperLayer = preset.layers.find((layer) => layer.guideOrTakeRef === 'keeper')
@@ -38,6 +43,7 @@ function mixForReviewedTake(presetId: string, takeBuffer: AudioBuffer): Playback
         gainDb: keeperLayer?.gainDb ?? 0,
         mute: false,
         pan: keeperLayer?.pan ?? 0,
+        offsetMs: takePlaybackOffsetMs(latencyCompMs),
       },
     ],
   }
@@ -180,7 +186,7 @@ export function ReviewPage() {
             if (generation === playGenerationRef.current) setPlayingTakeId(null)
           },
         },
-        mixForReviewedTake(mixPresetId, decoded.buffer),
+        mixForReviewedTake(mixPresetId, decoded.buffer, take.latencyCompMs),
       )
       if (generation !== playGenerationRef.current) return
       setPlayingTakeId(started ? takeId : null)

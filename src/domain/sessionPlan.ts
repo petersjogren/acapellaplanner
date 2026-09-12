@@ -43,9 +43,9 @@ function workKind(project: Project, phrase: Phrase, part: VoicePart): WorkKind {
   const takeCount = takes.length
   const keeperCount = takes.filter((item) => item.rating === 'keeper').length
   const target = targetTakesFor(phrase, part)
-  if (takeCount >= target) return 'done'
   if (plan?.status === 'in-progress') return 'in-progress'
   if (takeCount === 0) return 'not-started'
+  if (takeCount >= target) return 'not-enough'
   if (keeperCount >= 1) return 'double'
   return 'not-enough'
 }
@@ -147,6 +147,34 @@ function upsertPlanStatus(
 
 export function markEnough(project: Project, phraseId: string, voicePartId: string): Project {
   return upsertPlanStatus(project, phraseId, voicePartId, 'enough')
+}
+
+/** Clear enough on this part so the booth will take more. Leaves final cells alone. */
+export function reopenEnough(project: Project, voicePartId: string): Project {
+  let changed = false
+  const phrases = project.phrases.map((phrase) => {
+    const existing = planRow(phrase, voicePartId)
+    if (!existing || existing.status !== 'enough') return phrase
+    changed = true
+    const takeCount = project.takes.filter(
+      (item) => item.phraseId === phrase.id && item.voicePartId === voicePartId,
+    ).length
+    return {
+      ...phrase,
+      partPlan: phrase.partPlan.map((row) =>
+        row.voicePartId === voicePartId
+          ? {
+              ...row,
+              status: 'in-progress' as const,
+              targetTakes: Math.max(row.targetTakes, takeCount + 1),
+            }
+          : row,
+      ),
+    }
+  })
+  if (!changed) return project
+  const next: Project = { ...project, phrases }
+  return { ...next, completion: deriveCompletion(next) }
 }
 
 export function markInProgress(project: Project, phraseId: string, voicePartId: string): Project {

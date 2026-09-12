@@ -328,6 +328,17 @@ describe('createPlaybackEngine', () => {
     expect(sources[1]?.connect).toHaveBeenCalledWith(gains[1])
   })
 
+  it('starts keeper extras at their buffer offset so latency-compensated takes line up', async () => {
+    const engine = engineWith(buffer())
+    await engine.play(spec(), undefined, {
+      extra: [{ buffer: buffer(), gainDb: 0, mute: false, offsetMs: 120 }],
+    })
+
+    expect(sources).toHaveLength(2)
+    expect(sources[0]?.start).toHaveBeenCalledWith(1, 0, 2)
+    expect(sources[1]?.start).toHaveBeenCalledWith(1, 0.12, 2)
+  })
+
   it('skips extra layers whose buffers are missing', async () => {
     const engine = engineWith(buffer())
     await engine.play(spec(), undefined, {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { markEnough, markInProgress, suggestNext } from '../../src/domain/sessionPlan.ts'
+import { markEnough, markInProgress, reopenEnough, suggestNext } from '../../src/domain/sessionPlan.ts'
 import {
   createEmptyProject,
   type Phrase,
@@ -297,7 +297,7 @@ describe('suggestNext', () => {
     expect(result).toEqual({ voicePartId: 'a1', phraseId: 'p1' })
   })
 
-  it('treats takeCount at target as done even without a plan row', () => {
+  it('still offers a cell when takeCount meets target until the singer marks enough', () => {
     const result = suggestNext(
       project({
         voiceRoster: [part({ id: 's1', targetTakes: 2 })],
@@ -310,7 +310,7 @@ describe('suggestNext', () => {
       { voicePartId: 's1' },
     )
 
-    expect(result).toBeNull()
+    expect(result).toEqual({ voicePartId: 's1', phraseId: 'p1' })
   })
 
   it('returns null when there are no phrases or no live parts', () => {
@@ -362,6 +362,62 @@ describe('markEnough', () => {
         status: 'enough',
       },
     ])
+  })
+})
+
+describe('reopenEnough', () => {
+  it('resets enough cells to in-progress and raises targetTakes so another take is requested', () => {
+    const before = project({
+      voiceRoster: [part({ id: 's1' })],
+      phrases: [
+        phrase({
+          id: 'p1',
+          partPlan: [plan({ voicePartId: 's1', status: 'enough', targetTakes: 4 })],
+        }),
+        phrase({
+          id: 'p2',
+          startMs: 2000,
+          endMs: 3000,
+          partPlan: [plan({ voicePartId: 's1', status: 'enough', targetTakes: 4 })],
+        }),
+      ],
+      takes: [
+        take({ id: 't1', phraseId: 'p1', voicePartId: 's1', takeIndex: 1 }),
+        take({ id: 't2', phraseId: 'p1', voicePartId: 's1', takeIndex: 2 }),
+        take({ id: 't3', phraseId: 'p1', voicePartId: 's1', takeIndex: 3 }),
+        take({ id: 't4', phraseId: 'p1', voicePartId: 's1', takeIndex: 4 }),
+      ],
+    })
+
+    const after = reopenEnough(before, 's1')
+    expect(after.phrases[0]?.partPlan[0]).toEqual(
+      expect.objectContaining({ status: 'in-progress', targetTakes: 5 }),
+    )
+    expect(after.phrases[1]?.partPlan[0]).toEqual(
+      expect.objectContaining({ status: 'in-progress', targetTakes: 4 }),
+    )
+    expect(suggestNext(after, { voicePartId: 's1' })).toEqual({
+      voicePartId: 's1',
+      phraseId: 'p1',
+    })
+  })
+
+  it('leaves final cells and other parts alone', () => {
+    const before = project({
+      voiceRoster: [part({ id: 's1' }), part({ id: 'a1' })],
+      phrases: [
+        phrase({
+          id: 'p1',
+          partPlan: [
+            plan({ voicePartId: 's1', status: 'final' }),
+            plan({ voicePartId: 'a1', status: 'enough' }),
+          ],
+        }),
+      ],
+    })
+
+    const after = reopenEnough(before, 's1')
+    expect(after.phrases[0]?.partPlan).toEqual(before.phrases[0]?.partPlan)
   })
 })
 

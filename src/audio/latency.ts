@@ -41,6 +41,16 @@ export function applyLatencyCompensation(
   return Math.max(0, recordedAtOffsetMs - latencyCompMs)
 }
 
+/**
+ * Skip this many milliseconds at the start of a take buffer so the
+ * performance lines up with the ghost. Round-trip latency shows up as
+ * leading delay in the recording; skipping it is what Hear-it / keepers use.
+ */
+export function takePlaybackOffsetMs(latencyCompMs: number | undefined): number {
+  if (latencyCompMs == null || !Number.isFinite(latencyCompMs)) return 0
+  return Math.max(0, latencyCompMs)
+}
+
 export function loadDeviceProfile(): DeviceProfile | null {
   try {
     const raw = localStorage.getItem(DEVICE_PROFILE_STORAGE_KEY)

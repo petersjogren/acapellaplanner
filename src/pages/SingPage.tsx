@@ -4,7 +4,7 @@ import { decodeAudioFile } from '../audio/decode.ts'
 import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
 import { GHOST_FOCUS_PRESET_ID } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
-import { markEnough, suggestNext } from '../domain/sessionPlan.ts'
+import { markEnough, reopenEnough, suggestNext } from '../domain/sessionPlan.ts'
 import { sheetPageBlobId } from '../domain/sheets.ts'
 import type { Phrase, Project, VoicePart } from '../domain/schemas.ts'
 import { SingerShell } from '../ui/shell/SingerShell.tsx'
@@ -34,12 +34,9 @@ function cellTakeCount(project: Project, phraseId: string, voicePartId: string):
   ).length
 }
 
-function isPhraseDone(project: Project, phrase: Phrase, part: VoicePart): boolean {
+function isPhraseDone(phrase: Phrase, part: VoicePart): boolean {
   const plan = phrase.partPlan.find((item) => item.voicePartId === part.id)
-  if (plan?.status === 'enough' || plan?.status === 'final') return true
-  const takeCount = cellTakeCount(project, phrase.id, part.id)
-  const target = plan?.targetTakes ?? part.targetTakes
-  return takeCount >= target
+  return plan?.status === 'enough' || plan?.status === 'final'
 }
 
 export function SingPage() {
@@ -239,13 +236,25 @@ export function SingPage() {
     )
   }
 
+  async function handleNeedMoreTakes() {
+    if (!part) return
+    setSaveError(null)
+    try {
+      await recordControlRef.current?.flushSaves()
+      await persistProject((current) => reopenEnough(current, part.id))
+      applySuggestion(suggestNext(latestProject(), { voicePartId: part.id }), part.id)
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error && err.message ? err.message : 'Could not save')
+    }
+  }
+
   const phraseIndex = phrase ? phrases.findIndex((item) => item.id === phrase.id) + 1 : 0
   const takeCount = phrase && part ? cellTakeCount(loaded, phrase.id, part.id) : 0
   const targetTakes =
     phrase && part
       ? (phrase.partPlan.find((item) => item.voicePartId === part.id)?.targetTakes ?? part.targetTakes)
       : 0
-  const sungPhrases = part ? phrases.filter((item) => isPhraseDone(loaded, item, part)).length : 0
+  const sungPhrases = part ? phrases.filter((item) => isPhraseDone(item, part)).length : 0
 
   return (
     <SingerShell songTitle={loaded.title} partLabel={part?.name}>
@@ -323,16 +332,27 @@ export function SingPage() {
           </p>
           <p className="mt-3 max-w-md text-ink/70">
             {part
-              ? 'This part is full enough. Sing another, or rest the voice.'
+              ? 'This part is full enough. Need more takes, sing another part, or rest the voice.'
               : 'Nothing left to sing — the stack is complete.'}
           </p>
-          <button
-            type="button"
-            onClick={handleChooseAnother}
-            className="mt-8 self-start text-sm text-ink-muted underline-offset-4 hover:underline"
-          >
-            Sing another part
-          </button>
+          <div className="mt-8 flex flex-wrap items-center gap-4">
+            {part ? (
+              <button
+                type="button"
+                onClick={() => void handleNeedMoreTakes()}
+                className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50"
+              >
+                Need more takes
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleChooseAnother}
+              className="text-sm text-ink-muted underline-offset-4 hover:underline"
+            >
+              Sing another part
+            </button>
+          </div>
         </>
       )}
     </SingerShell>

@@ -146,5 +146,21 @@ describe('playbackMixFromResolved', () => {
     expect(mix.ghostMute).toBe(false)
     expect(mix.extra).toHaveLength(1)
     expect(mix.extra?.[0]?.gainDb).toBe(0)
+    expect(mix.extra?.[0]?.offsetMs).toBe(0)
+  })
+
+  it('applies per-keeper latency as extra buffer offset', () => {
+    const preset: MixPreset = mixPresetById(STACK_BUILD_PRESET_ID)
+    const resolved = resolveMix(preset, {
+      ghostGuideId: 'ghost-guide',
+      keeperTakeIds: ['k1'],
+    })
+    const mix = playbackMixFromResolved(
+      resolved,
+      'ghost-guide',
+      new Map([['k1', { duration: 2 } as AudioBuffer]]),
+      new Map([['k1', 87]]),
+    )
+    expect(mix.extra?.[0]?.offsetMs).toBe(87)
   })
 })
