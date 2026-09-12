@@ -1,0 +1,102 @@
+:root {
+  --paper: #f6f1e8;
+  --ink: #1c1916;
+  --record-red: #c23b2a;
+  --gold: #c4a35a;
+  --paper-shadow: #e8dfd0;
+  --ink-muted: color-mix(in srgb, var(--ink) 58%, var(--paper));
+
+  --font-display-family: "Fraunces", "Source Serif 4", Georgia, serif;
+  --font-ui-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+
+  --type-xs: 0.75rem;
+  --type-sm: 0.875rem;
+  --type-md: 1rem;
+  --type-lg: 1.25rem;
+  --type-xl: 1.75rem;
+  --type-display: 2.5rem;
+  --type-lyric: 2.25rem;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-pill: 999px;
+
+  --fade-duration: 700ms;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-record-red: var(--record-red);
+  --color-gold: var(--gold);
+  --color-paper-shadow: var(--paper-shadow);
+  --font-display: var(--font-display-family);
+  --font-ui: var(--font-ui-family);
+  --text-xs: var(--type-xs);
+  --text-sm: var(--type-sm);
+  --text-md: var(--type-md);
+  --text-lg: var(--type-lg);
+  --text-xl: var(--type-xl);
+  --text-display: var(--type-display);
+  --text-lyric: var(--type-lyric);
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-pill: 999px;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui-family);
+  font-size: var(--type-md);
+  line-height: 1.5;
+}
+
+.fade-in {
+  animation: studio-fade var(--fade-duration) ease-out;
+}
+
+@keyframes studio-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.record-lamp {
+  background: var(--record-red);
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--record-red) 45%, transparent);
+  animation: record-lamp-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes record-lamp-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--record-red) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 18px 4px color-mix(in srgb, var(--record-red) 60%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in {
+    animation: none;
+  }
+
+  .record-lamp {
+    animation: none;
+    box-shadow: 0 0 8px 2px color-mix(in srgb, var(--record-red) 50%, transparent);
+  }
+}
