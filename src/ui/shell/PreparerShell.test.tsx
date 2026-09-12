@@ -1,4 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PreparerShell } from './PreparerShell.tsx'
 
@@ -6,9 +8,13 @@ afterEach(() => {
   cleanup()
 })
 
+function renderShell(ui: ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>)
+}
+
 describe('PreparerShell', () => {
   it('renders Prepare, Sing, and Review navigation', () => {
-    render(
+    renderShell(
       <PreparerShell>
         <p>Score desk</p>
       </PreparerShell>,
@@ -22,7 +28,7 @@ describe('PreparerShell', () => {
   })
 
   it('renders the studio title and children', () => {
-    render(
+    renderShell(
       <PreparerShell title="Acapella Planner">
         <p>Mark phrases on the ghost</p>
       </PreparerShell>,
@@ -33,7 +39,7 @@ describe('PreparerShell', () => {
   })
 
   it('marks the current nav item with aria-current', () => {
-    render(
+    renderShell(
       <PreparerShell current="sing">
         <p>Booth</p>
       </PreparerShell>,
@@ -44,5 +50,23 @@ describe('PreparerShell', () => {
     )
     expect(screen.getByRole('link', { name: /Prepare/ }).getAttribute('aria-current')).toBeNull()
     expect(screen.getByRole('link', { name: /Review/ }).getAttribute('aria-current')).toBeNull()
+  })
+
+  it('points studio nav at project paths when projectId is set', () => {
+    renderShell(
+      <PreparerShell projectId="song-1">
+        <p>Score desk</p>
+      </PreparerShell>,
+    )
+
+    expect(screen.getByRole('link', { name: /Prepare/ }).getAttribute('href')).toBe(
+      '/project/song-1/prepare',
+    )
+    expect(screen.getByRole('link', { name: /Sing/ }).getAttribute('href')).toBe(
+      '/project/song-1/sing',
+    )
+    expect(screen.getByRole('link', { name: /Review/ }).getAttribute('href')).toBe(
+      '/project/song-1/review',
+    )
   })
 })

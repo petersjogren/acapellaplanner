@@ -1,0 +1,83 @@
+import 'fake-indexeddb/auto'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
+import { AppRoutes } from '../../src/app/routes.tsx'
+import { createEmptyProject } from '../../src/domain/schemas.ts'
+import { AcapellaDB } from '../../src/storage/db.ts'
+import {
+  createProjectRepository,
+  type ProjectRepository,
+} from '../../src/storage/projectRepository.ts'
+
+describe('routes', () => {
+  let database: AcapellaDB
+  let repo: ProjectRepository
+  let projectId: string
+
+  beforeEach(async () => {
+    database = new AcapellaDB(`acapellaplanner-routes-${crypto.randomUUID()}`)
+    repo = createProjectRepository(database)
+    const project = await repo.saveProject(createEmptyProject('Landmark song'))
+    projectId = project.id
+  })
+
+  afterEach(async () => {
+    cleanup()
+    database.close()
+    await database.delete()
+  })
+
+  function renderAt(path: string) {
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <AppRoutes repo={repo} />
+      </MemoryRouter>,
+    )
+  }
+
+  it('registers home, prepare, sing, and review routes', async () => {
+    renderAt('/')
+    expect(screen.getByRole('heading', { name: 'Acapella Planner' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'New song' })).toBeTruthy()
+    cleanup()
+
+    renderAt(`/project/${projectId}/prepare`)
+    await waitFor(() => {
+      expect(screen.getByText('Ghost track comes next')).toBeTruthy()
+    })
+    expect(screen.getByRole('link', { name: /Prepare/ }).getAttribute('href')).toBe(
+      `/project/${projectId}/prepare`,
+    )
+    expect(screen.getByRole('link', { name: /Sing/ }).getAttribute('href')).toBe(
+      `/project/${projectId}/sing`,
+    )
+    expect(screen.getByRole('link', { name: /Review/ }).getAttribute('href')).toBe(
+      `/project/${projectId}/review`,
+    )
+    cleanup()
+
+    renderAt(`/project/${projectId}/sing`)
+    await waitFor(() => {
+      expect(screen.getByText(/The booth is quiet/)).toBeTruthy()
+    })
+    expect(screen.getByRole('heading', { name: 'Landmark song' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Home' }).getAttribute('href')).toBe('/')
+    cleanup()
+
+    renderAt(`/project/${projectId}/review`)
+    await waitFor(() => {
+      expect(screen.getByText('Review takes come next')).toBeTruthy()
+    })
+    expect(screen.getByRole('navigation', { name: 'Studio' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Review/ }).getAttribute('aria-current')).toBe('page')
+  })
+
+  it('shows not-found when the project id is missing', async () => {
+    renderAt('/project/missing-id/prepare')
+
+    await waitFor(() => {
+      expect(screen.getByText(/Project not found/)).toBeTruthy()
+    })
+  })
+})

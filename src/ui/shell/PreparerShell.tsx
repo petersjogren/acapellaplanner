@@ -1,10 +1,11 @@
 import { clsx } from 'clsx'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 
 const NAV = [
-  { id: 'prepare', href: '/prepare', label: 'Prepare', hint: 'Score desk' },
-  { id: 'sing', href: '/sing', label: 'Sing', hint: 'Booth' },
-  { id: 'review', href: '/review', label: 'Review', hint: 'Keepers' },
+  { id: 'prepare', label: 'Prepare', hint: 'Score desk' },
+  { id: 'sing', label: 'Sing', hint: 'Booth' },
+  { id: 'review', label: 'Review', hint: 'Keepers' },
 ] as const
 
 export type PreparerNavId = (typeof NAV)[number]['id']
@@ -13,12 +14,18 @@ export type PreparerShellProps = {
   children: ReactNode
   title?: string
   current?: PreparerNavId
+  projectId?: string
+}
+
+function navHref(id: PreparerNavId, projectId?: string): string {
+  return projectId ? `/project/${projectId}/${id}` : `/${id}`
 }
 
 export function PreparerShell({
   children,
   title = 'Acapella Planner',
   current = 'prepare',
+  projectId,
 }: PreparerShellProps) {
   return (
     <div className="flex min-h-screen bg-paper font-ui text-ink fade-in">
@@ -29,9 +36,9 @@ export function PreparerShell({
           {NAV.map((item) => {
             const active = current === item.id
             return (
-              <a
+              <Link
                 key={item.id}
-                href={item.href}
+                to={navHref(item.id, projectId)}
                 aria-current={active ? 'page' : undefined}
                 className={clsx(
                   'rounded-md px-3 py-2 studio-transition',
@@ -50,7 +57,7 @@ export function PreparerShell({
                 <span className={clsx('block text-xs', active ? 'text-paper/80' : 'text-ink-muted')}>
                   {item.hint}
                 </span>
-              </a>
+              </Link>
             )
           })}
         </nav>
