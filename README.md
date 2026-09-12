@@ -1,18 +1,44 @@
 # Acapella Planner
 
-Local-first ghost-track studio for acapella rehearsal. Desktop Chrome MVP.
+A ghost-track overdub booth for stacked a cappella — not a DAW. The ghost’s phrasing is the clock; the singer only listens and sings back.
 
-## Scripts
+Local-first. Desktop Chrome MVP; iPad Safari as a booth once the song is prepared.
 
-- `npm run dev` — Vite dev server
-- `npm run build` — typecheck and production build
+## Preparer quickstart
+
+1. **New song** on the home desk.
+2. **Import ghost** — a lead vocal (Bonnie Herman–style: text, feel, rubato, intention). Any mono or stereo guide audio works.
+3. **Mark phrases** on the ghost — musical sentences and breaths, not arbitrary bars. Name them; add lyrics if you have them.
+4. **Voice parts** — add the roster (S1, A2, …) and how many doubles you want on each.
+5. **Sections** — mark stretches as *Follow the ghost* (rubato, no click) or *In time* (optional click only inside that window).
+6. Open **Sing** for the booth, or **Review** later to promote keepers and export a zip.
+
+Optional: crop sheet music onto a phrase so the booth shows only that cue.
+
+## Singer quickstart
+
+1. Open **Sing**. Pick a part, or *Surprise me with what’s left*.
+2. Headphones on. Choose a mix: **Ghost Focus**, **Stack Build**, or **Blend Check**.
+3. Tap **Record** (or hold Space). Sing the phrase. Takes save themselves.
+4. **Good enough** when the line can rest. **Next** for the following phrase on the same part.
+
+You never name files, set loops, or arm anything. Phrases, breaths, doubles — that’s the whole job.
+
+Full method: [Singers Unlimited workflow](docs/workflow-singers-unlimited.md).
+
+## Develop
+
+```bash
+npm install
+npm run dev
+npm test
+npm run build
+```
+
 - `npm run preview` — serve the production build
-- `npm test` — run Vitest once
 - `npm run test:watch` — Vitest watch mode
 
-## Stack
-
-Vite + React + TypeScript, Tailwind CSS v4, Dexie, Zod, React Router.
+Stack: Vite + React + TypeScript, Tailwind CSS v4, Dexie, Zod, React Router.
 
 ## Offline PWA / iPad booth
 
