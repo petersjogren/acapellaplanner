@@ -1,10 +1,13 @@
+import { useEffect, useState } from 'react'
 import { PreparerShell } from '../ui/shell/PreparerShell.tsx'
-import { formatDuration } from '../audio/decode.ts'
+import { decodeAudioFile, formatDuration } from '../audio/decode.ts'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import {
   GhostImporter,
   type GhostImportResult,
 } from '../ui/preparer/GhostImporter.tsx'
+import { GhostTimeline } from '../ui/preparer/GhostTimeline.tsx'
+import { addPhrase, removePhrase, updatePhrase, type PhrasePatch } from '../domain/phrases.ts'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
@@ -12,6 +15,32 @@ import { useLoadedProject } from './useLoadedProject.ts'
 export function PreparePage() {
   const { project, error, setProject } = useLoadedProject()
   const repo = useProjectRepository()
+  const [buffer, setBuffer] = useState<AudioBuffer | null>(null)
+
+  const ghostTrackId = project && typeof project === 'object' ? project.ghostTrackId : null
+
+  useEffect(() => {
+    let cancelled = false
+    setBuffer(null)
+    if (!ghostTrackId) return
+    void repo
+      .getAudioBlob(ghostTrackId)
+      .then(async (record) => {
+        if (!record || cancelled) return
+        try {
+          const decoded = await decodeAudioFile(record.blob)
+          if (!cancelled) setBuffer(decoded.buffer)
+        } catch {
+          if (!cancelled) setBuffer(null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBuffer(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [ghostTrackId, repo])
 
   if (error) {
     return <StorageError message={error} />
@@ -61,6 +90,23 @@ export function PreparePage() {
     setProject(saved)
   }
 
+  async function persistPhrases(next: typeof loaded) {
+    const saved = await repo.saveProject(next)
+    setProject(saved)
+  }
+
+  async function handleMarkPhrase(startMs: number, endMs: number) {
+    await persistPhrases(addPhrase(loaded, { startMs, endMs }))
+  }
+
+  async function handleUpdatePhrase(id: string, patch: PhrasePatch) {
+    await persistPhrases(updatePhrase(loaded, id, patch))
+  }
+
+  async function handleRemovePhrase(id: string) {
+    await persistPhrases(removePhrase(loaded, id))
+  }
+
   const ghostMeta = loaded.settings.ghostMeta
   const hasGhost = Boolean(loaded.ghostTrackId && ghostMeta)
 
@@ -69,11 +115,19 @@ export function PreparePage() {
       <h2 className="font-display text-xl font-semibold tracking-tight">{loaded.title}</h2>
       <p className="mt-3 max-w-xl text-ink/70">The ghost is the lead everyone locks to.</p>
       {hasGhost && ghostMeta ? (
-        <section className="mt-8 max-w-xl" aria-label="Ghost track">
+        <section className="mt-8 max-w-3xl" aria-label="Ghost track">
           <h3 className="font-medium">Ghost track</h3>
           <p className="mt-2">{ghostMeta.filename}</p>
           <p className="mt-1 text-ink-muted">{formatDuration(ghostMeta.durationMs)}</p>
           <GhostImporter label="Replace ghost track" onImported={handleImported} />
+          <GhostTimeline
+            durationMs={ghostMeta.durationMs}
+            phrases={loaded.phrases}
+            buffer={buffer}
+            onMarkPhrase={handleMarkPhrase}
+            onUpdatePhrase={handleUpdatePhrase}
+            onRemovePhrase={handleRemovePhrase}
+          />
         </section>
       ) : (
         <GhostImporter onImported={handleImported} />

@@ -63,7 +63,7 @@ describe('PreparePage ghost import', () => {
 
     await waitFor(() => {
       expect(screen.getByText('lead.wav')).toBeTruthy()
-      expect(screen.getByText('1:23.4')).toBeTruthy()
+      expect(screen.getAllByText('1:23.4').length).toBeGreaterThan(0)
     })
     expect(screen.getByLabelText('Replace ghost track')).toBeTruthy()
     expect(screen.queryByLabelText('Import ghost track')).toBeNull()
@@ -109,7 +109,7 @@ describe('PreparePage ghost import', () => {
 
     await waitFor(() => {
       expect(screen.getByText('already-here.mp3')).toBeTruthy()
-      expect(screen.getByText('1:23.4')).toBeTruthy()
+      expect(screen.getAllByText('1:23.4').length).toBeGreaterThan(0)
       expect(screen.getByLabelText('Replace ghost track')).toBeTruthy()
     })
     expect(screen.queryByLabelText('Import ghost track')).toBeNull()
