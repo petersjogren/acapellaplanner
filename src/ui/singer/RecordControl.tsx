@@ -42,8 +42,8 @@ export function RecordControl({
   const repo = useProjectRepository()
   const [armed, setArmed] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [micBlocked, setMicBlocked] = useState(false)
   const armedRef = useRef(false)
+  const armingRef = useRef(false)
   const projectRef = useRef(project)
   const onProjectChangeRef = useRef(onProjectChange)
   const streamRef = useRef<MediaStream | null>(null)
@@ -67,20 +67,20 @@ export function RecordControl({
       return
     }
     setError(null)
-    const current = projectRef.current
-    const takeIndex = nextTakeIndex(current.takes, phrase.id, voicePart.id)
-    const found = current.phrases.findIndex((item) => item.id === phrase.id)
-    const phraseIndex = found >= 0 ? found + 1 : 1
     const audioBlobId = crypto.randomUUID()
     await repo.putAudioBlob({
       id: audioBlobId,
-      projectId: current.id,
+      projectId: projectRef.current.id,
       kind: 'take',
       mimeType: result.mimeType,
       byteSize: result.byteSize,
       createdAt: new Date().toISOString(),
       blob: result.blob,
     })
+    const current = projectRef.current
+    const takeIndex = nextTakeIndex(current.takes, phrase.id, voicePart.id)
+    const found = current.phrases.findIndex((item) => item.id === phrase.id)
+    const phraseIndex = found >= 0 ? found + 1 : 1
     const take: Take = {
       id: crypto.randomUUID(),
       phraseId: phrase.id,
@@ -112,27 +112,29 @@ export function RecordControl({
     for (const rec of pending) void rec.stop()
   }
 
+  function stopMic() {
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+  }
+
   function disarm() {
     armedRef.current = false
     setArmed(false)
     engine.stop()
     discardPending()
+    stopMic()
   }
 
   async function arm() {
+    if (armingRef.current || armedRef.current) return
+    armingRef.current = true
     setError(null)
     try {
       if (!streamRef.current) {
         streamRef.current = await requestMicStream()
       }
-    } catch (err: unknown) {
-      setMicBlocked(true)
-      setError(messageFrom(err, 'Microphone permission is needed to record'))
-      return
-    }
 
-    armedRef.current = true
-    try {
+      armedRef.current = true
       const started = await engine.play(
         {
           startMs: phrase.startMs,
@@ -150,9 +152,10 @@ export function RecordControl({
           onPassComplete: () => {
             const rec = pendingRef.current.shift()
             if (!rec) return
+            const stopped = rec.stop()
             saveChainRef.current = saveChainRef.current
               .then(async () => {
-                const result = await rec.stop()
+                const result = await stopped
                 if (!armedRef.current) return
                 await persistTake(result)
               })
@@ -163,6 +166,8 @@ export function RecordControl({
           onEnded: () => {
             armedRef.current = false
             setArmed(false)
+            discardPending()
+            stopMic()
           },
         },
       )
@@ -177,12 +182,19 @@ export function RecordControl({
       armedRef.current = false
       setArmed(false)
       discardPending()
-      setError(messageFrom(err, 'Could not start recording'))
+      setError(
+        messageFrom(
+          err,
+          streamRef.current ? 'Could not start recording' : 'Microphone permission is needed to record',
+        ),
+      )
+    } finally {
+      armingRef.current = false
     }
   }
 
   function toggleArm() {
-    if (micBlocked) return
+    if (armingRef.current) return
     if (armedRef.current) disarm()
     else void arm()
   }
@@ -194,6 +206,7 @@ export function RecordControl({
       if (event.key !== ' ' && event.code !== 'Space') return
       if (isTextEntryTarget(event.target)) return
       event.preventDefault()
+      if (event.repeat) return
       toggleArmRef.current()
     }
     window.addEventListener('keydown', onKeyDown)
@@ -221,9 +234,8 @@ export function RecordControl({
         type="button"
         aria-label="Record"
         aria-pressed={armed}
-        disabled={micBlocked}
         onClick={() => toggleArm()}
-        className={`flex h-24 w-24 items-center justify-center rounded-full text-sm font-medium text-paper studio-transition disabled:opacity-50 ${
+        className={`flex h-24 w-24 items-center justify-center rounded-full text-sm font-medium text-paper studio-transition ${
           armed ? 'record-lamp' : 'bg-record-red hover:bg-ink'
         }`}
       >
