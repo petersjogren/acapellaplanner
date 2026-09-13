@@ -1,6 +1,10 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GHOST_FOCUS_PRESET_ID, STACK_BUILD_PRESET_ID } from '../../audio/mix.ts'
+import {
+  BLEND_CHECK_PRESET_ID,
+  GHOST_FOCUS_PRESET_ID,
+  STACK_BUILD_PRESET_ID,
+} from '../../audio/mix.ts'
 import { MixPresetSelect } from './MixPresetSelect.tsx'
 
 afterEach(() => {
@@ -15,6 +19,19 @@ describe('MixPresetSelect', () => {
     expect(screen.getByRole('option', { name: 'Ghost Focus' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Stack Build' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Blend Check' })).toBeTruthy()
+  })
+
+  it('describes what the selected mix is for', () => {
+    const { rerender } = render(
+      <MixPresetSelect value={GHOST_FOCUS_PRESET_ID} onChange={vi.fn()} />,
+    )
+    expect(screen.getByText(/ghost full, stack silent/i)).toBeTruthy()
+
+    rerender(<MixPresetSelect value={STACK_BUILD_PRESET_ID} onChange={vi.fn()} />)
+    expect(screen.getByText(/keepers up/i)).toBeTruthy()
+
+    rerender(<MixPresetSelect value={BLEND_CHECK_PRESET_ID} onChange={vi.fn()} />)
+    expect(screen.getByText(/ghost muted/i)).toBeTruthy()
   })
 
   it('notifies when the selected preset changes', () => {

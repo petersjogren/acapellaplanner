@@ -7,6 +7,7 @@ import {
   dbToGain,
   loadKeeperBuffers,
   mixPresetById,
+  mixPresetDescription,
   playbackMixFromResolved,
   resolveMix,
 } from '../../src/audio/mix.ts'
@@ -26,6 +27,19 @@ function take(overrides: Partial<Take> & { id: string }): Take {
     ...overrides,
   }
 }
+
+describe('mixPresetDescription', () => {
+  it('describes each built-in preset', () => {
+    expect(mixPresetDescription(GHOST_FOCUS_PRESET_ID)).toMatch(/ghost full/i)
+    expect(mixPresetDescription(STACK_BUILD_PRESET_ID)).toMatch(/keepers up/i)
+    expect(mixPresetDescription(BLEND_CHECK_PRESET_ID)).toMatch(/ghost muted/i)
+  })
+
+  it('falls back to the default preset for an unknown id', () => {
+    expect(mixPresetDescription('nope')).toBe(mixPresetDescription(GHOST_FOCUS_PRESET_ID))
+    expect(mixPresetDescription(undefined)).toMatch(/ghost full/i)
+  })
+})
 
 describe('dbToGain', () => {
   it('converts decibels with 10^(db/20)', () => {

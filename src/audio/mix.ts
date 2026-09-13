@@ -74,6 +74,20 @@ export function mixPresetById(id: string | null | undefined): MixPreset {
   return presets.find((preset) => preset.id === id) ?? presets[0]!
 }
 
+/**
+ * What each recipe is for, in the singer's language. Kept out of MixPresetSchema
+ * because presets are persisted per project — this is UI copy, not project data.
+ */
+const MIX_PRESET_DESCRIPTIONS: Record<string, string> = {
+  [GHOST_FOCUS_PRESET_ID]: 'Ghost full, stack silent. For a first double — match her vowels and time.',
+  [STACK_BUILD_PRESET_ID]: 'Ghost a little down, keepers up. For later doubles — sit inside the choir.',
+  [BLEND_CHECK_PRESET_ID]: 'Ghost muted, keepers only. Hear whether the stack holds on its own.',
+}
+
+export function mixPresetDescription(id: string | null | undefined): string {
+  return MIX_PRESET_DESCRIPTIONS[mixPresetById(id).id] ?? ''
+}
+
 export function ghostGuideId(project: Pick<Project, 'guides'>): string {
   return project.guides.find((guide) => guide.kind === 'ghost')?.id ?? GHOST_LAYER_REF
 }
