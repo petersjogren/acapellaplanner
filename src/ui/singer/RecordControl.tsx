@@ -3,15 +3,18 @@ import { useProjectRepository } from '../../app/projectRepositoryContext.tsx'
 import type { PlaybackEngine } from '../../audio/engine.ts'
 import { clicksForPhrase } from '../../audio/click.ts'
 import { decodeAudioFile } from '../../audio/decode.ts'
-import { storedLatencyCompMs, takePlaybackOffsetMs } from '../../audio/latency.ts'
+import { storedLatencyCompMs } from '../../audio/latency.ts'
 import {
   createAudioBlobLoader,
   ghostGuideId,
   headphoneMixSnapshotFor,
   keeperTakesForPhrase,
   loadPlaybackMixForPhrase,
+  loadTakeReviewMix,
   mixPresetById,
-  type PlaybackMix,
+  stackKeepersForReview,
+  TAKE_REVIEW_MODES,
+  type TakeReviewMode,
 } from '../../audio/mix.ts'
 import {
   isEmptyTake,
@@ -64,21 +67,16 @@ function boothPlaySpec(phrase: Phrase) {
   }
 }
 
-function takeAgainstGhostMix(takeBuffer: AudioBuffer, latencyCompMs?: number): PlaybackMix {
-  return {
-    ghostGainDb: 0,
-    ghostMute: false,
-    extra: [
-      {
-        buffer: takeBuffer,
-        gainDb: 0,
-        mute: false,
-        pan: 0,
-        offsetMs: takePlaybackOffsetMs(latencyCompMs),
-      },
-    ],
-    click: false,
-  }
+const HEAR_LABELS: Record<TakeReviewMode, string> = {
+  ghost: 'With ghost',
+  stack: 'With stack',
+  solo: 'Take alone',
+}
+
+const HEAR_HINTS: Record<TakeReviewMode, string> = {
+  ghost: 'Your take against the ghost — check time and vowels.',
+  stack: 'Your take inside the keepers on this phrase — check blend.',
+  solo: 'Your take on its own — check tone and tuning.',
 }
 
 export function RecordControl({
@@ -94,7 +92,7 @@ export function RecordControl({
   const [armed, setArmed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastTakeId, setLastTakeId] = useState<string | null>(null)
-  const [hearing, setHearing] = useState(false)
+  const [hearing, setHearing] = useState<TakeReviewMode | null>(null)
   const [busy, setBusy] = useState(false)
   const [processed, setProcessed] = useState(false)
   const armedRef = useRef(false)
@@ -127,6 +125,10 @@ export function RecordControl({
   const takeCount = cellTakes.length
   const lastTake = lastTakeId ? cellTakes.find((item) => item.id === lastTakeId) : undefined
   const reviewing = lastTake != null
+  // "With stack" needs other keepers on this phrase to sit inside.
+  const stackKeeperCount = lastTakeId
+    ? stackKeepersForReview(project, phrase.id, lastTakeId).length
+    : 0
 
   async function persistTake(result: RecordingResult): Promise<string | null> {
     if (isEmptyTake(result)) {
@@ -214,7 +216,7 @@ export function RecordControl({
 
   function stopHearing() {
     hearGenerationRef.current += 1
-    setHearing(false)
+    setHearing(null)
   }
 
   function disarm() {
@@ -309,41 +311,53 @@ export function RecordControl({
 
   toggleArmRef.current = toggleArm
 
-  async function handleHear() {
+  async function handleHear(mode: TakeReviewMode) {
     if (!lastTakeIdRef.current || busy) return
     const takeId = lastTakeIdRef.current
     const generation = ++hearGenerationRef.current
     setError(null)
-    setHearing(true)
+    setHearing(mode)
     try {
       const take = projectRef.current.takes.find((item) => item.id === takeId)
       if (!take) {
-        setHearing(false)
+        setHearing(null)
         return
       }
       const record = await repo.getAudioBlob(take.audioBlobId)
       if (generation !== hearGenerationRef.current) return
       if (!record) {
         setError('Could not load take')
-        setHearing(false)
+        setHearing(null)
         return
       }
       const decoded = await decodeAudioFile(record.blob)
+      if (generation !== hearGenerationRef.current) return
+      const mix = await loadTakeReviewMix(
+        projectRef.current,
+        phrase.id,
+        {
+          takeId,
+          takeBuffer: decoded.buffer,
+          latencyCompMs: take.latencyCompMs,
+          mode,
+        },
+        createAudioBlobLoader((id) => repo.getAudioBlob(id)),
+      )
       if (generation !== hearGenerationRef.current) return
       const started = await engine.play(
         boothPlaySpec(phrase),
         {
           onEnded: () => {
-            if (generation === hearGenerationRef.current) setHearing(false)
+            if (generation === hearGenerationRef.current) setHearing(null)
           },
         },
-        takeAgainstGhostMix(decoded.buffer, take.latencyCompMs),
+        mix,
       )
       if (generation !== hearGenerationRef.current) return
-      if (!started) setHearing(false)
+      if (!started) setHearing(null)
     } catch (err: unknown) {
       if (generation !== hearGenerationRef.current) return
-      setHearing(false)
+      setHearing(null)
       setError(messageFrom(err, 'Could not play take'))
     }
   }
@@ -458,25 +472,37 @@ export function RecordControl({
             Take {lastTake.takeIndex} saved
           </p>
           <p className="mt-1 text-sm text-ink/70">Hear it back. Keep it, or scrap and sing again.</p>
+          <div className="mt-4 flex flex-wrap gap-2" aria-label="Hear it back">
+            {TAKE_REVIEW_MODES.map((mode) => {
+              const playing = hearing === mode
+              const unavailable = mode === 'stack' && stackKeeperCount === 0
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => (playing ? handleStopHear() : void handleHear(mode))}
+                  disabled={busy || unavailable}
+                  aria-pressed={playing}
+                  title={
+                    unavailable
+                      ? 'No keepers on this phrase yet — keep a take first.'
+                      : HEAR_HINTS[mode]
+                  }
+                  className={`min-h-11 rounded-pill border px-5 py-2.5 text-sm font-medium studio-transition disabled:opacity-40 ${
+                    playing
+                      ? 'border-ink bg-ink text-paper'
+                      : 'border-ink/20 hover:border-ink/50'
+                  }`}
+                >
+                  {playing ? `Stop — ${HEAR_LABELS[mode]}` : HEAR_LABELS[mode]}
+                </button>
+              )
+            })}
+          </div>
+          <p className="mt-2 text-sm text-ink-muted">
+            {hearing ? HEAR_HINTS[hearing] : HEAR_HINTS.ghost}
+          </p>
           <div className="mt-4 flex flex-wrap gap-3">
-            {hearing ? (
-              <button
-                type="button"
-                onClick={handleStopHear}
-                className="min-h-11 rounded-pill border border-ink/20 px-5 py-2.5 text-sm font-medium studio-transition hover:border-ink/50"
-              >
-                Stop
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleHear()}
-                disabled={busy}
-                className="min-h-11 rounded-pill border border-ink/20 px-5 py-2.5 text-sm font-medium studio-transition hover:border-ink/50 disabled:opacity-50"
-              >
-                Hear it
-              </button>
-            )}
             <button
               type="button"
               onClick={() => void handleKeep()}

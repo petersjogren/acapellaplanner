@@ -6,12 +6,14 @@ import {
   builtinMixPresets,
   dbToGain,
   loadKeeperBuffers,
+  loadTakeReviewMix,
   mixPresetById,
   mixPresetDescription,
   playbackMixFromResolved,
   resolveMix,
+  stackKeepersForReview,
 } from '../../src/audio/mix.ts'
-import type { MixPreset, Take } from '../../src/domain/schemas.ts'
+import type { MixPreset, Project, Take } from '../../src/domain/schemas.ts'
 
 function take(overrides: Partial<Take> & { id: string }): Take {
   return {
@@ -38,6 +40,94 @@ describe('mixPresetDescription', () => {
   it('falls back to the default preset for an unknown id', () => {
     expect(mixPresetDescription('nope')).toBe(mixPresetDescription(GHOST_FOCUS_PRESET_ID))
     expect(mixPresetDescription(undefined)).toMatch(/ghost full/i)
+  })
+})
+
+describe('stackKeepersForReview', () => {
+  it('excludes the take under review and any non-keeper', () => {
+    const project: Pick<Project, 'takes'> = {
+      takes: [
+        take({ id: 'keeper-1' }),
+        take({ id: 'under-review' }),
+        take({ id: 'scratch-1', rating: 'scratch' }),
+        take({ id: 'other-phrase', phraseId: 'p2' }),
+      ],
+    }
+    expect(stackKeepersForReview(project, 'p1', 'under-review').map((item) => item.id)).toEqual([
+      'keeper-1',
+    ])
+  })
+})
+
+describe('loadTakeReviewMix', () => {
+  const takeBuffer = { duration: 2 } as AudioBuffer
+  const keeperBuffer = { duration: 2 } as AudioBuffer
+
+  function projectWithKeepers(): Project {
+    return {
+      guides: [
+        { id: 'g', kind: 'ghost', audioBlobId: 'ghost', gainDbDefault: 0, alignToGhost: true },
+      ],
+      takes: [take({ id: 'keeper-1' }), take({ id: 'under-review' })],
+    } as unknown as Project
+  }
+
+  it('solo mutes the ghost and plays only the take', async () => {
+    const mix = await loadTakeReviewMix(
+      projectWithKeepers(),
+      'p1',
+      { takeId: 'under-review', takeBuffer, mode: 'solo' },
+      async () => keeperBuffer,
+    )
+    expect(mix.ghostMute).toBe(true)
+    expect(mix.extra).toHaveLength(1)
+    expect(mix.extra?.[0]?.buffer).toBe(takeBuffer)
+  })
+
+  it('ghost plays the take against an unmuted ghost', async () => {
+    const mix = await loadTakeReviewMix(
+      projectWithKeepers(),
+      'p1',
+      { takeId: 'under-review', takeBuffer, mode: 'ghost' },
+      async () => keeperBuffer,
+    )
+    expect(mix.ghostMute).toBe(false)
+    expect(mix.extra).toHaveLength(1)
+  })
+
+  it('stack adds the other keepers alongside the take', async () => {
+    const mix = await loadTakeReviewMix(
+      projectWithKeepers(),
+      'p1',
+      { takeId: 'under-review', takeBuffer, mode: 'stack' },
+      async () => keeperBuffer,
+    )
+    // one keeper + the take itself, and the take is never doubled
+    expect(mix.extra).toHaveLength(2)
+    expect(mix.extra?.filter((layer) => layer.buffer === takeBuffer)).toHaveLength(1)
+    expect(mix.ghostGainDb).toBe(-6) // Stack Build balance
+  })
+
+  it('applies latency compensation as a take offset', async () => {
+    const mix = await loadTakeReviewMix(
+      projectWithKeepers(),
+      'p1',
+      { takeId: 'under-review', takeBuffer, latencyCompMs: 87, mode: 'solo' },
+      async () => keeperBuffer,
+    )
+    expect(mix.extra?.[0]?.offsetMs).toBe(87)
+  })
+
+  it('never schedules a click while auditioning', async () => {
+    for (const mode of ['ghost', 'stack', 'solo'] as const) {
+      const mix = await loadTakeReviewMix(
+        projectWithKeepers(),
+        'p1',
+        { takeId: 'under-review', takeBuffer, mode },
+        async () => keeperBuffer,
+      )
+      expect(mix.click).toBe(false)
+    }
   })
 })
 

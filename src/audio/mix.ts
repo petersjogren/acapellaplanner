@@ -223,3 +223,80 @@ export async function loadPlaybackMixForPhrase(
     keeperOffsetMs,
   )
 }
+
+/**
+ * How a just-recorded take is auditioned:
+ * - `ghost` — the take against the ghost, for checking time and vowels
+ * - `stack` — the take inside the keepers already on this phrase, for blend
+ * - `solo`  — the take alone, for hearing your own tone and tuning
+ */
+export const TAKE_REVIEW_MODES = ['ghost', 'stack', 'solo'] as const
+export type TakeReviewMode = (typeof TAKE_REVIEW_MODES)[number]
+
+export type TakeReviewOptions = {
+  takeId: string
+  takeBuffer: AudioBuffer
+  latencyCompMs?: number
+  mode: TakeReviewMode
+}
+
+/** Keepers on this phrase that are not the take being auditioned. */
+export function stackKeepersForReview(
+  project: Pick<Project, 'takes'>,
+  phraseId: string,
+  takeId: string,
+): Take[] {
+  return keeperTakesForPhrase(project.takes, phraseId).filter((take) => take.id !== takeId)
+}
+
+export async function loadTakeReviewMix(
+  project: Project,
+  phraseId: string,
+  options: TakeReviewOptions,
+  loadBuffer: (audioBlobId: string) => Promise<AudioBuffer | null>,
+): Promise<PlaybackMix> {
+  const takeLayer: MixPlaybackLayer = {
+    buffer: options.takeBuffer,
+    gainDb: 0,
+    mute: false,
+    pan: 0,
+    offsetMs: takePlaybackOffsetMs(options.latencyCompMs),
+  }
+
+  if (options.mode === 'solo') {
+    return { ghostGainDb: 0, ghostMute: true, extra: [takeLayer], click: false }
+  }
+  if (options.mode === 'ghost') {
+    return { ghostGainDb: 0, ghostMute: false, extra: [takeLayer], click: false }
+  }
+
+  // Stack: borrow Stack Build's balance so there is one source of truth for
+  // how a double sits against the ghost and the keepers.
+  const preset = mixPresetById(STACK_BUILD_PRESET_ID)
+  const ghostLayer = preset.layers.find((layer) => layer.guideOrTakeRef === GHOST_LAYER_REF)
+  const keeperLayer = preset.layers.find((layer) => layer.guideOrTakeRef === KEEPER_LAYER_REF)
+  // The take under review is its own layer; a kept take would double itself.
+  const keepers = stackKeepersForReview(project, phraseId, options.takeId)
+  const buffers = await loadKeeperBuffers(keepers, loadBuffer)
+
+  const extra: MixPlaybackLayer[] = []
+  for (const keeper of keepers) {
+    const buffer = buffers.get(keeper.id)
+    if (!buffer) continue
+    extra.push({
+      buffer,
+      gainDb: keeperLayer?.gainDb ?? 0,
+      mute: keeperLayer?.mute ?? false,
+      pan: keeperLayer?.pan ?? 0,
+      offsetMs: takePlaybackOffsetMs(keeper.latencyCompMs),
+    })
+  }
+  extra.push(takeLayer)
+
+  return {
+    ghostGainDb: ghostLayer?.gainDb ?? 0,
+    ghostMute: ghostLayer?.mute ?? false,
+    extra,
+    click: false,
+  }
+}

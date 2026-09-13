@@ -438,13 +438,14 @@ describe('RecordControl', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Last take')).toBeTruthy()
     })
-    expect(screen.getByRole('button', { name: 'Hear it' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'With ghost' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Take alone' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Keep it' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Scrap & again/ })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Record' })).toBeNull()
   })
 
-  it('Hear it replays the take on the same play window with latency skip', async () => {
+  it('With ghost replays the take on the same play window with latency skip', async () => {
     vi.mocked(decodeAudioFile).mockResolvedValue({
       buffer: { duration: 2.35 } as AudioBuffer,
       durationMs: 2350,
@@ -482,9 +483,9 @@ describe('RecordControl', () => {
     const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
     rerender(saved)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Hear it' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'With ghost' })).toBeTruthy())
     vi.mocked(engine.play).mockClear()
-    fireEvent.click(screen.getByRole('button', { name: 'Hear it' }))
+    fireEvent.click(screen.getByRole('button', { name: 'With ghost' }))
 
     await waitFor(() => expect(engine.play).toHaveBeenCalledTimes(1))
     expect(engine.play).toHaveBeenCalledWith(
@@ -499,6 +500,87 @@ describe('RecordControl', () => {
       expect.objectContaining({
         extra: [expect.objectContaining({ offsetMs: 87 })],
       }),
+    )
+  })
+
+  it('Take alone plays the take with the ghost muted', async () => {
+    vi.mocked(decodeAudioFile).mockResolvedValue({
+      buffer: { duration: 2.35 } as AudioBuffer,
+      durationMs: 2350,
+      sampleRate: 44100,
+    })
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo({
+      getAudioBlob: vi.fn(async () => ({
+        id: 'blob',
+        projectId: 'p',
+        kind: 'take' as const,
+        mimeType: 'audio/webm',
+        byteSize: 2048,
+        createdAt: '2026-09-12T10:00:00.000Z',
+        blob: new Blob([new Uint8Array(8)]),
+      })),
+    })
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { rerender } = renderControl({ engine, repo })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+    listeners.current?.onEnded?.()
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
+    rerender(vi.mocked(repo.saveProject).mock.calls[0]?.[0]!)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Take alone' })).toBeTruthy())
+    vi.mocked(engine.play).mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Take alone' }))
+
+    await waitFor(() => expect(engine.play).toHaveBeenCalledTimes(1))
+    const mix = vi.mocked(engine.play).mock.calls[0]?.[2]
+    expect(mix?.ghostMute).toBe(true)
+    expect(mix?.extra).toHaveLength(1)
+  })
+
+  it('disables With stack until another keeper exists on the phrase', async () => {
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { rerender } = renderControl({ engine, repo })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+    listeners.current?.onEnded?.()
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
+    rerender(saved)
+
+    // Only the take under review exists: nothing to stack against.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'With stack' })).toBeTruthy())
+    expect(
+      screen.getByRole('button', { name: 'With stack' }).hasAttribute('disabled'),
+    ).toBe(true)
+
+    // An earlier keeper on the same phrase makes stacking meaningful.
+    rerender({
+      ...saved,
+      takes: [
+        { ...sampleTake({ id: 'earlier', takeIndex: 1, rating: 'keeper' }) },
+        ...saved.takes,
+      ],
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'With stack' }).hasAttribute('disabled'),
+      ).toBe(false),
     )
   })
 
