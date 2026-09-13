@@ -64,9 +64,13 @@ Stack: Vite + React + TypeScript, Tailwind CSS v4, Dexie, Zod, React Router.
 
 ## Deploy to GitHub Pages
 
-Pushing to `main` builds and publishes via `.github/workflows/deploy.yml`
-(lint and tests must pass first). One-time setup: **Settings → Pages → Source →
-GitHub Actions**.
+**One-time setup, required before the first deploy:** in the repository,
+**Settings → Pages → Source → GitHub Actions**. Until that is set, the workflow
+fails at *Configure Pages* with `Get Pages site failed … Not Found` — the token
+a workflow gets cannot enable Pages by itself.
+
+After that, pushing to `main` builds and publishes via
+`.github/workflows/deploy.yml` (lint and tests must pass first).
 
 The site is served from `https://<user>.github.io/acapellaplanner/`, so the build
 needs that prefix. It comes from `BASE_PATH`, which the workflow derives from the
