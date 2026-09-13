@@ -2,8 +2,16 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig } from 'vitest/config'
+import { githubPagesSpaFallback } from './vite/githubPagesSpaFallback.ts'
+
+// GitHub Pages serves a project site from /<repo>/, so assets, the PWA scope
+// and the service worker's navigate fallback all need that prefix. Set
+// BASE_PATH='/' (or use a custom domain / <user>.github.io repo) to serve from
+// the root instead.
+const base = process.env.BASE_PATH ?? '/acapellaplanner/'
 
 export default defineConfig({
+  base,
   plugins: [
     react(),
     tailwindcss(),
@@ -20,7 +28,8 @@ export default defineConfig({
         name: 'Acapella Planner',
         short_name: 'Acapella',
         description: 'Local-first ghost-track studio for acapella rehearsal.',
-        start_url: '/',
+        start_url: base,
+        scope: base,
         display: 'standalone',
         background_color: '#f6f1e8',
         theme_color: '#c23b2a',
@@ -45,9 +54,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,mjs,css,html,svg,png,ico,webmanifest}'],
-        navigateFallback: '/index.html',
+        navigateFallback: `${base}index.html`,
       },
     }),
+    githubPagesSpaFallback(),
   ],
   test: {
     environment: 'jsdom',

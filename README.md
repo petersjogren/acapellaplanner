@@ -62,11 +62,36 @@ npm run build
 
 Stack: Vite + React + TypeScript, Tailwind CSS v4, Dexie, Zod, React Router.
 
+## Deploy to GitHub Pages
+
+Pushing to `main` builds and publishes via `.github/workflows/deploy.yml`
+(lint and tests must pass first). One-time setup: **Settings → Pages → Source →
+GitHub Actions**.
+
+The site is served from `https://<user>.github.io/acapellaplanner/`, so the build
+needs that prefix. It comes from `BASE_PATH`, which the workflow derives from the
+Pages configuration — renaming the repo does not break asset paths. Building
+locally defaults to `/acapellaplanner/`; use `BASE_PATH=/ npm run build` for a
+root-served host (custom domain or a `<user>.github.io` repo).
+
+Two details make a client-routed PWA work there:
+
+- **`404.html`** — GitHub Pages has no rewrite rule, so a reload of
+  `/project/<id>/sing` would 404. `vite/githubPagesSpaFallback.ts` emits a copy
+  of `index.html` as `404.html`; Pages serves it and the router takes over.
+- **`basename`** — `BrowserRouter` is given `import.meta.env.BASE_URL` so routes
+  resolve under the subpath.
+
+HTTPS is required for microphone access, and Pages provides it.
+
+**Hosting does not make songs shared or portable** — each browser keeps its own
+IndexedDB. See [Moving a song between devices](#moving-a-song-between-devices).
+
 ## Offline PWA / iPad booth
 
 Production builds (`npm run build`) generate a web app manifest and a Workbox service worker (`sw.js`) that caches the **app shell** (`index.html`, JS, CSS, icons). Existing projects stay in IndexedDB on the device, so they still work offline. The service worker does **not** cache audio blobs — those are already local.
 
-Install: Chrome/Edge → install icon, or Safari on iPad → Share → Add to Home Screen. The app opens `standalone` with start URL `/`.
+Install: Chrome/Edge → install icon, or Safari on iPad → Share → Add to Home Screen. The app opens `standalone`, scoped to the path it was built for (`/acapellaplanner/` on GitHub Pages, `/` when built with `BASE_PATH=/`).
 
 ### Safari microphone (iPad)
 

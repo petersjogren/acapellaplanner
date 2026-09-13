@@ -12,10 +12,21 @@ describe('PWA', () => {
     expect(config).toContain('VitePWA')
     expect(config).toContain("name: 'Acapella Planner'")
     expect(config).toContain("display: 'standalone'")
-    expect(config).toContain("start_url: '/'")
+    // start_url/scope follow the deploy base rather than a hardcoded '/', so a
+    // GitHub Pages project site installs scoped to /<repo>/.
+    expect(config).toContain('start_url: base')
+    expect(config).toContain('scope: base')
     expect(html).toContain('theme-color')
     expect(
       html.includes('rel="manifest"') || config.includes("name: 'Acapella Planner'"),
     ).toBe(true)
+  })
+
+  it('derives the base from BASE_PATH with a project-site default', () => {
+    const config = readFileSync(resolve(root, 'vite.config.ts'), 'utf8')
+    expect(config).toContain("process.env.BASE_PATH ?? '/acapellaplanner/'")
+    // The service worker must fall back within the deployed scope, or a deep
+    // link reload is served the wrong shell.
+    expect(config).toContain('navigateFallback: `${base}index.html`')
   })
 })
