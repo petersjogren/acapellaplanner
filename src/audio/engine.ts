@@ -5,6 +5,7 @@ import {
   computePlayWindow,
   phraseEnterDelayMs,
   type PhrasePlaySpec,
+  type PlayWindow,
 } from './schedule.ts'
 
 export type { PhrasePlaySpec, PlayWindow } from './schedule.ts'
@@ -39,7 +40,18 @@ type ScheduledLayer = {
   buffer: AudioBuffer
   output: GainNode
   offsetMs: number
+  /**
+   * Ghost clips to the audio that exists (window.durationMs); takes clip to the
+   * phrase span that was asked for (window.requestedDurationMs). Clamping a take
+   * to a short ghost is what truncated listen-back to the ghost's length.
+   */
+  limitMs: (window: PlayWindow) => number
 }
+
+/** Ghost clips to the audio that exists. */
+const GHOST_LIMIT = (window: PlayWindow) => window.durationMs
+/** The phrase span that was asked for; takes and pass timing follow this. */
+const REQUESTED_SPAN = (window: PlayWindow) => window.requestedDurationMs ?? window.durationMs
 
 export type PlaybackEngineOptions = {
   getBuffer: () => AudioBuffer | null
@@ -117,18 +129,19 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     timers.add(id)
   }
 
+  /** Returns the scheduled duration in seconds, or 0 when nothing was started. */
   function startLayer(
     ctx: AudioContext,
     layer: ScheduledLayer,
-    window: { offsetMs: number; durationMs: number },
+    window: PlayWindow,
     when: number,
     gen: number,
     onEnded?: () => void,
-  ) {
+  ): number {
     const offsetSec = layer.offsetMs / 1000
     const remainingSec = layer.buffer.duration - offsetSec
-    const durationSec = Math.min(window.durationMs / 1000, remainingSec)
-    if (!(durationSec > 0)) return
+    const durationSec = Math.min(layer.limitMs(window) / 1000, remainingSec)
+    if (!(durationSec > 0)) return 0
 
     const source = ctx.createBufferSource()
     source.buffer = layer.buffer
@@ -146,6 +159,7 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       if (gen !== generation) return
       onEnded?.()
     }
+    return durationSec
   }
 
   function startClick(ctx: AudioContext, output: GainNode, when: number) {
@@ -188,17 +202,35 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     clickTimesMs: number[],
     spec: PhrasePlaySpec,
     listeners: PlaybackListeners | undefined,
-    window: { offsetMs: number; durationMs: number },
+    window: PlayWindow,
     when: number,
     gen: number,
   ) {
     if (gen !== generation) return
 
-    startLayer(ctx, ghost, window, when, gen, () => {
+    // A one-shot pass is over when every layer has ended AND the phrase span the
+    // preparer asked for has elapsed. Ending on the ghost alone cut both the
+    // recording and listen-back short whenever the ghost audio ran out early.
+    const spanMs = REQUESTED_SPAN(window)
+    let pendingLayers = 0
+    let endedFired = false
+    // Untruncated passes end with their audio, so timing is unchanged there.
+    let spanElapsed = spanMs <= window.durationMs
+
+    function maybeEnded() {
+      if (endedFired || pendingLayers > 0 || !spanElapsed) return
+      endedFired = true
       if (!spec.loop) listeners?.onEnded?.()
-    })
+    }
+
+    function layerEnded() {
+      pendingLayers -= 1
+      maybeEnded()
+    }
+
+    if (startLayer(ctx, ghost, window, when, gen, layerEnded) > 0) pendingLayers += 1
     for (const extra of extras) {
-      startLayer(ctx, extra, window, when, gen)
+      if (startLayer(ctx, extra, window, when, gen, layerEnded) > 0) pendingLayers += 1
     }
     scheduleClicks(ctx, clickOutput, clickTimesMs, window, when)
 
@@ -216,8 +248,16 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     if (listeners?.onPassStart) {
       armOffset(0, () => listeners.onPassStart?.())
     }
+    // The pass lasts as long as the phrase asked for, even when the ghost audio
+    // ran out early — otherwise recording stops mid-performance.
+    if (!spanElapsed) {
+      armOffset(spanMs, () => {
+        spanElapsed = true
+        maybeEnded()
+      })
+    }
     if (listeners?.onPassComplete) {
-      armOffset(window.durationMs, () => listeners.onPassComplete?.())
+      armOffset(spanMs, () => listeners.onPassComplete?.())
     }
     if (listeners?.onPhraseEnter) {
       armOffset(phraseEnterDelayMs(spec.startMs, window.offsetMs), () => {
@@ -277,7 +317,12 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       output.gain.value = dbToGain(layer.gainDb, layer.mute ?? false)
       output.connect(ctx.destination)
       outputGains.add(output)
-      extras.push({ buffer: layer.buffer, output, offsetMs: layer.offsetMs ?? 0 })
+      extras.push({
+        buffer: layer.buffer,
+        output,
+        offsetMs: layer.offsetMs ?? 0,
+        limitMs: REQUESTED_SPAN,
+      })
     }
 
     const clickTimesMs =
@@ -292,7 +337,7 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
 
     startIteration(
       ctx,
-      { buffer, output: ghostOutput, offsetMs: window.offsetMs },
+      { buffer, output: ghostOutput, offsetMs: window.offsetMs, limitMs: GHOST_LIMIT },
       extras,
       clickOutput,
       clickTimesMs,

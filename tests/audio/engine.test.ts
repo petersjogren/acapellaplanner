@@ -402,4 +402,93 @@ describe('createPlaybackEngine', () => {
     expect(oscillators[0]?.disconnect).toHaveBeenCalled()
     expect(gains[1]?.disconnect).toHaveBeenCalled()
   })
+
+  // Regression: a 10s phrase over a ghost whose audio is only 2.5s used to clamp
+  // the take to the ghost, so listen-back played ~2s of a 10s performance.
+  it('plays a take in full when the ghost audio is shorter than the phrase', async () => {
+    const shortGhost = buffer(2.5)
+    const take = buffer(9.96)
+    const engine = engineWith(shortGhost)
+
+    await engine.play(
+      spec({ startMs: 0, endMs: 10_000, preRollMs: 0, postRollMs: 0, loop: false }),
+      undefined,
+      { extra: [{ buffer: take, gainDb: 0, mute: false }] },
+    )
+
+    expect(sources).toHaveLength(2)
+    // Ghost still clamps to the audio it actually has.
+    expect(sources[0]?.start).toHaveBeenCalledWith(1, 0, 2.5)
+    // The take plays its whole length regardless of the ghost.
+    expect(sources[1]?.start).toHaveBeenCalledWith(1, 0, 9.96)
+  })
+
+  it('honours the take offset while still playing the rest of the take in full', async () => {
+    const engine = engineWith(buffer(2.5))
+    await engine.play(
+      spec({ startMs: 0, endMs: 10_000, preRollMs: 0, postRollMs: 0, loop: false }),
+      undefined,
+      { extra: [{ buffer: buffer(9.96), gainDb: 0, mute: false, offsetMs: 120 }] },
+    )
+
+    const [, offsetArg, durationArg] = sources[1]!.start.mock.calls[0] as number[]
+    expect(offsetArg).toBeCloseTo(0.12)
+    expect(durationArg).toBeCloseTo(9.84)
+  })
+
+  it('fires onEnded only after the longest layer ends, not the short ghost', async () => {
+    const onEnded = vi.fn()
+    const engine = engineWith(buffer(2.5))
+    await engine.play(
+      spec({ startMs: 0, endMs: 10_000, preRollMs: 0, postRollMs: 0, loop: false }),
+      { onEnded },
+      { extra: [{ buffer: buffer(9.96), gainDb: 0, mute: false }] },
+    )
+
+    const ghostSource = sources[0]!
+    const takeSource = sources[1]!
+
+    // Ghost runs out first — listen-back must keep going.
+    ghostSource.onended?.call(ghostSource as unknown as AudioBufferSourceNode, new Event('ended'))
+    expect(onEnded).not.toHaveBeenCalled()
+
+    takeSource.onended?.call(takeSource as unknown as AudioBufferSourceNode, new Event('ended'))
+    // The requested 10s span has not elapsed yet.
+    expect(onEnded).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(onEnded).toHaveBeenCalledTimes(1)
+  })
+
+  // Regression: recording stopped when the short ghost ended, so the mic was cut
+  // off long before the phrase span the singer was actually singing.
+  it('keeps a truncated-ghost pass open for the full phrase span', async () => {
+    const onEnded = vi.fn()
+    const onPassComplete = vi.fn()
+    const engine = engineWith(buffer(2.5))
+    await engine.play(
+      spec({ startMs: 0, endMs: 10_000, preRollMs: 0, postRollMs: 0, loop: false }),
+      { onEnded, onPassComplete },
+    )
+
+    // Ghost audio ends at 2.5s; the pass must not.
+    sources[0]?.onended?.call(sources[0] as unknown as AudioBufferSourceNode, new Event('ended'))
+    await vi.advanceTimersByTimeAsync(2_500)
+    expect(onPassComplete).not.toHaveBeenCalled()
+    expect(onEnded).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(7_500)
+    expect(onPassComplete).toHaveBeenCalledTimes(1)
+    expect(onEnded).toHaveBeenCalledTimes(1)
+  })
+
+  it('still fires onEnded once when only the ghost is scheduled', async () => {
+    const onEnded = vi.fn()
+    const engine = engineWith(buffer())
+    await engine.play(spec({ loop: false }), { onEnded }, { extra: [{ buffer: null, gainDb: 0 }] })
+
+    expect(sources).toHaveLength(1)
+    sources[0]?.onended?.call(sources[0] as unknown as AudioBufferSourceNode, new Event('ended'))
+    expect(onEnded).toHaveBeenCalledTimes(1)
+  })
 })

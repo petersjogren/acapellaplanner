@@ -31,7 +31,7 @@ import {
   type VoicePartPatch,
 } from '../domain/roster.ts'
 import { bindSheetRefToPhrase } from '../domain/sheets.ts'
-import { renameProject } from '../domain/project.ts'
+import { renameProject, phrasesBeyondGhost, reconcileGhostDuration } from '../domain/project.ts'
 import type { Project, RegionNorm, SheetDocument } from '../domain/schemas.ts'
 import { renderPageToCanvas } from '../pdf/renderPage.ts'
 import { CompletionMatrix } from '../ui/preparer/CompletionMatrix.tsx'
@@ -126,7 +126,15 @@ export function PreparePage() {
         try {
           // Decode on the playback singleton so the buffer is usable for play().
           const decoded = await decodeAudioFile(record.blob)
-          if (!cancelled) setBuffer(decoded.buffer)
+          if (cancelled) return
+          setBuffer(decoded.buffer)
+          // Stored ghostMeta can outlive the real audio; the timeline and phrase
+          // clamping must follow the buffer, not a stale snapshot. Only write
+          // when they actually disagree, so loading a song is not a mutation.
+          const current = projectRef.current
+          if (current && reconcileGhostDuration(current, decoded.durationMs) !== current) {
+            void persistProject((live) => reconcileGhostDuration(live, decoded.durationMs))
+          }
         } catch {
           if (!cancelled) setBuffer(null)
         }
@@ -401,6 +409,9 @@ export function PreparePage() {
   const ghostMeta = loaded.settings.ghostMeta
   const activeSheet = loaded.sheetDocs.at(-1) ?? null
   const hasGhost = Boolean(loaded.ghostTrackId && ghostMeta)
+  // Phrases marked over audio the ghost does not actually have: those passes
+  // stop early, so recording and listen-back get cut off mid-phrase.
+  const strandedPhrases = buffer ? phrasesBeyondGhost(loaded, buffer.duration * 1000) : []
 
   return (
     <PreparerShell title={loaded.title} current="prepare" projectId={loaded.id}>
@@ -451,6 +462,15 @@ export function PreparePage() {
         </form>
       )}
       <p className="mt-3 max-w-xl text-ink/70">The ghost is the lead everyone locks to.</p>
+      {strandedPhrases.length > 0 ? (
+        <p role="alert" className="mt-4 max-w-xl text-record-red">
+          {strandedPhrases.length === 1
+            ? `“${strandedPhrases[0]?.name}” runs past the end of the ghost audio`
+            : `${strandedPhrases.length} phrases run past the end of the ghost audio`}{' '}
+          ({formatDuration(buffer ? buffer.duration * 1000 : 0)}). Those passes stop when the ghost
+          does — shorten them, or import a longer ghost.
+        </p>
+      ) : null}
       {hasGhost && ghostMeta ? (
         <section className="mt-8 max-w-3xl" aria-label="Ghost track">
           <h3 className="font-medium">Ghost track</h3>

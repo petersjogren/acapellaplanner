@@ -15,6 +15,8 @@ import {
 } from '../../audio/mix.ts'
 import {
   isEmptyTake,
+  isProcessedCapture,
+  micProcessingFlags,
   nextTakeIndex,
   requestMicStream,
   startRecording,
@@ -94,6 +96,7 @@ export function RecordControl({
   const [lastTakeId, setLastTakeId] = useState<string | null>(null)
   const [hearing, setHearing] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [processed, setProcessed] = useState(false)
   const armedRef = useRef(false)
   const armingRef = useRef(false)
   const projectRef = useRef(project)
@@ -231,6 +234,10 @@ export function RecordControl({
     try {
       if (!streamRef.current) {
         streamRef.current = await requestMicStream()
+        // Raw capture is requested, but the device can refuse it. Processed
+        // capture ducks a sung take against the ghost, so say so rather than
+        // letting the singer wonder where their voice went.
+        setProcessed(isProcessedCapture(micProcessingFlags(streamRef.current)))
       }
 
       armedRef.current = true
@@ -514,6 +521,13 @@ export function RecordControl({
       {error ? (
         <p role="alert" className="text-record-red">
           {error}
+        </p>
+      ) : null}
+
+      {processed ? (
+        <p role="status" className="max-w-md text-sm text-ink-muted">
+          This device insists on echo cancellation or noise suppression. It can duck your voice
+          against the ghost — use headphones, or record on desktop Chrome.
         </p>
       ) : null}
     </section>

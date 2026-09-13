@@ -23,6 +23,7 @@ describe('computePlayWindow', () => {
     expect(computePlayWindow(spec(), 10_000)).toEqual({
       offsetMs: 750,
       durationMs: 2350,
+      requestedDurationMs: 2350,
     })
   })
 
@@ -32,7 +33,7 @@ describe('computePlayWindow', () => {
         spec({ startMs: 100, endMs: 800, preRollMs: 500, postRollMs: 0 }),
         10_000,
       ),
-    ).toEqual({ offsetMs: 0, durationMs: 800 })
+    ).toEqual({ offsetMs: 0, durationMs: 800, requestedDurationMs: 800 })
   })
 
   it('clamps post-roll to the ghost duration', () => {
@@ -41,7 +42,15 @@ describe('computePlayWindow', () => {
         spec({ startMs: 9000, endMs: 9800, preRollMs: 0, postRollMs: 500 }),
         10_000,
       ),
-    ).toEqual({ offsetMs: 9000, durationMs: 1000 })
+    ).toEqual({ offsetMs: 9000, durationMs: 1000, requestedDurationMs: 1300 })
+  })
+
+  // Regression: the ghost audio being shorter than the phrase used to silently
+  // shorten the whole pass, truncating both recording and listen-back.
+  it('reports the requested span separately when the ghost audio runs out early', () => {
+    expect(
+      computePlayWindow(spec({ startMs: 0, endMs: 10_000, preRollMs: 0, postRollMs: 0 }), 2_500),
+    ).toEqual({ offsetMs: 0, durationMs: 2_500, requestedDurationMs: 10_000 })
   })
 
   it('throws a clear error when the window duration is zero', () => {

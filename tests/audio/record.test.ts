@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   isEmptyTake,
+  isProcessedCapture,
+  micProcessingFlags,
   nextTakeIndex,
+  requestMicStream,
   startRecording,
   takeLabel,
 } from '../../src/audio/record.ts'
@@ -101,5 +104,114 @@ describe('startRecording', () => {
     expect(result.mimeType).toBe('audio/webm')
     expect(result.blob.size).toBe(2048)
     expect(result.durationMs).toBeGreaterThanOrEqual(0)
+  })
+})
+
+// Regression: `{ audio: true }` silently opts into Chrome's voice-call DSP.
+// Echo cancellation treats the sung take as echo of the ghost and ducks it, so
+// a loudly sung phrase comes back near-silent with only the tail audible.
+describe('requestMicStream', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  function stubGum(impl: (c: MediaStreamConstraints) => Promise<MediaStream>) {
+    const getUserMedia = vi.fn(impl)
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia },
+    })
+    return getUserMedia
+  }
+
+  it('asks for raw capture with all voice processing disabled', async () => {
+    const stream = { getAudioTracks: () => [] } as unknown as MediaStream
+    const getUserMedia = stubGum(async () => stream)
+
+    await expect(requestMicStream()).resolves.toBe(stream)
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    })
+  })
+
+  it('falls back to default capture when the device rejects the constraints', async () => {
+    const stream = { getAudioTracks: () => [] } as unknown as MediaStream
+    const error = new Error('cannot satisfy')
+    error.name = 'OverconstrainedError'
+    const getUserMedia = stubGum(async (constraints) => {
+      if (constraints.audio !== true) throw error
+      return stream
+    })
+
+    await expect(requestMicStream()).resolves.toBe(stream)
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
+    expect(getUserMedia).toHaveBeenLastCalledWith({ audio: true })
+  })
+
+  it('propagates a denied permission instead of retrying', async () => {
+    const error = new Error('Permission denied')
+    error.name = 'NotAllowedError'
+    const getUserMedia = stubGum(async () => {
+      throw error
+    })
+
+    await expect(requestMicStream()).rejects.toThrow(/permission denied/i)
+    expect(getUserMedia).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws a clear error when the browser has no microphone API', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined })
+    await expect(requestMicStream()).rejects.toThrow(/microphone is not available/i)
+  })
+})
+
+describe('micProcessingFlags', () => {
+  function streamWith(settings: MediaTrackSettings | null): MediaStream {
+    return {
+      getAudioTracks: () => (settings === null ? [] : [{ getSettings: () => settings }]),
+    } as unknown as MediaStream
+  }
+
+  it('reports the processing the device actually applied', () => {
+    expect(
+      micProcessingFlags(
+        streamWith({ echoCancellation: true, noiseSuppression: false, autoGainControl: true }),
+      ),
+    ).toEqual({ echoCancellation: true, noiseSuppression: false, autoGainControl: true })
+  })
+
+  it('reports raw capture when every processor is off', () => {
+    const flags = micProcessingFlags(
+      streamWith({ echoCancellation: false, noiseSuppression: false, autoGainControl: false }),
+    )
+    expect(flags).toEqual({
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    })
+    expect(isProcessedCapture(flags)).toBe(false)
+  })
+
+  it('is null when there is no audio track to inspect', () => {
+    expect(micProcessingFlags(streamWith(null))).toBeNull()
+    expect(isProcessedCapture(null)).toBe(false)
+  })
+
+  it('flags a stream as processed when any processor is on', () => {
+    expect(
+      isProcessedCapture({
+        echoCancellation: true,
+        noiseSuppression: false,
+        autoGainControl: false,
+      }),
+    ).toBe(true)
+    expect(
+      isProcessedCapture({
+        echoCancellation: false,
+        noiseSuppression: true,
+        autoGainControl: false,
+      }),
+    ).toBe(true)
   })
 })

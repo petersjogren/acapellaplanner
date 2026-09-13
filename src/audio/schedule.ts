@@ -9,17 +9,30 @@ export type PhrasePlaySpec = {
 
 export type PlayWindow = {
   offsetMs: number
+  /** Ghost playback length: the phrase span clipped to the audio that exists. */
   durationMs: number
+  /**
+   * The phrase span the preparer actually asked for, before the ghost audio
+   * clipped it. Takes, loop period and pass completion follow this: a short or
+   * truncated ghost must not cut a performance short. Optional so hand-built
+   * windows (tests, callers) fall back to durationMs.
+   */
+  requestedDurationMs?: number
 }
 
 export function computePlayWindow(spec: PhrasePlaySpec, ghostDurationMs: number): PlayWindow {
   const playStartMs = Math.max(0, spec.startMs - spec.preRollMs)
-  const playEndMs = Math.min(ghostDurationMs, spec.endMs + spec.postRollMs)
+  const requestedEndMs = spec.endMs + spec.postRollMs
+  const playEndMs = Math.min(ghostDurationMs, requestedEndMs)
   const durationMs = playEndMs - playStartMs
   if (!(durationMs > 0)) {
     throw new Error('Play window duration must be greater than 0')
   }
-  return { offsetMs: playStartMs, durationMs }
+  return {
+    offsetMs: playStartMs,
+    durationMs,
+    requestedDurationMs: Math.max(durationMs, requestedEndMs - playStartMs),
+  }
 }
 
 export function computeLoopDeadlines(
@@ -34,7 +47,10 @@ export function computeLoopDeadlines(
   if (gapMs < 0) {
     throw new Error('gap must be non-negative')
   }
-  const periodSec = (window.durationMs + gapMs) / 1000
+  // Loop on the span the phrase asked for: a ghost that runs out early must not
+  // shorten the period the singer is looping against.
+  const spanMs = window.requestedDurationMs ?? window.durationMs
+  const periodSec = (spanMs + gapMs) / 1000
   const starts: number[] = []
   for (let i = 0; i < count; i++) {
     starts.push(audioNow + i * periodSec)
