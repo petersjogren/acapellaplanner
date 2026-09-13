@@ -26,6 +26,28 @@ You never name files, set loops, or arm anything. Phrases, breaths, doubles — 
 
 Full method: [Singers Unlimited workflow](docs/workflow-singers-unlimited.md).
 
+## Moving a song between devices
+
+**Songs live in the browser on one device.** They are stored in IndexedDB, which
+is per-origin *and* per-device — a song prepared on a laptop does not appear on
+the iPad, and clearing site data deletes it. Nothing syncs, and there is no
+server holding a copy.
+
+The zip is how a song travels, and how it is backed up:
+
+- **Export** — on the home desk (next to each song) or from **Review**. Produces
+  `<song-title>.acapella.zip` containing `project.json` (phrases, sections,
+  voice parts, sheet crops, take ratings) plus every audio file under `audio/`:
+  the ghost, the takes, and any sheet PDF or page images.
+- **Import zip** — on the home desk. Restores the whole song, audio included.
+
+Export before clearing browser data, before switching device, and after a
+session worth keeping. The zip round-trips: import what you exported and the
+song is intact.
+
+The zip is a round-trip/backup format, not a DAW session: takes are
+phrase-length Opus files named by blob id, positioned via `project.json`.
+
 ## Develop
 
 ```bash
