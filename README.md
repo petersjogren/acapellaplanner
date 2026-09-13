@@ -64,13 +64,19 @@ Stack: Vite + React + TypeScript, Tailwind CSS v4, Dexie, Zod, React Router.
 
 ## Deploy to GitHub Pages
 
+GitHub Pages requires a **public repository** (or GitHub Pro for a private one).
+While this repo is private the deploy cannot run, so the workflow is
+**manual-only** — it will not fire on push. Run it from **Actions → Deploy to
+GitHub Pages → Run workflow**, or restore the `push:` trigger in
+`.github/workflows/deploy.yml` once Pages is available.
+
 **One-time setup, required before the first deploy:** in the repository,
 **Settings → Pages → Source → GitHub Actions**. Until that is set, the workflow
 fails at *Configure Pages* with `Get Pages site failed … Not Found` — the token
 a workflow gets cannot enable Pages by itself.
 
-After that, pushing to `main` builds and publishes via
-`.github/workflows/deploy.yml` (lint and tests must pass first).
+The workflow runs lint and tests before publishing, so a failing build is never
+deployed.
 
 The site is served from `https://<user>.github.io/acapellaplanner/`, so the build
 needs that prefix. It comes from `BASE_PATH`, which the workflow derives from the
@@ -87,6 +93,11 @@ Two details make a client-routed PWA work there:
   resolve under the subpath.
 
 HTTPS is required for microphone access, and Pages provides it.
+
+Any static host works, and several serve **private** repos on a free tier
+(Netlify, Cloudflare Pages, Vercel). Those serve from the domain root, so build
+with `BASE_PATH=/ npm run build` and publish `dist/` — the `404.html` fallback
+is emitted regardless, and most of these hosts honour it too.
 
 **Hosting does not make songs shared or portable** — each browser keeps its own
 IndexedDB. See [Moving a song between devices](#moving-a-song-between-devices).
