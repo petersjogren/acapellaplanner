@@ -167,6 +167,138 @@ describe('HomePage', () => {
     expect(await repo.listProjects()).toHaveLength(0)
   })
 
+  it('renames a song from the list and persists the new title', async () => {
+    await repo.saveProject(createEmptyProject('Untitled song'))
+
+    renderHome()
+    await waitFor(() => {
+      expect(screen.getByText('Untitled song')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Untitled song' }))
+    fireEvent.change(screen.getByLabelText('Song name'), {
+      target: { value: '  Autumn Leaves  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Autumn Leaves')).toBeTruthy()
+    })
+    const listed = await repo.listProjects()
+    expect(listed).toHaveLength(1)
+    expect(listed[0]?.title).toBe('Autumn Leaves')
+  })
+
+  it('rejects an empty rename and keeps the old title', async () => {
+    await repo.saveProject(createEmptyProject('Autumn Leaves'))
+
+    renderHome()
+    await waitFor(() => {
+      expect(screen.getByText('Autumn Leaves')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Autumn Leaves' }))
+    fireEvent.change(screen.getByLabelText('Song name'), { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('Song name is required')
+    })
+    expect((await repo.listProjects())[0]?.title).toBe('Autumn Leaves')
+  })
+
+  it('cancels a rename without saving', async () => {
+    await repo.saveProject(createEmptyProject('Autumn Leaves'))
+
+    renderHome()
+    await waitFor(() => {
+      expect(screen.getByText('Autumn Leaves')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Autumn Leaves' }))
+    fireEvent.change(screen.getByLabelText('Song name'), { target: { value: 'Something else' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Autumn Leaves')).toBeTruthy()
+    })
+    expect(screen.queryByLabelText('Song name')).toBeNull()
+    expect((await repo.listProjects())[0]?.title).toBe('Autumn Leaves')
+  })
+
+  it('deletes a song only after confirmation, and drops its audio blobs', async () => {
+    const saved = await repo.saveProject({
+      ...createEmptyProject('Autumn Leaves'),
+      ghostTrackId: 'blob-tiny',
+    })
+    await repo.putAudioBlob({
+      id: 'blob-tiny',
+      projectId: saved.id,
+      kind: 'ghost',
+      mimeType: 'audio/webm',
+      byteSize: 4,
+      createdAt: saved.createdAt,
+      blob: new Blob(['abcd'], { type: 'audio/webm' }),
+    })
+
+    renderHome()
+    await waitFor(() => {
+      expect(screen.getByText('Autumn Leaves')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Autumn Leaves' }))
+    expect(await repo.listProjects()).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete Autumn Leaves' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('No songs yet')).toBeTruthy()
+    })
+    expect(await repo.listProjects()).toHaveLength(0)
+    expect(await repo.getAudioBlob('blob-tiny')).toBeUndefined()
+  })
+
+  it('keeps the song when the delete confirmation is dismissed', async () => {
+    await repo.saveProject(createEmptyProject('Autumn Leaves'))
+
+    renderHome()
+    await waitFor(() => {
+      expect(screen.getByText('Autumn Leaves')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Autumn Leaves' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }))
+
+    expect(screen.getByText('Autumn Leaves')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Confirm delete Autumn Leaves' })).toBeNull()
+    expect(await repo.listProjects()).toHaveLength(1)
+  })
+
+  it('surfaces a rejected delete as an alert and keeps the song listed', async () => {
+    await repo.saveProject(createEmptyProject('Autumn Leaves'))
+    const failingRepo: ProjectRepository = {
+      ...repo,
+      deleteProject: () => Promise.reject(new Error('Delete failed')),
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <AppRoutes repo={failingRepo} />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Autumn Leaves')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Autumn Leaves' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete Autumn Leaves' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('Delete failed')
+    })
+    expect(screen.getByText('Autumn Leaves')).toBeTruthy()
+  })
+
   it('does not store zip-slip or extra blobs that are not in the project', async () => {
     const source = await repo.saveProject({
       ...createEmptyProject('Imported song'),

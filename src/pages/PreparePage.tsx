@@ -31,6 +31,7 @@ import {
   type VoicePartPatch,
 } from '../domain/roster.ts'
 import { bindSheetRefToPhrase } from '../domain/sheets.ts'
+import { renameProject } from '../domain/project.ts'
 import type { Project, RegionNorm, SheetDocument } from '../domain/schemas.ts'
 import { renderPageToCanvas } from '../pdf/renderPage.ts'
 import { CompletionMatrix } from '../ui/preparer/CompletionMatrix.tsx'
@@ -51,6 +52,7 @@ export function PreparePage() {
   const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
   const [sheetPageIndex, setSheetPageIndex] = useState(0)
   const [sheetPageUrl, setSheetPageUrl] = useState<string | null>(null)
+  const [titleDraft, setTitleDraft] = useState<string | null>(null)
   const projectRef = useRef<Project | null>(null)
   const writeQueueRef = useRef(Promise.resolve())
   const bufferRef = useRef<AudioBuffer | null>(null)
@@ -373,6 +375,16 @@ export function PreparePage() {
     if (stillCurrent()) setSheetPageIndex(nextIndex)
   }
 
+  async function handleRenameSong(title: string) {
+    const trimmed = title.trim()
+    if (!trimmed || trimmed === (projectRef.current ?? loaded).title) {
+      setTitleDraft(null)
+      return
+    }
+    await persistProject((current) => renameProject(current, trimmed))
+    setTitleDraft(null)
+  }
+
   async function handleBindCrop(phraseId: string, region: RegionNorm) {
     const doc = (projectRef.current ?? loaded).sheetDocs.at(-1)
     if (!doc) return
@@ -392,7 +404,52 @@ export function PreparePage() {
 
   return (
     <PreparerShell title={loaded.title} current="prepare" projectId={loaded.id}>
-      <h2 className="font-display text-xl font-semibold tracking-tight">{loaded.title}</h2>
+      {titleDraft === null ? (
+        <div className="flex flex-wrap items-baseline gap-3">
+          <h2 className="font-display text-xl font-semibold tracking-tight">{loaded.title}</h2>
+          <button
+            type="button"
+            className="rounded-md border border-ink/15 px-3 py-1 text-sm font-medium studio-transition hover:bg-ink/5"
+            aria-label="Rename song"
+            onClick={() => setTitleDraft(loaded.title)}
+          >
+            Rename
+          </button>
+        </div>
+      ) : (
+        <form
+          className="flex max-w-xl flex-wrap items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void handleRenameSong(titleDraft)
+          }}
+        >
+          <input
+            autoFocus
+            type="text"
+            aria-label="Song name"
+            value={titleDraft}
+            onChange={(event) => setTitleDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setTitleDraft(null)
+            }}
+            className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 font-display text-xl font-semibold tracking-tight"
+          />
+          <button
+            type="submit"
+            className="shrink-0 rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red"
+          >
+            Save name
+          </button>
+          <button
+            type="button"
+            className="shrink-0 rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:bg-ink/5"
+            onClick={() => setTitleDraft(null)}
+          >
+            Cancel
+          </button>
+        </form>
+      )}
       <p className="mt-3 max-w-xl text-ink/70">The ghost is the lead everyone locks to.</p>
       {hasGhost && ghostMeta ? (
         <section className="mt-8 max-w-3xl" aria-label="Ghost track">

@@ -6,7 +6,7 @@ Local-first. Desktop Chrome MVP; iPad Safari as a booth once the song is prepare
 
 ## Preparer quickstart
 
-1. **New song** on the home desk.
+1. **New song** on the home desk. **Rename** it from the list or from the top of Prepare; **Delete** on the list removes a song and its audio (one confirm step).
 2. **Import ghost track** — a lead vocal (Bonnie Herman–style: text, feel, rubato, intention). Any mono or stereo guide audio works.
 3. **Mark a phrase** on the ghost — musical sentences and breaths, not arbitrary bars. Name them; add lyrics if you have them.
 4. **Voice parts** — add the roster (S1, A2, …) and how many doubles you want on each.

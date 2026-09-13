@@ -848,4 +848,43 @@ describe('PreparePage sheet upload', () => {
       })
     })
   })
+
+  it('renames the song from the prepare page and persists it', async () => {
+    renderPrepare()
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 2, name: 'When I Fall' })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename song' }))
+    fireEvent.change(screen.getByLabelText('Song name'), {
+      target: { value: '  When I Fall in Love  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save name' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 2, name: 'When I Fall in Love' })).toBeTruthy()
+    })
+    expect(screen.queryByLabelText('Song name')).toBeNull()
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.title).toBe('When I Fall in Love')
+    })
+  })
+
+  it('ignores an empty song name and keeps the old title', async () => {
+    renderPrepare()
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 2, name: 'When I Fall' })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename song' }))
+    fireEvent.change(screen.getByLabelText('Song name'), { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save name' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 2, name: 'When I Fall' })).toBeTruthy()
+    })
+    expect((await repo.getProject(projectId))?.title).toBe('When I Fall')
+  })
 })
