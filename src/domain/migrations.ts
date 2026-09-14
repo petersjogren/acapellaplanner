@@ -15,7 +15,55 @@ import { CURRENT_SCHEMA_VERSION, ProjectSchema, type Project } from './schemas.t
  *   2: (raw) => ({ ...raw, newRequiredField: legacyDefaultFor(raw) }),
  */
 const MIGRATIONS: Record<number, (raw: Record<string, unknown>) => Record<string, unknown>> = {
-  // 1: (raw) => ({ ...raw, /* v1 -> v2 changes */ }),
+  // v1 sections had their own [startMs, endMs] on the ghost. v2 is a span of
+  // phrases — "these phrases, sung this way."
+  1: migrateSectionsV1toV2,
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object'
+}
+
+function migrateSectionsV1toV2(raw: Record<string, unknown>): Record<string, unknown> {
+  const phrases = Array.isArray(raw.phrases) ? raw.phrases : []
+  const ordered = phrases
+    .filter(isRecord)
+    .filter((phrase) => typeof phrase.id === 'string')
+    .map((phrase) => ({
+      id: phrase.id as string,
+      startMs: typeof phrase.startMs === 'number' ? phrase.startMs : 0,
+      endMs: typeof phrase.endMs === 'number' ? phrase.endMs : 0,
+    }))
+    .sort((a, b) => a.startMs - b.startMs)
+
+  const claimed = new Set<string>()
+  const incoming = Array.isArray(raw.sections) ? raw.sections : []
+  const sections: Record<string, unknown>[] = []
+
+  for (const item of incoming) {
+    if (!isRecord(item)) continue
+    const { startMs, endMs, ...rest } = item
+    const start = typeof startMs === 'number' ? startMs : Number.NaN
+    const end = typeof endMs === 'number' ? endMs : Number.NaN
+    const members = ordered.filter(
+      (phrase) =>
+        !claimed.has(phrase.id) &&
+        Number.isFinite(start) &&
+        Number.isFinite(end) &&
+        phrase.startMs < end &&
+        start < phrase.endMs,
+    )
+    // A v1 region with no phrases on it cannot become a span — drop it.
+    if (members.length === 0) continue
+    for (const phrase of members) claimed.add(phrase.id)
+    sections.push({
+      ...rest,
+      fromPhraseId: members[0]!.id,
+      toPhraseId: members[members.length - 1]!.id,
+    })
+  }
+
+  return { ...raw, sections }
 }
 
 export class UnsupportedProjectVersionError extends Error {

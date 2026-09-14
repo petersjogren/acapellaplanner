@@ -31,35 +31,59 @@ export function validatePhrases(phrases: PhraseInterval[]): void {
   assertNoPhraseOverlap(phrases)
 }
 
-export type SectionInterval = {
-  id?: string
+export type PhraseRef = {
+  id: string
   startMs: number
-  endMs: number
 }
 
-export function assertNoSectionOverlap(sections: SectionInterval[]): void {
-  for (let i = 0; i < sections.length; i++) {
-    for (let j = i + 1; j < sections.length; j++) {
-      const a = sections[i]
-      const b = sections[j]
-      if (a.startMs < b.endMs && b.startMs < a.endMs) {
+export type SectionSpan = {
+  id?: string
+  fromPhraseId: string
+  toPhraseId: string
+}
+
+/** Phrase ids in ghost-timeline order. */
+export function orderedPhraseIds(phrases: PhraseRef[]): string[] {
+  return [...phrases].sort((a, b) => a.startMs - b.startMs).map((phrase) => phrase.id)
+}
+
+/**
+ * Inclusive index range of a section on the ordered phrase list.
+ * from after to, or a missing phrase, is invalid.
+ */
+export function sectionSpanRange(section: SectionSpan, orderedIds: string[]): { from: number; to: number } {
+  const from = orderedIds.indexOf(section.fromPhraseId)
+  const to = orderedIds.indexOf(section.toPhraseId)
+  if (from < 0 || to < 0) {
+    throw new Error(`Section ${section.id ?? ''} refers to a missing phrase`)
+  }
+  if (from > to) {
+    throw new Error(`Section ${section.id ?? ''} from-phrase is after to-phrase`)
+  }
+  return { from, to }
+}
+
+export function assertNoSectionOverlap(sections: SectionSpan[], phrases: PhraseRef[]): void {
+  const orderedIds = orderedPhraseIds(phrases)
+  const spans = sections.map((section) => ({
+    id: section.id,
+    ...sectionSpanRange(section, orderedIds),
+  }))
+  for (let i = 0; i < spans.length; i++) {
+    for (let j = i + 1; j < spans.length; j++) {
+      const a = spans[i]!
+      const b = spans[j]!
+      if (a.from <= b.to && b.from <= a.to) {
         throw new Error(
-          `Sections overlap: ${a.id ?? 'section'} [${a.startMs}, ${a.endMs}] and ${b.id ?? 'section'} [${b.startMs}, ${b.endMs}]`,
+          `Sections overlap: ${a.id ?? 'section'} and ${b.id ?? 'section'} share a phrase`,
         )
       }
     }
   }
 }
 
-export function validateSections(sections: SectionInterval[]): void {
-  for (const section of sections) {
-    if (!(section.startMs < section.endMs)) {
-      throw new Error(
-        `Section ${section.id ?? ''} startMs must be less than endMs (got ${section.startMs}..${section.endMs})`,
-      )
-    }
-  }
-  assertNoSectionOverlap(sections)
+export function validateSections(sections: SectionSpan[], phrases: PhraseRef[]): void {
+  assertNoSectionOverlap(sections, phrases)
 }
 
 export const LoopPolicySchema = z.object({
@@ -77,20 +101,15 @@ export const VoicePartSchema = z.object({
   isGhost: z.boolean().optional(),
 })
 
-export const SectionSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-    timeMode: z.enum(['ghost-follow', 'fixed-tempo']),
-    fixedBpm: z.number().positive().optional(),
-    startMs: z.number(),
-    endMs: z.number(),
-    clickEnabled: z.boolean(),
-  })
-  .refine((section) => section.startMs < section.endMs, {
-    message: 'Section startMs must be less than endMs',
-    path: ['endMs'],
-  })
+export const SectionSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  timeMode: z.enum(['ghost-follow', 'fixed-tempo']),
+  fixedBpm: z.number().positive().optional(),
+  fromPhraseId: z.string().min(1),
+  toPhraseId: z.string().min(1),
+  clickEnabled: z.boolean(),
+})
 
 export const RegionNormSchema = z.object({
   x: z.number().min(0).max(1),
@@ -233,8 +252,11 @@ export const ProjectSettingsSchema = z.object({
  * default in before ProjectSchema.parse() ever sees the data. Add migration
  * steps there when this number goes up; ProjectSchema itself always
  * describes only the current shape.
+ *
+ * v2: Section is a span of phrases (fromPhraseId/toPhraseId), not its own
+ * [startMs, endMs] on the ghost.
  */
-export const CURRENT_SCHEMA_VERSION = 1
+export const CURRENT_SCHEMA_VERSION = 2
 
 export const ProjectSchema = z
   .object({
@@ -263,7 +285,7 @@ export const ProjectSchema = z
       ctx.addIssue(error instanceof Error ? error.message : 'Invalid phrases')
     }
     try {
-      validateSections(project.sections)
+      validateSections(project.sections, project.phrases)
     } catch (error) {
       ctx.addIssue(error instanceof Error ? error.message : 'Invalid sections')
     }

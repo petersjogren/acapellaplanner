@@ -1,7 +1,7 @@
 /** @vitest-environment node */
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createEmptyProject, type Project } from '../../src/domain/schemas.ts'
+import { createEmptyProject, CURRENT_SCHEMA_VERSION, type Project } from '../../src/domain/schemas.ts'
 import { AcapellaDB } from '../../src/storage/db.ts'
 import {
   createProjectRepository,
@@ -102,11 +102,13 @@ describe('projectRepository', () => {
     await database.projects.put(legacyShape as unknown as Project)
 
     const loaded = await repo.getProject(legacyShape.id)
-    expect(loaded?.schemaVersion).toBe(1)
+    expect(loaded?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(loaded?.title).toBe('Legacy row')
 
     const listed = await repo.listProjects()
-    expect(listed.find((project) => project.id === legacyShape.id)?.schemaVersion).toBe(1)
+    expect(listed.find((project) => project.id === legacyShape.id)?.schemaVersion).toBe(
+      CURRENT_SCHEMA_VERSION,
+    )
   })
 
   it('round-trips an audio blob', async () => {

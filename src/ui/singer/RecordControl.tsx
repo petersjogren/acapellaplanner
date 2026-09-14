@@ -254,7 +254,7 @@ export function RecordControl({
         stopMic()
         return
       }
-      const clickTimesMs = clicksForPhrase(phrase, projectRef.current.sections)
+      const clickTimesMs = clicksForPhrase(phrase, projectRef.current.sections, projectRef.current.phrases)
       // One pass per Record press so the singer can hear the take before another.
       const started = await engine.play(
         boothPlaySpec(phrase),

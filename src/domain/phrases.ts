@@ -1,8 +1,10 @@
 import {
   validatePhrases,
+  validateSections,
   type Phrase,
   type Project,
 } from './schemas.ts'
+import { retargetSectionsAfterRemovingPhrase } from './sections.ts'
 
 export const MIN_PHRASE_MS = 50
 
@@ -95,6 +97,7 @@ export function addPhrase(project: Project, input: NewPhraseInput): Project {
   const phrase = buildPhrase(input, project.phrases, durationMs)
   const phrases = sortPhrases([...project.phrases, phrase])
   validatePhrases(phrases)
+  validateSections(project.sections, phrases)
   return { ...project, phrases }
 }
 
@@ -137,9 +140,13 @@ export function updatePhrase(project: Project, id: string, patch: PhrasePatch): 
   }
   const phrases = sortPhrases(project.phrases.map((item) => (item.id === id ? next : item)))
   validatePhrases(phrases)
+  validateSections(project.sections, phrases)
   return { ...project, phrases }
 }
 
 export function removePhrase(project: Project, id: string): Project {
-  return { ...project, phrases: project.phrases.filter((item) => item.id !== id) }
+  const sections = retargetSectionsAfterRemovingPhrase(project, id)
+  const phrases = project.phrases.filter((item) => item.id !== id)
+  validateSections(sections, phrases)
+  return { ...project, phrases, sections }
 }

@@ -1,6 +1,6 @@
 import { strToU8, unzipSync, zipSync } from 'fflate'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createEmptyProject, ProjectSchema } from '../../src/domain/schemas.ts'
+import { createEmptyProject, ProjectSchema, CURRENT_SCHEMA_VERSION } from '../../src/domain/schemas.ts'
 import {
   audioBlobIdFromZipPath,
   downloadBlob,
@@ -58,7 +58,7 @@ describe('projectIO', () => {
 
     const { project: imported } = await importProjectZip(legacyZip)
 
-    expect(imported.schemaVersion).toBe(1)
+    expect(imported.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(imported.title).toBe('Legacy song')
   })
 

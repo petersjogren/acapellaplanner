@@ -2,11 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { clicksForPhrase, clickTimesMs } from '../../src/audio/click.ts'
 import type { Phrase, Section } from '../../src/domain/schemas.ts'
 
-function section(overrides: Partial<Section> & Pick<Section, 'id' | 'timeMode'>): Section {
+function section(overrides: Partial<Section> & Pick<Section, 'id' | 'timeMode' | 'fromPhraseId' | 'toPhraseId'>): Section {
   return {
     name: overrides.name ?? overrides.id,
-    startMs: 0,
-    endMs: 2000,
     clickEnabled: false,
     ...overrides,
   }
@@ -49,81 +47,80 @@ describe('clickTimesMs', () => {
 })
 
 describe('clicksForPhrase', () => {
-  it('returns click times clipped to the phrase when it overlaps a fixed-tempo click section', () => {
+  it('returns click times on the section grid, clipped to the phrase play window', () => {
+    const p1 = phrase({ id: 'p1', startMs: 0, endMs: 2000 })
+    const p2 = phrase({ id: 'p2', startMs: 2000, endMs: 4000 })
     const sections = [
       section({
-        id: 'in-time',
+        id: 'verse',
         timeMode: 'fixed-tempo',
         fixedBpm: 60,
         clickEnabled: true,
-        startMs: 0,
-        endMs: 4000,
+        fromPhraseId: 'p1',
+        toPhraseId: 'p2',
       }),
     ]
-    expect(clicksForPhrase(phrase({ startMs: 500, endMs: 2500 }), sections)).toEqual([1000, 2000])
+    expect(clicksForPhrase(p2, sections, [p1, p2])).toEqual([2000, 3000])
   })
 
-  it('uses the phrase sectionId when present', () => {
+  it('returns no clicks for a phrase that is not in the section', () => {
+    const p1 = phrase({ id: 'p1', startMs: 0, endMs: 2000 })
+    const p2 = phrase({ id: 'p2', startMs: 2000, endMs: 4000 })
     const sections = [
       section({
-        id: 'ghost',
-        timeMode: 'ghost-follow',
-        clickEnabled: true,
-        startMs: 0,
-        endMs: 4000,
-      }),
-      section({
-        id: 'in-time',
+        id: 'verse',
         timeMode: 'fixed-tempo',
         fixedBpm: 60,
         clickEnabled: true,
-        startMs: 0,
-        endMs: 2000,
+        fromPhraseId: 'p2',
+        toPhraseId: 'p2',
       }),
     ]
-    expect(clicksForPhrase(phrase({ sectionId: 'in-time' }), sections)).toEqual([0, 1000])
+    expect(clicksForPhrase(p1, sections, [p1, p2])).toEqual([])
   })
 
   it('returns no clicks for ghost-follow / rubato sections', () => {
+    const p1 = phrase()
     const sections = [
       section({
         id: 'rubato',
         timeMode: 'ghost-follow',
         clickEnabled: true,
         fixedBpm: 60,
-        startMs: 0,
-        endMs: 2000,
+        fromPhraseId: 'p1',
+        toPhraseId: 'p1',
       }),
     ]
-    expect(clicksForPhrase(phrase({ sectionId: 'rubato' }), sections)).toEqual([])
-    expect(clicksForPhrase(phrase(), sections)).toEqual([])
+    expect(clicksForPhrase(p1, sections, [p1])).toEqual([])
   })
 
   it('returns no clicks when clickEnabled is false', () => {
+    const p1 = phrase()
     const sections = [
       section({
         id: 'in-time',
         timeMode: 'fixed-tempo',
         fixedBpm: 60,
         clickEnabled: false,
-        startMs: 0,
-        endMs: 2000,
+        fromPhraseId: 'p1',
+        toPhraseId: 'p1',
       }),
     ]
-    expect(clicksForPhrase(phrase({ sectionId: 'in-time' }), sections)).toEqual([])
+    expect(clicksForPhrase(p1, sections, [p1])).toEqual([])
   })
 
-  it('never generates clicks outside the section window', () => {
+  it('never generates clicks outside the derived section window', () => {
+    const p1 = phrase({ id: 'p1', startMs: 1000, endMs: 3000 })
     const sections = [
       section({
         id: 'in-time',
         timeMode: 'fixed-tempo',
         fixedBpm: 60,
         clickEnabled: true,
-        startMs: 1000,
-        endMs: 3000,
+        fromPhraseId: 'p1',
+        toPhraseId: 'p1',
       }),
     ]
-    expect(clicksForPhrase(phrase({ startMs: 0, endMs: 4000 }), sections)).toEqual([1000, 2000])
+    expect(clicksForPhrase(p1, sections, [p1])).toEqual([1000, 2000])
   })
 })

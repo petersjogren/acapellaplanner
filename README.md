@@ -12,7 +12,7 @@ Local-first. Desktop Chrome MVP; iPad Safari as a booth once the song is prepare
 2. **Import ghost track** — a lead vocal (Bonnie Herman–style: text, feel, rubato, intention). Any mono or stereo guide audio works.
 3. **Mark a phrase** on the ghost — musical sentences and breaths, not arbitrary bars. Name them; add lyrics if you have them.
 4. **Voice parts** — add the roster (S1, A2, …) and how many doubles you want on each.
-5. **Sections** — mark stretches as *Follow the ghost* (rubato, no click) or *In time* (optional click only inside that window).
+5. **Sections** — group a run of phrases as *Follow the ghost* (rubato, no click) or *In time* (optional click). A section is those phrases, sung that way.
 6. Open **Sing** for the booth, or **Review** later to promote keepers and export a zip.
 
 Optional: crop sheet music onto a phrase so the booth shows only that cue.

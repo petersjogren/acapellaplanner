@@ -24,13 +24,13 @@ function phrase(overrides: { id: string; startMs: number; endMs: number }) {
   }
 }
 
-function section(overrides: { id: string; startMs: number; endMs: number }) {
+function section(overrides: { id: string; fromPhraseId: string; toPhraseId: string }) {
   return {
     id: overrides.id,
     name: overrides.id,
     timeMode: 'ghost-follow' as const,
-    startMs: overrides.startMs,
-    endMs: overrides.endMs,
+    fromPhraseId: overrides.fromPhraseId,
+    toPhraseId: overrides.toPhraseId,
     clickEnabled: false,
   }
 }
@@ -40,7 +40,7 @@ describe('createEmptyProject', () => {
     const project = createEmptyProject()
     const parsed = ProjectSchema.parse(project)
 
-    expect(parsed.schemaVersion).toBe(1)
+    expect(parsed.schemaVersion).toBe(2)
     expect(parsed.title).toBe('Untitled song')
     expect(parsed.defaultTuningHz).toBe(440)
     expect(parsed.ghostTrackId).toBeNull()
@@ -127,38 +127,52 @@ describe('phrase overlap', () => {
 
 describe('section overlap', () => {
   it('rejects overlapping sections', () => {
-    const sections = [
-      section({ id: 'a', startMs: 0, endMs: 1000 }),
-      section({ id: 'b', startMs: 500, endMs: 1500 }),
+    const phrases = [
+      phrase({ id: 'p1', startMs: 0, endMs: 1000 }),
+      phrase({ id: 'p2', startMs: 1000, endMs: 2000 }),
+      phrase({ id: 'p3', startMs: 2000, endMs: 3000 }),
     ]
-    const project = { ...createEmptyProject(), sections }
+    const sections = [
+      section({ id: 'a', fromPhraseId: 'p1', toPhraseId: 'p2' }),
+      section({ id: 'b', fromPhraseId: 'p2', toPhraseId: 'p3' }),
+    ]
+    const project = { ...createEmptyProject(), phrases, sections }
 
     expect(ProjectSchema.safeParse(project).success).toBe(false)
-    expect(() => assertNoSectionOverlap(sections)).toThrow()
-    expect(() => validateSections(sections)).toThrow()
+    expect(() => assertNoSectionOverlap(sections, phrases)).toThrow()
+    expect(() => validateSections(sections, phrases)).toThrow()
   })
 
-  it('allows adjacent sections that only touch endpoints', () => {
-    const sections = [
-      section({ id: 'a', startMs: 0, endMs: 1000 }),
-      section({ id: 'b', startMs: 1000, endMs: 2000 }),
+  it('allows adjacent sections that share no phrase', () => {
+    const phrases = [
+      phrase({ id: 'p1', startMs: 0, endMs: 1000 }),
+      phrase({ id: 'p2', startMs: 1000, endMs: 2000 }),
     ]
-    const project = { ...createEmptyProject(), sections }
+    const sections = [
+      section({ id: 'a', fromPhraseId: 'p1', toPhraseId: 'p1' }),
+      section({ id: 'b', fromPhraseId: 'p2', toPhraseId: 'p2' }),
+    ]
+    const project = { ...createEmptyProject(), phrases, sections }
 
     expect(ProjectSchema.safeParse(project).success).toBe(true)
-    expect(() => assertNoSectionOverlap(sections)).not.toThrow()
-    expect(() => validateSections(sections)).not.toThrow()
+    expect(() => assertNoSectionOverlap(sections, phrases)).not.toThrow()
+    expect(() => validateSections(sections, phrases)).not.toThrow()
   })
 
   it('rejects nested overlapping sections', () => {
-    const sections = [
-      section({ id: 'outer', startMs: 0, endMs: 2000 }),
-      section({ id: 'inner', startMs: 250, endMs: 500 }),
+    const phrases = [
+      phrase({ id: 'p1', startMs: 0, endMs: 1000 }),
+      phrase({ id: 'p2', startMs: 1000, endMs: 2000 }),
+      phrase({ id: 'p3', startMs: 2000, endMs: 3000 }),
     ]
-    const project = { ...createEmptyProject(), sections }
+    const sections = [
+      section({ id: 'outer', fromPhraseId: 'p1', toPhraseId: 'p3' }),
+      section({ id: 'inner', fromPhraseId: 'p2', toPhraseId: 'p2' }),
+    ]
+    const project = { ...createEmptyProject(), phrases, sections }
 
     expect(ProjectSchema.safeParse(project).success).toBe(false)
-    expect(() => assertNoSectionOverlap(sections)).toThrow()
+    expect(() => assertNoSectionOverlap(sections, phrases)).toThrow()
   })
 })
 
@@ -168,8 +182,8 @@ describe('schema parse failures', () => {
       id: 's1',
       name: 'Verse',
       timeMode: 'rubato',
-      startMs: 0,
-      endMs: 1000,
+      fromPhraseId: 'p1',
+      toPhraseId: 'p1',
       clickEnabled: false,
     })
     expect(result.success).toBe(false)
@@ -187,13 +201,13 @@ describe('schema parse failures', () => {
     expect(() => validatePhrases([phrase({ id: 'a', startMs: 1000, endMs: 1000 })])).toThrow()
   })
 
-  it('rejects a section whose startMs is not before endMs', () => {
-    expect(SectionSchema.safeParse(section({ id: 'a', startMs: 1000, endMs: 500 })).success).toBe(
-      false,
-    )
-    expect(SectionSchema.safeParse(section({ id: 'a', startMs: 1000, endMs: 1000 })).success).toBe(
-      false,
-    )
-    expect(() => validateSections([section({ id: 'a', startMs: 1000, endMs: 1000 })])).toThrow()
+  it('rejects a section whose from-phrase is after its to-phrase', () => {
+    const phrases = [
+      phrase({ id: 'a', startMs: 0, endMs: 1000 }),
+      phrase({ id: 'b', startMs: 1000, endMs: 2000 }),
+    ]
+    expect(() =>
+      validateSections([section({ id: 's', fromPhraseId: 'b', toPhraseId: 'a' })], phrases),
+    ).toThrow(/after to-phrase/)
   })
 })

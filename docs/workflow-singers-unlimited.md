@@ -19,7 +19,7 @@ The booth is that room. The preparer is the producer-arranger. Audio time on the
 
 ### Ghost timeline is truth
 
-Every phrase lives as start and end on the ghost. *In time* and *Follow the ghost* are feels on that same stretch — never a second clock the singer has to fight. A click, when used, only ticks inside an in-time section window. Pre-roll is whatever you include in the phrase mark; there is no extra pre-roll by default. Mark the breath before the line if you want to hear it, then sing.
+Every phrase lives as start and end on the ghost. *In time* and *Follow the ghost* are feels on a **run of phrases** — never a second clock the singer has to fight. A section is those phrases, sung that way. A click, when used, only ticks inside an in-time section. Pre-roll is whatever you include in the phrase mark; there is no extra pre-roll by default. Mark the breath before the line if you want to hear it, then sing.
 
 Headphones are the score. Sheet crops and lyric text are cues. Timing comes from what you hear.
 
@@ -27,10 +27,10 @@ Headphones are the score. Sheet crops and lyric text are cues. Timing comes from
 
 | Feel | Preparer sets | Singer hears |
 |------|----------------|--------------|
-| **Follow the ghost** | Rubato section; click off | Ghost phrasing only — no metronome |
-| **In time** | Section with a tempo; optional click | Ghost plus click *only* in that window |
+| **Follow the ghost** | Rubato section on a phrase span; click off | Ghost phrasing only — no metronome |
+| **In time** | Section on a phrase span with a tempo; optional click | Ghost plus click *only* on those phrases |
 
-Mark sections on the ghost the way the arrangement actually breathes: a free intro, a locked verse, a held tag.
+Mark sections as runs of phrases the way the arrangement actually breathes: a free intro, a locked verse, a held tag.
 
 ### Keepers
 

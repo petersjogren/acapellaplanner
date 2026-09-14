@@ -15,7 +15,7 @@ describe('migrateAndParseProject', () => {
     expect(migrated.id).toBe(project.id)
   })
 
-  it('stamps schemaVersion 1 onto data saved before the field existed', () => {
+  it('stamps missing schemaVersion as v1 and migrates up to current', () => {
     // Every project.json exported (or IndexedDB row saved) before
     // schemaVersion was introduced looks exactly like this: same shape,
     // just missing the field entirely.
@@ -23,7 +23,7 @@ describe('migrateAndParseProject', () => {
 
     const migrated = migrateAndParseProject(legacyShape)
 
-    expect(migrated.schemaVersion).toBe(1)
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(migrated.title).toBe('Old Song')
   })
 
@@ -51,5 +51,79 @@ describe('migrateAndParseProject', () => {
   it('rejects non-object input the same way ProjectSchema would', () => {
     expect(() => migrateAndParseProject(null)).toThrow()
     expect(() => migrateAndParseProject('not a project')).toThrow()
+  })
+
+  it('rewrites v1 time-window sections into phrase spans', () => {
+    const base = createEmptyProject('When I Fall')
+    const v1 = {
+      ...base,
+      schemaVersion: 1,
+      phrases: [
+        {
+          id: 'p1',
+          name: 'Phrase 1',
+          startMs: 0,
+          endMs: 1000,
+          sheetRefs: [],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          postRollMs: 0,
+        },
+        {
+          id: 'p2',
+          name: 'Phrase 2',
+          startMs: 1000,
+          endMs: 2000,
+          sheetRefs: [],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          postRollMs: 0,
+        },
+        {
+          id: 'p3',
+          name: 'Phrase 3',
+          startMs: 4000,
+          endMs: 5000,
+          sheetRefs: [],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          postRollMs: 0,
+        },
+      ],
+      sections: [
+        {
+          id: 'verse',
+          name: 'Verse',
+          timeMode: 'fixed-tempo',
+          fixedBpm: 80,
+          startMs: 0,
+          endMs: 2500,
+          clickEnabled: true,
+        },
+        {
+          id: 'orphan',
+          name: 'Empty stretch',
+          timeMode: 'ghost-follow',
+          startMs: 9000,
+          endMs: 10000,
+          clickEnabled: false,
+        },
+      ],
+    }
+
+    const migrated = migrateAndParseProject(v1)
+    expect(migrated.schemaVersion).toBe(2)
+    expect(migrated.sections).toEqual([
+      expect.objectContaining({
+        id: 'verse',
+        name: 'Verse',
+        timeMode: 'fixed-tempo',
+        fixedBpm: 80,
+        fromPhraseId: 'p1',
+        toPhraseId: 'p2',
+        clickEnabled: true,
+      }),
+    ])
+    expect(migrated.sections.find((item) => item.id === 'orphan')).toBeUndefined()
   })
 })

@@ -267,7 +267,7 @@ export function PreparePage() {
         mixPresetId,
         createAudioBlobLoader((id) => repo.getAudioBlob(id)),
       )
-      const clickTimesMs = clicksForPhrase(selectedPhrase, loaded.sections)
+      const clickTimesMs = clicksForPhrase(selectedPhrase, loaded.sections, loaded.phrases)
       const started = await getEngine().play(
         {
           startMs: selectedPhrase.startMs,
@@ -534,7 +534,7 @@ export function PreparePage() {
       {hasGhost && ghostMeta ? (
         <SectionEditor
           sections={loaded.sections}
-          durationMs={ghostMeta.durationMs}
+          phrases={loaded.phrases}
           onAddSection={handleAddSection}
           onRemoveSection={handleRemoveSection}
         />

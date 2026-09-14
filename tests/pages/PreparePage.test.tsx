@@ -216,12 +216,12 @@ describe('PreparePage phrase marking', () => {
     const timeline = mockTimelineRect()
     dragPhrase(timeline, 100, 300)
     await waitFor(() => {
-      expect(screen.getByText('Phrase 1')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /Phrase 1/ })).toBeTruthy()
     })
 
     dragPhrase(timeline, 400, 600)
     await waitFor(() => {
-      expect(screen.getByText('Phrase 2')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /Phrase 2/ })).toBeTruthy()
     })
 
     const loaded = await repo.getProject(projectId)
@@ -601,7 +601,7 @@ describe('PreparePage phrase playback', () => {
   it('hides playback controls until a phrase is selected', async () => {
     renderPrepare()
     await waitFor(() => {
-      expect(screen.getByText('Phrase 1')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /Phrase 1/ })).toBeTruthy()
     })
     expect(screen.queryByRole('button', { name: 'Play once' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Loop' })).toBeNull()
@@ -611,7 +611,7 @@ describe('PreparePage phrase playback', () => {
   it('plays the selected phrase once, loops with gap, and stops without throwing', async () => {
     renderPrepare()
     await waitFor(() => {
-      expect(screen.getByText('Phrase 1')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /Phrase 1/ })).toBeTruthy()
     })
 
     fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
@@ -646,7 +646,7 @@ describe('PreparePage phrase playback', () => {
 
     renderPrepare()
     await waitFor(() => {
-      expect(screen.getByText('Phrase 1')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /Phrase 1/ })).toBeTruthy()
     })
 
     fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
