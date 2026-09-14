@@ -1,17 +1,24 @@
 import { useState } from 'react'
+import { keeperTakesForPhrase, type TakeReviewMode } from '../../audio/mix.ts'
 import type { Project, TakeRating } from '../../domain/schemas.ts'
-import { MixPresetSelect } from '../shared/MixPresetSelect.tsx'
+
+/** Review only ever solos a take with or without the ghost — never the
+ * Sing-booth "stack" recipe, which folds in the take under review itself. */
+export type ReviewTakeMode = Extract<TakeReviewMode, 'ghost' | 'solo'>
+
+export type ReviewPlayback =
+  | { kind: 'take'; takeId: string; mode: ReviewTakeMode }
+  | { kind: 'phrase'; phraseId: string }
 
 export type TakeReviewProps = {
   project: Project
   selectedPhraseId?: string | null
   onSelectPhrase?: (id: string | null) => void
   onRate: (takeId: string, rating: TakeRating) => void
-  onPlay: (takeId: string) => void
+  onPlayTake: (takeId: string, mode: ReviewTakeMode) => void
+  onPlayAllKeepers: (phraseId: string) => void
   onStop?: () => void
-  playingTakeId?: string | null
-  mixPresetId?: string
-  onMixChange?: (id: string) => void
+  playing?: ReviewPlayback | null
 }
 
 const STAR_RATINGS = [1, 2, 3, 4, 5] as const
@@ -34,16 +41,20 @@ function ratingLabel(rating: TakeRating | undefined): string {
 const buttonClass =
   'rounded-md border border-ink/15 px-3 py-1.5 text-sm font-medium studio-transition hover:bg-ink/5 aria-pressed:border-ink aria-pressed:bg-ink aria-pressed:text-paper'
 
+const TAKE_MODE_LABELS: Record<ReviewTakeMode, string> = {
+  ghost: 'With ghost',
+  solo: 'Solo (no ghost)',
+}
+
 export function TakeReview({
   project,
   selectedPhraseId = null,
   onSelectPhrase,
   onRate,
-  onPlay,
+  onPlayTake,
+  onPlayAllKeepers,
   onStop,
-  playingTakeId = null,
-  mixPresetId,
-  onMixChange,
+  playing = null,
 }: TakeReviewProps) {
   const [phraseFilter, setPhraseFilter] = useState(selectedPhraseId ?? '')
   const phrases = project.phrases
@@ -62,12 +73,14 @@ export function TakeReview({
       return a.takeIndex - b.takeIndex
     })
 
+  const keeperCountForFilter = phraseFilter
+    ? keeperTakesForPhrase(project.takes, phraseFilter).length
+    : 0
+  const allKeepersPlaying = playing?.kind === 'phrase' && playing.phraseId === phraseFilter
+
   return (
     <section className="mt-8 max-w-3xl" aria-label="Take review">
       <div className="flex flex-wrap items-end gap-4">
-        {mixPresetId && onMixChange ? (
-          <MixPresetSelect value={mixPresetId} onChange={onMixChange} />
-        ) : null}
         <label className="flex flex-col items-start gap-1 text-sm">
           <span className="text-ink-muted">Phrase</span>
           <select
@@ -88,6 +101,24 @@ export function TakeReview({
             ))}
           </select>
         </label>
+        {phraseFilter ? (
+          <button
+            type="button"
+            className={buttonClass}
+            aria-pressed={allKeepersPlaying}
+            disabled={keeperCountForFilter === 0}
+            title={
+              keeperCountForFilter === 0
+                ? 'No keepers on this phrase yet'
+                : 'All keepers on this phrase together, ghost muted — check the blend'
+            }
+            onClick={() =>
+              allKeepersPlaying ? onStop?.() : onPlayAllKeepers(phraseFilter)
+            }
+          >
+            {allKeepersPlaying ? 'Stop — All keepers (no ghost)' : 'All keepers (no ghost)'}
+          </button>
+        ) : null}
       </div>
       {takes.length === 0 ? (
         <p className="mt-6 text-ink-muted">No takes yet</p>
@@ -96,7 +127,6 @@ export function TakeReview({
           {takes.map((item) => {
             const part = partsById.get(item.voicePartId)
             const phrase = phrases.find((row) => row.id === item.phraseId)
-            const playing = playingTakeId === item.id
             return (
               <li key={item.id} className="rounded-md border border-ink/10 px-4 py-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -107,13 +137,20 @@ export function TakeReview({
                   <p className="text-sm text-ink-muted">{ratingLabel(item.rating)}</p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md bg-ink px-3 py-1.5 text-sm font-medium text-paper studio-transition hover:bg-record-red"
-                    onClick={() => (playing ? onStop?.() : onPlay(item.id))}
-                  >
-                    {playing ? 'Stop' : 'Play'}
-                  </button>
+                  {(['ghost', 'solo'] as const).map((mode) => {
+                    const active = playing?.kind === 'take' && playing.takeId === item.id && playing.mode === mode
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={buttonClass}
+                        aria-pressed={active}
+                        onClick={() => (active ? onStop?.() : onPlayTake(item.id, mode))}
+                      >
+                        {active ? `Stop — ${TAKE_MODE_LABELS[mode]}` : TAKE_MODE_LABELS[mode]}
+                      </button>
+                    )
+                  })}
                   <button
                     type="button"
                     className={buttonClass}

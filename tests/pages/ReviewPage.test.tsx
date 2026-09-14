@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from '../../src/app/routes.tsx'
+import { decodeAudioFile } from '../../src/audio/decode.ts'
+import type { PlaybackMix } from '../../src/audio/mix.ts'
 import {
   createEmptyProject,
   type Phrase,
@@ -15,6 +17,37 @@ import {
   createProjectRepository,
   type ProjectRepository,
 } from '../../src/storage/projectRepository.ts'
+
+vi.mock('../../src/audio/decode.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/audio/decode.ts')>()
+  return {
+    ...actual,
+    decodeAudioFile: vi.fn(),
+  }
+})
+
+const playback = vi.hoisted(() => {
+  const calls: PlaybackMix[] = []
+  return {
+    calls,
+    play: vi.fn(async (_spec: unknown, _listeners: unknown, mix?: PlaybackMix) => {
+      if (mix) calls.push(mix)
+      return true
+    }),
+    stop: vi.fn(),
+  }
+})
+
+vi.mock('../../src/audio/engine.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/audio/engine.ts')>()
+  return {
+    ...actual,
+    createPlaybackEngine: () => ({
+      play: playback.play,
+      stop: playback.stop,
+    }),
+  }
+})
 
 function part(overrides: Partial<VoicePart> & { id: string }): VoicePart {
   return {
@@ -59,13 +92,45 @@ describe('ReviewPage', () => {
   let projectId: string
 
   beforeEach(async () => {
+    playback.play.mockClear()
+    playback.stop.mockClear()
+    playback.calls.length = 0
     database = new AcapellaDB(`acapellaplanner-review-${crypto.randomUUID()}`)
     repo = createProjectRepository(database)
+    vi.mocked(decodeAudioFile).mockReset()
+    vi.mocked(decodeAudioFile).mockResolvedValue({
+      buffer: { duration: 3, sampleRate: 44100 } as AudioBuffer,
+      durationMs: 3000,
+      sampleRate: 44100,
+    })
+    const ghostBlobId = crypto.randomUUID()
+    await repo.putAudioBlob({
+      id: ghostBlobId,
+      projectId: 'pending',
+      kind: 'ghost',
+      mimeType: 'audio/wav',
+      byteSize: 4,
+      createdAt: new Date().toISOString(),
+      blob: new Blob([new Uint8Array([0, 0, 0, 0])], { type: 'audio/wav' }),
+    })
+    for (const takeId of ['blob-1', 'blob-2', 'blob-3']) {
+      await repo.putAudioBlob({
+        id: takeId,
+        projectId: 'pending',
+        kind: 'take',
+        mimeType: 'audio/webm',
+        byteSize: 4,
+        createdAt: new Date().toISOString(),
+        blob: new Blob([new Uint8Array([0, 0, 0, 0])], { type: 'audio/webm' }),
+      })
+    }
     const project: Project = {
       ...createEmptyProject('When I Fall'),
       voiceRoster: [part({ id: 's1', name: 'Soprano 1', shortLabel: 'S1' })],
       phrases: [phrase({ id: 'p1', name: 'when I fall' })],
       takes: [take({ id: 't1', phraseId: 'p1', voicePartId: 's1', takeIndex: 1 })],
+      ghostTrackId: ghostBlobId,
+      settings: { language: 'en', ghostMeta: { filename: 'ghost.wav', durationMs: 3000 } },
     }
     const saved = await repo.saveProject(project)
     projectId = saved.id
@@ -77,6 +142,14 @@ describe('ReviewPage', () => {
     await database.delete()
   })
 
+  function renderReview(repository: ProjectRepository = repo) {
+    return render(
+      <MemoryRouter initialEntries={[`/project/${projectId}/review`]}>
+        <AppRoutes repo={repository} />
+      </MemoryRouter>,
+    )
+  }
+
   it('clicking Keeper persists rating keeper via the repository', async () => {
     const saveProject = vi.fn(async (project: Project) => repo.saveProject(project))
     const mocked: ProjectRepository = {
@@ -84,11 +157,7 @@ describe('ReviewPage', () => {
       saveProject,
     }
 
-    render(
-      <MemoryRouter initialEntries={[`/project/${projectId}/review`]}>
-        <AppRoutes repo={mocked} />
-      </MemoryRouter>,
-    )
+    renderReview(mocked)
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Keeper' })).toBeTruthy()
@@ -103,5 +172,92 @@ describe('ReviewPage', () => {
     const loaded = await repo.getProject(projectId)
     expect(loaded?.takes[0]?.rating).toBe('keeper')
     expect(loaded?.completion.cells[0]?.keeperCount).toBe(1)
+  })
+
+  it('"With ghost" plays the take against an unmuted ghost', async () => {
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'With ghost' })).toBeTruthy()
+    })
+
+    // The ghost buffer decodes asynchronously after mount; a click before it
+    // resolves hits the "No ghost track" guard and never calls play(). Retry
+    // the click (idempotent — it only ever changes the label once play()
+    // resolves) until playback actually registers.
+    await waitFor(() => {
+      const button = screen.queryByRole('button', { name: 'With ghost' })
+      if (button) fireEvent.click(button)
+      expect(playback.calls.length).toBe(1)
+    })
+    expect(playback.calls[0]?.ghostMute).toBe(false)
+    expect(playback.calls[0]?.extra).toHaveLength(1)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Stop — With ghost' })).toBeTruthy()
+    })
+  })
+
+  it('"Solo (no ghost)" mutes the ghost and plays only the take', async () => {
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Solo (no ghost)' })).toBeTruthy()
+    })
+
+    await waitFor(() => {
+      const button = screen.queryByRole('button', { name: 'Solo (no ghost)' })
+      if (button) fireEvent.click(button)
+      expect(playback.calls.length).toBe(1)
+    })
+    expect(playback.calls[0]?.ghostMute).toBe(true)
+    expect(playback.calls[0]?.extra).toHaveLength(1)
+  })
+
+  it('"All keepers (no ghost)" plays every keeper on the filtered phrase with the ghost muted', async () => {
+    const current = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...current!,
+      takes: [
+        ...current!.takes,
+        take({ id: 't2', phraseId: 'p1', voicePartId: 's1', takeIndex: 2, rating: 'keeper' }),
+        take({ id: 't3', phraseId: 'p1', voicePartId: 's1', takeIndex: 3, rating: 'keeper' }),
+      ],
+    })
+
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Phrase')).toBeTruthy()
+    })
+    fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
+
+    const button = await screen.findByRole('button', { name: 'All keepers (no ghost)' })
+    fireEvent.click(button)
+
+    await waitFor(() => {
+      expect(playback.calls.length).toBe(1)
+    })
+    expect(playback.calls[0]?.ghostMute).toBe(true)
+    // Both keepers (t2, t3) play together — t1 is unrated, not a keeper.
+    expect(playback.calls[0]?.extra).toHaveLength(2)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Stop — All keepers (no ghost)' })).toBeTruthy()
+    })
+  })
+
+  it('"All keepers" is disabled on a phrase with no keepers', async () => {
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Phrase')).toBeTruthy()
+    })
+    fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
+
+    const button = await screen.findByRole('button', { name: 'All keepers (no ghost)' })
+    expect(button.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(button)
+    expect(playback.play).not.toHaveBeenCalled()
   })
 })

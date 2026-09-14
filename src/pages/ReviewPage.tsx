@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import { decodeAudioFile } from '../audio/decode.ts'
 import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
-import { takePlaybackOffsetMs } from '../audio/latency.ts'
 import {
-  GHOST_FOCUS_PRESET_ID,
-  mixPresetById,
-  type PlaybackMix,
+  BLEND_CHECK_PRESET_ID,
+  createAudioBlobLoader,
+  loadPlaybackMixForPhrase,
+  loadTakeReviewMix,
 } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import type { Project, TakeRating } from '../domain/schemas.ts'
@@ -16,7 +16,12 @@ import {
   projectZipFilename,
   resolveExportBlob,
 } from '../storage/projectIO.ts'
-import { applyTakeRating, TakeReview } from '../ui/preparer/TakeReview.tsx'
+import {
+  applyTakeRating,
+  TakeReview,
+  type ReviewPlayback,
+  type ReviewTakeMode,
+} from '../ui/preparer/TakeReview.tsx'
 import { PreparerShell } from '../ui/shell/PreparerShell.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
@@ -26,35 +31,11 @@ function messageFrom(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-function mixForReviewedTake(
-  presetId: string,
-  takeBuffer: AudioBuffer,
-  latencyCompMs?: number,
-): PlaybackMix {
-  const preset = mixPresetById(presetId)
-  const ghostLayer = preset.layers.find((layer) => layer.guideOrTakeRef === 'ghost')
-  const keeperLayer = preset.layers.find((layer) => layer.guideOrTakeRef === 'keeper')
-  return {
-    ghostGainDb: ghostLayer?.gainDb ?? 0,
-    ghostMute: ghostLayer?.mute ?? false,
-    extra: [
-      {
-        buffer: takeBuffer,
-        gainDb: keeperLayer?.gainDb ?? 0,
-        mute: false,
-        pan: keeperLayer?.pan ?? 0,
-        offsetMs: takePlaybackOffsetMs(latencyCompMs),
-      },
-    ],
-  }
-}
-
 export function ReviewPage() {
   const { project, error, setProject } = useLoadedProject()
   const repo = useProjectRepository()
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null)
-  const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
-  const [playingTakeId, setPlayingTakeId] = useState<string | null>(null)
+  const [playing, setPlaying] = useState<ReviewPlayback | null>(null)
   const [playError, setPlayError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -152,11 +133,11 @@ export function ReviewPage() {
     }
   }
 
-  async function handlePlay(takeId: string) {
+  async function handlePlayTake(takeId: string, mode: ReviewTakeMode) {
     const current = projectRef.current ?? loaded
     const take = current.takes.find((item) => item.id === takeId)
     const phrase = current.phrases.find((item) => item.id === take?.phraseId)
-    if (!take) return
+    if (!take || !phrase) return
     const generation = ++playGenerationRef.current
     setPlayError(null)
     if (!bufferRef.current) {
@@ -172,35 +153,97 @@ export function ReviewPage() {
       }
       const decoded = await decodeAudioFile(record.blob)
       if (generation !== playGenerationRef.current) return
+      const mix = await loadTakeReviewMix(
+        current,
+        phrase.id,
+        {
+          takeId: take.id,
+          takeBuffer: decoded.buffer,
+          latencyCompMs: take.latencyCompMs,
+          mode,
+        },
+        createAudioBlobLoader((id) => repo.getAudioBlob(id)),
+      )
+      if (generation !== playGenerationRef.current) return
       const started = await getEngine().play(
         {
-          startMs: phrase?.startMs ?? 0,
-          endMs: phrase?.endMs ?? take.durationMs,
-          preRollMs: phrase?.preRollMs ?? 0,
-          postRollMs: phrase?.postRollMs ?? 0,
-          gapMs: phrase?.loopDefault.gapMs ?? 0,
+          startMs: phrase.startMs,
+          endMs: phrase.endMs,
+          preRollMs: phrase.preRollMs ?? 0,
+          postRollMs: phrase.postRollMs,
+          gapMs: phrase.loopDefault.gapMs,
           loop: false,
         },
         {
           onEnded: () => {
-            if (generation === playGenerationRef.current) setPlayingTakeId(null)
+            if (generation === playGenerationRef.current) setPlaying(null)
           },
         },
-        mixForReviewedTake(mixPresetId, decoded.buffer, take.latencyCompMs),
+        mix,
       )
       if (generation !== playGenerationRef.current) return
-      setPlayingTakeId(started ? takeId : null)
+      setPlaying(started ? { kind: 'take', takeId, mode } : null)
     } catch (err: unknown) {
       if (generation !== playGenerationRef.current) return
-      setPlayingTakeId(null)
+      setPlaying(null)
       setPlayError(messageFrom(err, 'Could not play take'))
+    }
+  }
+
+  async function handlePlayAllKeepers(phraseId: string) {
+    const current = projectRef.current ?? loaded
+    const phrase = current.phrases.find((item) => item.id === phraseId)
+    if (!phrase) return
+    const generation = ++playGenerationRef.current
+    setPlayError(null)
+    if (!bufferRef.current) {
+      setPlayError('No ghost track to play against')
+      return
+    }
+    try {
+      // Blend Check: ghost muted, keepers only — same recipe the booth uses
+      // to check whether a stack holds on its own. The real ghost buffer is
+      // still what the engine times the window against; it just plays silent.
+      const mix = await loadPlaybackMixForPhrase(
+        current,
+        phraseId,
+        BLEND_CHECK_PRESET_ID,
+        createAudioBlobLoader((id) => repo.getAudioBlob(id)),
+      )
+      if (generation !== playGenerationRef.current) return
+      if (!mix.extra || mix.extra.length === 0) {
+        setPlayError('No keepers on this phrase yet')
+        return
+      }
+      const started = await getEngine().play(
+        {
+          startMs: phrase.startMs,
+          endMs: phrase.endMs,
+          preRollMs: phrase.preRollMs ?? 0,
+          postRollMs: phrase.postRollMs,
+          gapMs: phrase.loopDefault.gapMs,
+          loop: false,
+        },
+        {
+          onEnded: () => {
+            if (generation === playGenerationRef.current) setPlaying(null)
+          },
+        },
+        mix,
+      )
+      if (generation !== playGenerationRef.current) return
+      setPlaying(started ? { kind: 'phrase', phraseId } : null)
+    } catch (err: unknown) {
+      if (generation !== playGenerationRef.current) return
+      setPlaying(null)
+      setPlayError(messageFrom(err, 'Could not play keepers'))
     }
   }
 
   function handleStop() {
     playGenerationRef.current += 1
     engineRef.current?.stop()
-    setPlayingTakeId(null)
+    setPlaying(null)
   }
 
   async function handleExport() {
@@ -232,7 +275,9 @@ export function ReviewPage() {
           Export
         </button>
       </div>
-      <p className="mt-3 max-w-xl text-ink/70">Play a take against the ghost, then keep or scratch it.</p>
+      <p className="mt-3 max-w-xl text-ink/70">
+        Hear a take with the ghost or solo, or all keepers together to check the blend.
+      </p>
       {playError ? (
         <p role="alert" className="mt-4 text-record-red">
           {playError}
@@ -251,11 +296,10 @@ export function ReviewPage() {
       <TakeReview
         project={loaded}
         onRate={(takeId, rating) => void handleRate(takeId, rating)}
-        onPlay={(takeId) => void handlePlay(takeId)}
+        onPlayTake={(takeId, mode) => void handlePlayTake(takeId, mode)}
+        onPlayAllKeepers={(phraseId) => void handlePlayAllKeepers(phraseId)}
         onStop={handleStop}
-        playingTakeId={playingTakeId}
-        mixPresetId={mixPresetId}
-        onMixChange={setMixPresetId}
+        playing={playing}
       />
     </PreparerShell>
   )

@@ -68,9 +68,8 @@ describe('TakeReview', () => {
       <TakeReview
         project={project()}
         onRate={onRate}
-        onPlay={vi.fn()}
-        mixPresetId="ghost-focus"
-        onMixChange={vi.fn()}
+        onPlayTake={vi.fn()}
+        onPlayAllKeepers={vi.fn()}
       />,
     )
 
@@ -86,9 +85,8 @@ describe('TakeReview', () => {
       <TakeReview
         project={project()}
         onRate={onRate}
-        onPlay={vi.fn()}
-        mixPresetId="ghost-focus"
-        onMixChange={vi.fn()}
+        onPlayTake={vi.fn()}
+        onPlayAllKeepers={vi.fn()}
       />,
     )
 
@@ -97,21 +95,115 @@ describe('TakeReview', () => {
     expect(onRate).toHaveBeenCalledWith('t1', 'scratch')
   })
 
-  it('lists takes and plays against ghost', () => {
-    const onPlay = vi.fn()
+  it('lists takes with separate "With ghost" and "Solo" play buttons', () => {
+    const onPlayTake = vi.fn()
     render(
       <TakeReview
         project={project()}
         onRate={vi.fn()}
-        onPlay={onPlay}
-        mixPresetId="ghost-focus"
-        onMixChange={vi.fn()}
+        onPlayTake={onPlayTake}
+        onPlayAllKeepers={vi.fn()}
       />,
     )
 
     expect(screen.getByText(/S1/)).toBeTruthy()
     expect(screen.getAllByText(/when I fall/).length).toBeGreaterThan(0)
-    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
-    expect(onPlay).toHaveBeenCalledWith('t1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'With ghost' }))
+    expect(onPlayTake).toHaveBeenCalledWith('t1', 'ghost')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Solo (no ghost)' }))
+    expect(onPlayTake).toHaveBeenCalledWith('t1', 'solo')
+  })
+
+  it('stops the active take mode instead of replaying it', () => {
+    const onPlayTake = vi.fn()
+    const onStop = vi.fn()
+    render(
+      <TakeReview
+        project={project()}
+        onRate={vi.fn()}
+        onPlayTake={onPlayTake}
+        onPlayAllKeepers={vi.fn()}
+        onStop={onStop}
+        playing={{ kind: 'take', takeId: 't1', mode: 'ghost' }}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Stop — With ghost' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Stop — With ghost' }))
+
+    expect(onStop).toHaveBeenCalledTimes(1)
+    expect(onPlayTake).not.toHaveBeenCalled()
+  })
+
+  it('offers "All keepers" for the filtered phrase only when it has keepers', () => {
+    const onPlayAllKeepers = vi.fn()
+    const withKeeper = project({
+      takes: [
+        take({ id: 't1', phraseId: 'p1', voicePartId: 's1', takeIndex: 1, rating: 'keeper' }),
+      ],
+    })
+    render(
+      <TakeReview
+        project={withKeeper}
+        onRate={vi.fn()}
+        onPlayTake={vi.fn()}
+        onPlayAllKeepers={onPlayAllKeepers}
+      />,
+    )
+
+    // No phrase filter selected yet — the phrase-wide button is not shown.
+    expect(screen.queryByRole('button', { name: 'All keepers (no ghost)' })).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
+    const button = screen.getByRole('button', { name: 'All keepers (no ghost)' })
+    expect(button.hasAttribute('disabled')).toBe(false)
+
+    fireEvent.click(button)
+    expect(onPlayAllKeepers).toHaveBeenCalledWith('p1')
+  })
+
+  it('disables "All keepers" when the filtered phrase has no keepers', () => {
+    render(
+      <TakeReview
+        project={project()}
+        onRate={vi.fn()}
+        onPlayTake={vi.fn()}
+        onPlayAllKeepers={vi.fn()}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
+    expect(
+      screen.getByRole('button', { name: 'All keepers (no ghost)' }).hasAttribute('disabled'),
+    ).toBe(true)
+  })
+
+  it('stops "All keepers" instead of replaying it while it is active for the filtered phrase', () => {
+    const onPlayAllKeepers = vi.fn()
+    const onStop = vi.fn()
+    const withKeeper = project({
+      takes: [
+        take({ id: 't1', phraseId: 'p1', voicePartId: 's1', takeIndex: 1, rating: 'keeper' }),
+      ],
+    })
+    render(
+      <TakeReview
+        project={withKeeper}
+        onRate={vi.fn()}
+        onPlayTake={vi.fn()}
+        onPlayAllKeepers={onPlayAllKeepers}
+        onStop={onStop}
+        selectedPhraseId="p1"
+        playing={{ kind: 'phrase', phraseId: 'p1' }}
+      />,
+    )
+
+    const button = screen.getByRole('button', { name: 'Stop — All keepers (no ghost)' })
+    fireEvent.click(button)
+
+    expect(onStop).toHaveBeenCalledTimes(1)
+    expect(onPlayAllKeepers).not.toHaveBeenCalled()
   })
 })
