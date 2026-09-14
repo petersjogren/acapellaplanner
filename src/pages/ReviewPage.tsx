@@ -5,6 +5,7 @@ import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
 import {
   BLEND_CHECK_PRESET_ID,
   createAudioBlobLoader,
+  loadAllKeepersMixForSong,
   loadPlaybackMixForPhrase,
   loadTakeReviewMix,
   STACK_BUILD_PRESET_ID,
@@ -192,10 +193,8 @@ export function ReviewPage() {
     }
   }
 
-  async function handlePlayAllKeepers(phraseId: string, mode: AllKeepersMode) {
+  async function handlePlayAllKeepers(phraseId: string | null, mode: AllKeepersMode) {
     const current = projectRef.current ?? loaded
-    const phrase = current.phrases.find((item) => item.id === phraseId)
-    if (!phrase) return
     const generation = ++playGenerationRef.current
     setPlayError(null)
     if (!bufferRef.current) {
@@ -204,31 +203,42 @@ export function ReviewPage() {
     }
     try {
       // Blend Check (ghost muted) or Stack Build (ghost audible) — the same
-      // two recipes the booth uses, reused here with every keeper on the
-      // phrase instead of just the take under review. The real ghost buffer
-      // is still what the engine times the window against, even when its
-      // gain is muted for the no-ghost mode.
+      // two recipes the booth uses. The real ghost buffer is still what the
+      // engine times the window against, even when its gain is muted for
+      // the no-ghost mode.
       const presetId = mode === 'with-ghost' ? STACK_BUILD_PRESET_ID : BLEND_CHECK_PRESET_ID
-      const mix = await loadPlaybackMixForPhrase(
-        current,
-        phraseId,
-        presetId,
-        createAudioBlobLoader((id) => repo.getAudioBlob(id)),
-      )
-      if (generation !== playGenerationRef.current) return
-      if (!mix.extra || mix.extra.length === 0) {
-        setPlayError('No keepers on this phrase yet')
-        return
-      }
-      const started = await getEngine().play(
-        {
+      const loadBuffer = createAudioBlobLoader((id) => repo.getAudioBlob(id))
+
+      let mix
+      let playSpec: { startMs: number; endMs: number; preRollMs: number; postRollMs: number }
+      if (phraseId) {
+        const phrase = current.phrases.find((item) => item.id === phraseId)
+        if (!phrase) return
+        mix = await loadPlaybackMixForPhrase(current, phraseId, presetId, loadBuffer)
+        playSpec = {
           startMs: phrase.startMs,
           endMs: phrase.endMs,
           preRollMs: phrase.preRollMs ?? 0,
           postRollMs: phrase.postRollMs,
-          gapMs: phrase.loopDefault.gapMs,
-          loop: false,
-        },
+        }
+      } else {
+        // All phrases: every keeper in the song, each at its own phrase's
+        // position, spanning the whole ghost track rather than one phrase.
+        mix = await loadAllKeepersMixForSong(current, presetId, loadBuffer)
+        playSpec = {
+          startMs: 0,
+          endMs: bufferRef.current.duration * 1000,
+          preRollMs: 0,
+          postRollMs: 0,
+        }
+      }
+      if (generation !== playGenerationRef.current) return
+      if (!mix.extra || mix.extra.length === 0) {
+        setPlayError(phraseId ? 'No keepers on this phrase yet' : 'No keepers in the song yet')
+        return
+      }
+      const started = await getEngine().play(
+        { ...playSpec, gapMs: 0, loop: false },
         {
           onEnded: () => {
             if (generation === playGenerationRef.current) setPlaying(null)

@@ -23,6 +23,13 @@ export type MixPlaybackLayer = {
   pan?: number
   /** Offset into this layer's buffer (ms). Ghost uses the play window; takes use latency skip. */
   offsetMs?: number
+  /**
+   * Delay (ms) after playback starts before this layer's source begins.
+   * Zero for every mix except whole-song playback, where each keeper take
+   * sits at its own phrase's position on the timeline instead of starting
+   * together with everything else.
+   */
+  startDelayMs?: number
 }
 
 export type PlaybackMix = {
@@ -222,6 +229,52 @@ export async function loadPlaybackMixForPhrase(
     keeperBuffers,
     keeperOffsetMs,
   )
+}
+
+/**
+ * Every keeper across the whole song, each positioned at its own phrase's
+ * spot on the timeline instead of all starting together. Reuses the same
+ * with-ghost/no-ghost gain recipe as the per-phrase "All keepers" mix — the
+ * only difference is scope (every phrase, not one) and that each take needs
+ * its own startDelayMs since phrases no longer share a single play window.
+ */
+export async function loadAllKeepersMixForSong(
+  project: Project,
+  presetId: string,
+  loadBuffer: (audioBlobId: string) => Promise<AudioBuffer | null>,
+): Promise<PlaybackMix> {
+  const preset = mixPresetById(presetId)
+  const ghostLayer = preset.layers.find((layer) => layer.guideOrTakeRef === GHOST_LAYER_REF)
+  const keeperLayer = preset.layers.find((layer) => layer.guideOrTakeRef === KEEPER_LAYER_REF)
+
+  const allKeepers = project.takes.filter((take) => take.rating === 'keeper')
+  const buffers = await loadKeeperBuffers(allKeepers, loadBuffer)
+  const phrasesById = new Map(project.phrases.map((phrase) => [phrase.id, phrase]))
+
+  const extra: MixPlaybackLayer[] = []
+  for (const take of allKeepers) {
+    const buffer = buffers.get(take.id)
+    if (!buffer) continue
+    const phrase = phrasesById.get(take.phraseId)
+    // Matches computePlayWindow's offsetMs: the play window (and so the
+    // take's recording) started at the phrase's head start, not startMs.
+    const startDelayMs = phrase ? Math.max(0, phrase.startMs - (phrase.preRollMs ?? 0)) : 0
+    extra.push({
+      buffer,
+      gainDb: keeperLayer?.gainDb ?? 0,
+      mute: keeperLayer?.mute ?? false,
+      pan: keeperLayer?.pan ?? 0,
+      offsetMs: takePlaybackOffsetMs(take.latencyCompMs),
+      startDelayMs,
+    })
+  }
+
+  return {
+    ghostGainDb: ghostLayer?.gainDb ?? 0,
+    ghostMute: ghostLayer?.mute ?? false,
+    extra,
+    click: false,
+  }
 }
 
 /**

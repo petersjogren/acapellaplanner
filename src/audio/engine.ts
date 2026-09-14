@@ -46,6 +46,13 @@ type ScheduledLayer = {
    * to a short ghost is what truncated listen-back to the ghost's length.
    */
   limitMs: (window: PlayWindow) => number
+  /**
+   * Delay (ms) after the overall play `when` before this layer's source
+   * starts. Zero for every layer except song-wide playback, where each
+   * keeper take sits at its own phrase's position instead of starting with
+   * everything else.
+   */
+  startDelayMs?: number
 }
 
 /** Ghost clips to the audio that exists. */
@@ -146,8 +153,9 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     const source = ctx.createBufferSource()
     source.buffer = layer.buffer
     source.connect(layer.output)
+    const layerWhen = when + (layer.startDelayMs ?? 0) / 1000
     // `when` must be in the future (or now for the first shot) on the audio clock.
-    source.start(when, offsetSec, durationSec)
+    source.start(layerWhen, offsetSec, durationSec)
     sources.add(source)
     source.onended = () => {
       sources.delete(source)
@@ -322,6 +330,7 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
         output,
         offsetMs: layer.offsetMs ?? 0,
         limitMs: REQUESTED_SPAN,
+        startDelayMs: layer.startDelayMs ?? 0,
       })
     }
 

@@ -5,6 +5,7 @@ import {
   STACK_BUILD_PRESET_ID,
   builtinMixPresets,
   dbToGain,
+  loadAllKeepersMixForSong,
   loadKeeperBuffers,
   loadTakeReviewMix,
   mixPresetById,
@@ -128,6 +129,94 @@ describe('loadTakeReviewMix', () => {
       )
       expect(mix.click).toBe(false)
     }
+  })
+})
+
+describe('loadAllKeepersMixForSong', () => {
+  const bufferFor = (): AudioBuffer => ({ duration: 2 } as AudioBuffer)
+
+  function projectWithTwoPhrasesOfKeepers(): Project {
+    return {
+      guides: [
+        { id: 'g', kind: 'ghost', audioBlobId: 'ghost', gainDbDefault: 0, alignToGhost: true },
+      ],
+      phrases: [
+        { id: 'p1', startMs: 0, endMs: 2000, preRollMs: 0 },
+        { id: 'p2', startMs: 5000, endMs: 7000, preRollMs: 500 },
+      ],
+      takes: [
+        take({ id: 'k1', phraseId: 'p1' }),
+        take({ id: 'k2', phraseId: 'p2' }),
+        take({ id: 'scratch', phraseId: 'p1', rating: 'scratch' }),
+      ],
+    } as unknown as Project
+  }
+
+  it('places each keeper at its own phrase start minus pre-roll', async () => {
+    const mix = await loadAllKeepersMixForSong(
+      projectWithTwoPhrasesOfKeepers(),
+      STACK_BUILD_PRESET_ID,
+      async () => bufferFor(),
+    )
+
+    expect(mix.extra).toHaveLength(2)
+    const delays = (mix.extra ?? [])
+      .map((layer) => layer.startDelayMs ?? 0)
+      .sort((a, b) => a - b)
+    expect(delays).toEqual([0, 4500]) // p1: 0 - 0; p2: 5000 - 500
+  })
+
+  it('excludes non-keeper takes', async () => {
+    const mix = await loadAllKeepersMixForSong(
+      projectWithTwoPhrasesOfKeepers(),
+      STACK_BUILD_PRESET_ID,
+      async () => bufferFor(),
+    )
+    expect(mix.extra).toHaveLength(2)
+  })
+
+  it('with-ghost preset leaves the ghost audible; no-ghost mutes it', async () => {
+    const withGhost = await loadAllKeepersMixForSong(
+      projectWithTwoPhrasesOfKeepers(),
+      STACK_BUILD_PRESET_ID,
+      async () => bufferFor(),
+    )
+    expect(withGhost.ghostMute).toBe(false)
+
+    const noGhost = await loadAllKeepersMixForSong(
+      projectWithTwoPhrasesOfKeepers(),
+      BLEND_CHECK_PRESET_ID,
+      async () => bufferFor(),
+    )
+    expect(noGhost.ghostMute).toBe(true)
+  })
+
+  it('falls back to startDelayMs 0 for a keeper whose phrase no longer exists', async () => {
+    const project = projectWithTwoPhrasesOfKeepers()
+    project.phrases = [project.phrases[0]!] // drop p2 — k2 now points nowhere
+    const mix = await loadAllKeepersMixForSong(
+      project,
+      STACK_BUILD_PRESET_ID,
+      async () => bufferFor(),
+    )
+    expect(mix.extra).toHaveLength(2)
+    const delays = (mix.extra ?? []).map((layer) => layer.startDelayMs)
+    // p1's keeper is 0; the orphaned keeper falls back to 0 rather than
+    // throwing — better to hear it misplaced than to drop it silently.
+    expect(delays).toEqual([0, 0])
+  })
+
+  it('applies latency compensation as a take offset alongside startDelayMs', async () => {
+    const project = projectWithTwoPhrasesOfKeepers()
+    project.takes[0]!.latencyCompMs = 87
+    const mix = await loadAllKeepersMixForSong(
+      project,
+      STACK_BUILD_PRESET_ID,
+      async () => bufferFor(),
+    )
+    const withOffset = mix.extra?.find((layer) => layer.offsetMs === 87)
+    expect(withOffset).toBeTruthy()
+    expect(withOffset?.startDelayMs).toBe(0)
   })
 })
 

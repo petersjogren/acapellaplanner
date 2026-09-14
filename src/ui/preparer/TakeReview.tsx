@@ -6,12 +6,13 @@ import type { Project, TakeRating } from '../../domain/schemas.ts'
  * Sing-booth "stack" recipe, which folds in the take under review itself. */
 export type ReviewTakeMode = Extract<TakeReviewMode, 'ghost' | 'solo'>
 
-/** All keepers on a phrase, played together, with or without the ghost. */
+/** All keepers played together, with or without the ghost — scoped to one
+ * phrase, or (phraseId null) to the whole song. */
 export type AllKeepersMode = 'with-ghost' | 'no-ghost'
 
 export type ReviewPlayback =
   | { kind: 'take'; takeId: string; mode: ReviewTakeMode }
-  | { kind: 'phrase'; phraseId: string; mode: AllKeepersMode }
+  | { kind: 'phrase'; phraseId: string | null; mode: AllKeepersMode }
 
 export type TakeReviewProps = {
   project: Project
@@ -19,7 +20,8 @@ export type TakeReviewProps = {
   onSelectPhrase?: (id: string | null) => void
   onRate: (takeId: string, rating: TakeRating) => void
   onPlayTake: (takeId: string, mode: ReviewTakeMode) => void
-  onPlayAllKeepers: (phraseId: string, mode: AllKeepersMode) => void
+  /** phraseId is null for "All phrases" — every keeper in the whole song. */
+  onPlayAllKeepers: (phraseId: string | null, mode: AllKeepersMode) => void
   onStop?: () => void
   playing?: ReviewPlayback | null
 }
@@ -76,17 +78,22 @@ export function TakeReview({
       return a.takeIndex - b.takeIndex
     })
 
-  const keeperCountForFilter = phraseFilter
+  const keeperCountInScope = phraseFilter
     ? keeperTakesForPhrase(project.takes, phraseFilter).length
-    : 0
+    : project.takes.filter((item) => item.rating === 'keeper').length
+  const scopeId = phraseFilter || null
 
   const ALL_KEEPERS_MODE_LABELS: Record<AllKeepersMode, string> = {
     'with-ghost': 'All keepers (with ghost)',
     'no-ghost': 'All keepers (no ghost)',
   }
   const ALL_KEEPERS_MODE_HINTS: Record<AllKeepersMode, string> = {
-    'with-ghost': 'All keepers on this phrase together, ghost audible — check the stack against the lead.',
-    'no-ghost': 'All keepers on this phrase together, ghost muted — check the blend on its own.',
+    'with-ghost': phraseFilter
+      ? 'All keepers on this phrase together, ghost audible — check the stack against the lead.'
+      : 'Every keeper in the song, each at its own place, ghost audible — check the stack against the lead.',
+    'no-ghost': phraseFilter
+      ? 'All keepers on this phrase together, ghost muted — check the blend on its own.'
+      : 'Every keeper in the song, each at its own place, ghost muted — check the blend on its own.',
   }
 
   return (
@@ -112,33 +119,29 @@ export function TakeReview({
             ))}
           </select>
         </label>
-        {phraseFilter
-          ? (['with-ghost', 'no-ghost'] as const).map((mode) => {
-              const active =
-                playing?.kind === 'phrase' &&
-                playing.phraseId === phraseFilter &&
-                playing.mode === mode
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  className={buttonClass}
-                  aria-pressed={active}
-                  disabled={keeperCountForFilter === 0}
-                  title={
-                    keeperCountForFilter === 0
-                      ? 'No keepers on this phrase yet'
-                      : ALL_KEEPERS_MODE_HINTS[mode]
-                  }
-                  onClick={() =>
-                    active ? onStop?.() : onPlayAllKeepers(phraseFilter, mode)
-                  }
-                >
-                  {active ? `Stop — ${ALL_KEEPERS_MODE_LABELS[mode]}` : ALL_KEEPERS_MODE_LABELS[mode]}
-                </button>
-              )
-            })
-          : null}
+        {(['with-ghost', 'no-ghost'] as const).map((mode) => {
+          const active =
+            playing?.kind === 'phrase' && playing.phraseId === scopeId && playing.mode === mode
+          return (
+            <button
+              key={mode}
+              type="button"
+              className={buttonClass}
+              aria-pressed={active}
+              disabled={keeperCountInScope === 0}
+              title={
+                keeperCountInScope === 0
+                  ? phraseFilter
+                    ? 'No keepers on this phrase yet'
+                    : 'No keepers in the song yet'
+                  : ALL_KEEPERS_MODE_HINTS[mode]
+              }
+              onClick={() => (active ? onStop?.() : onPlayAllKeepers(scopeId, mode))}
+            >
+              {active ? `Stop — ${ALL_KEEPERS_MODE_LABELS[mode]}` : ALL_KEEPERS_MODE_LABELS[mode]}
+            </button>
+          )
+        })}
       </div>
       {takes.length === 0 ? (
         <p className="mt-6 text-ink-muted">No takes yet</p>

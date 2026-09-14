@@ -339,6 +339,23 @@ describe('createPlaybackEngine', () => {
     expect(sources[1]?.start).toHaveBeenCalledWith(1, 0.12, 2)
   })
 
+  it('delays an extra layer\'s start by startDelayMs, for song-wide keeper playback', async () => {
+    const engine = engineWith(buffer(20))
+    await engine.play(spec({ startMs: 0, endMs: 20_000 }), undefined, {
+      extra: [
+        { buffer: buffer(2), gainDb: 0, mute: false, startDelayMs: 0 },
+        { buffer: buffer(2), gainDb: 0, mute: false, startDelayMs: 5000 },
+      ],
+    })
+
+    expect(sources).toHaveLength(3)
+    // Ghost and the first (undelayed) extra both start at `when` = 1.
+    expect(sources[0]?.start).toHaveBeenCalledWith(1, 0, 20)
+    expect(sources[1]?.start).toHaveBeenCalledWith(1, 0, 2)
+    // The second extra sits 5s later on the timeline, at its own phrase's spot.
+    expect(sources[2]?.start).toHaveBeenCalledWith(6, 0, 2)
+  })
+
   it('skips extra layers whose buffers are missing', async () => {
     const engine = engineWith(buffer())
     await engine.play(spec(), undefined, {

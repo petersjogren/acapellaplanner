@@ -277,13 +277,43 @@ describe('ReviewPage', () => {
     })
   })
 
-  it('"All keepers" buttons are disabled on a phrase with no keepers', async () => {
+  it('"All keepers" with the "All phrases" scope plays every keeper in the song', async () => {
+    const current = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...current!,
+      phrases: [...current!.phrases, phrase({ id: 'p2', name: 'second phrase', startMs: 1500, endMs: 2000 })],
+      takes: [
+        ...current!.takes,
+        take({ id: 't2', phraseId: 'p1', voicePartId: 's1', takeIndex: 2, rating: 'keeper' }),
+        take({ id: 't3', phraseId: 'p2', voicePartId: 's1', takeIndex: 1, audioBlobId: 'blob-2', rating: 'keeper' }),
+      ],
+    })
+
     renderReview()
 
     await waitFor(() => {
       expect(screen.getByLabelText('Phrase')).toBeTruthy()
     })
-    fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
+    // "All phrases" is the initial, unfiltered state — no need to change it.
+
+    await waitFor(() => {
+      const button = screen.queryByRole('button', { name: 'All keepers (no ghost)' })
+      if (button && !button.hasAttribute('disabled')) fireEvent.click(button)
+      expect(playback.calls.length).toBe(1)
+    })
+    expect(playback.calls[0]?.ghostMute).toBe(true)
+    // t2 (phrase p1) and t3 (phrase p2) — every keeper in the song, not just one phrase.
+    expect(playback.calls[0]?.extra).toHaveLength(2)
+    const delays = (playback.calls[0]?.extra ?? []).map((layer) => layer.startDelayMs ?? 0)
+    expect(delays.sort((a, b) => a - b)).toEqual([0, 1500])
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Stop — All keepers (no ghost)' })).toBeTruthy()
+    })
+  })
+
+  it('"All keepers" buttons are disabled on "All phrases" when the song has no keepers', async () => {
+    renderReview()
 
     const noGhost = await screen.findByRole('button', { name: 'All keepers (no ghost)' })
     const withGhost = await screen.findByRole('button', { name: 'All keepers (with ghost)' })

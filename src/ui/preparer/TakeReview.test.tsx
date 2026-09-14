@@ -137,7 +137,7 @@ describe('TakeReview', () => {
     expect(onPlayTake).not.toHaveBeenCalled()
   })
 
-  it('offers both "All keepers" buttons for the filtered phrase only when it has keepers', () => {
+  it('offers both "All keepers" buttons at every scope, enabled when keepers exist', () => {
     const onPlayAllKeepers = vi.fn()
     const withKeeper = project({
       takes: [
@@ -153,24 +153,25 @@ describe('TakeReview', () => {
       />,
     )
 
-    // No phrase filter selected yet — the phrase-wide buttons are not shown.
-    expect(screen.queryByRole('button', { name: 'All keepers (no ghost)' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'All keepers (with ghost)' })).toBeNull()
+    // "All phrases" is the default scope — the song-wide buttons show immediately.
+    const noGhostSong = screen.getByRole('button', { name: 'All keepers (no ghost)' })
+    const withGhostSong = screen.getByRole('button', { name: 'All keepers (with ghost)' })
+    expect(noGhostSong.hasAttribute('disabled')).toBe(false)
+    expect(withGhostSong.hasAttribute('disabled')).toBe(false)
 
+    fireEvent.click(noGhostSong)
+    expect(onPlayAllKeepers).toHaveBeenCalledWith(null, 'no-ghost')
+
+    fireEvent.click(withGhostSong)
+    expect(onPlayAllKeepers).toHaveBeenCalledWith(null, 'with-ghost')
+
+    onPlayAllKeepers.mockClear()
     fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
-    const noGhost = screen.getByRole('button', { name: 'All keepers (no ghost)' })
-    const withGhost = screen.getByRole('button', { name: 'All keepers (with ghost)' })
-    expect(noGhost.hasAttribute('disabled')).toBe(false)
-    expect(withGhost.hasAttribute('disabled')).toBe(false)
-
-    fireEvent.click(noGhost)
+    fireEvent.click(screen.getByRole('button', { name: 'All keepers (no ghost)' }))
     expect(onPlayAllKeepers).toHaveBeenCalledWith('p1', 'no-ghost')
-
-    fireEvent.click(withGhost)
-    expect(onPlayAllKeepers).toHaveBeenCalledWith('p1', 'with-ghost')
   })
 
-  it('disables both "All keepers" buttons when the filtered phrase has no keepers', () => {
+  it('disables both "All keepers" buttons when the current scope has no keepers', () => {
     render(
       <TakeReview
         project={project()}
@@ -179,6 +180,14 @@ describe('TakeReview', () => {
         onPlayAllKeepers={vi.fn()}
       />,
     )
+
+    // Default scope is "All phrases"; the sole take is unrated, not a keeper.
+    expect(
+      screen.getByRole('button', { name: 'All keepers (no ghost)' }).hasAttribute('disabled'),
+    ).toBe(true)
+    expect(
+      screen.getByRole('button', { name: 'All keepers (with ghost)' }).hasAttribute('disabled'),
+    ).toBe(true)
 
     fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
     expect(
