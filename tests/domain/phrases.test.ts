@@ -129,6 +129,40 @@ describe('updatePhrase', () => {
     })
   })
 
+  it('patches preRollMs and postRollMs, clamping negative values to 0', () => {
+    const project = projectWithGhost([
+      phrase({ id: 'a', startMs: 2000, endMs: 3000, name: 'Phrase 1' }),
+    ])
+
+    const withRoll = updatePhrase(project, 'a', { preRollMs: 300, postRollMs: 500 })
+    expect(withRoll.phrases[0]).toMatchObject({ preRollMs: 300, postRollMs: 500 })
+
+    const clamped = updatePhrase(withRoll, 'a', { preRollMs: -50, postRollMs: -10 })
+    expect(clamped.phrases[0]).toMatchObject({ preRollMs: 0, postRollMs: 0 })
+  })
+
+  it('leaves preRollMs/postRollMs untouched when not part of the patch', () => {
+    const project = projectWithGhost([
+      phrase({ id: 'a', startMs: 2000, endMs: 3000, name: 'Phrase 1', preRollMs: 300 }),
+    ])
+
+    const next = updatePhrase(project, 'a', { name: 'Verse' })
+    expect(next.phrases[0]).toMatchObject({ name: 'Verse', preRollMs: 300, postRollMs: 0 })
+  })
+
+  it('allows preRollMs/postRollMs to reach into a neighboring phrase without overlap failing', () => {
+    // Head start / crossfade tail extend the play window, not the phrase
+    // boundary — two adjacent phrases can still have non-overlapping
+    // startMs/endMs while their audio genuinely overlaps in playback.
+    const project = projectWithGhost([
+      phrase({ id: 'a', startMs: 0, endMs: 1000, name: 'Phrase 1' }),
+      phrase({ id: 'b', startMs: 1000, endMs: 2000, name: 'Phrase 2' }),
+    ])
+
+    const next = updatePhrase(project, 'b', { preRollMs: 400 })
+    expect(next.phrases[1]).toMatchObject({ startMs: 1000, endMs: 2000, preRollMs: 400 })
+  })
+
   it('rejects an update that would overlap another phrase', () => {
     const project = projectWithGhost([
       phrase({ id: 'a', startMs: 0, endMs: 1000 }),

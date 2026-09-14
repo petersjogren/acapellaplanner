@@ -359,6 +359,46 @@ export function GhostTimeline({
                         className="rounded-md border border-ink/15 bg-paper px-2 py-1"
                       />
                     </label>
+                    <label className="flex flex-col gap-1 text-sm">
+                      Head start (ms)
+                      <input
+                        type="number"
+                        min={0}
+                        value={item.preRollMs ?? 0}
+                        onChange={(event) => {
+                          const preRollMs = Number(event.target.value)
+                          if (!Number.isFinite(preRollMs) || preRollMs < 0) return
+                          void run(
+                            () => onUpdatePhrase(item.id, { preRollMs }),
+                            'Could not update phrase',
+                          )
+                        }}
+                        className="rounded-md border border-ink/15 bg-paper px-2 py-1"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm">
+                      Crossfade tail (ms)
+                      <input
+                        type="number"
+                        min={0}
+                        value={item.postRollMs}
+                        onChange={(event) => {
+                          const postRollMs = Number(event.target.value)
+                          if (!Number.isFinite(postRollMs) || postRollMs < 0) return
+                          void run(
+                            () => onUpdatePhrase(item.id, { postRollMs }),
+                            'Could not update phrase',
+                          )
+                        }}
+                        className="rounded-md border border-ink/15 bg-paper px-2 py-1"
+                      />
+                    </label>
+                    <p className="text-sm text-ink-muted sm:col-span-2">
+                      Head start plays the ghost before the phrase begins, so the singer can
+                      settle in. Crossfade tail keeps the ghost and mic running past the phrase
+                      end, so the engineer has material to blend into the next one. Neither moves
+                      the phrase boundary itself.
+                    </p>
                     <button
                       type="button"
                       className="mt-1 justify-self-start text-sm text-record-red"

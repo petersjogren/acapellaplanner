@@ -193,4 +193,24 @@ describe('GhostTimeline', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete phrase' }))
     expect(onSelectPhrase).toHaveBeenCalledWith(null)
   })
+
+  it('updates head start (preRollMs) from the selected phrase editor', () => {
+    const { onUpdatePhrase } = renderTimeline({ phrases: [phrase] })
+
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    const input = screen.getByLabelText('Head start (ms)') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '300' } })
+
+    expect(onUpdatePhrase).toHaveBeenCalledWith('phrase-1', { preRollMs: 300 })
+  })
+
+  it('updates crossfade tail (postRollMs) from the selected phrase editor', () => {
+    const { onUpdatePhrase } = renderTimeline({ phrases: [phrase] })
+
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    const input = screen.getByLabelText('Crossfade tail (ms)') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '500' } })
+
+    expect(onUpdatePhrase).toHaveBeenCalledWith('phrase-1', { postRollMs: 500 })
+  })
 })

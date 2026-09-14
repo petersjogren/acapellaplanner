@@ -23,6 +23,8 @@ export type PhrasePatch = {
   endMs?: number
   name?: string
   lyricText?: string
+  preRollMs?: number
+  postRollMs?: number
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -114,11 +116,24 @@ export function updatePhrase(project: Project, id: string, patch: PhrasePatch): 
   if (!name) {
     throw new Error('Phrase name is required')
   }
+  // Head start / crossfade tail: how far the play window and mic capture
+  // extend outside the phrase's own boundaries. Phrases themselves stay
+  // non-overlapping (validated below); this is what actually overlaps.
+  const preRollMs =
+    patch.preRollMs !== undefined
+      ? clampNumber(patch.preRollMs, 0, Number.POSITIVE_INFINITY)
+      : current.preRollMs
+  const postRollMs =
+    patch.postRollMs !== undefined
+      ? clampNumber(patch.postRollMs, 0, Number.POSITIVE_INFINITY)
+      : current.postRollMs
   const next: Phrase = {
     ...current,
     ...patch,
     ...clamped,
     name,
+    preRollMs,
+    postRollMs,
   }
   const phrases = sortPhrases(project.phrases.map((item) => (item.id === id ? next : item)))
   validatePhrases(phrases)
