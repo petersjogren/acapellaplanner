@@ -52,7 +52,9 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
     <div className="min-h-screen bg-paper px-10 py-8 font-ui text-ink fade-in">
       <h1 className="font-display text-2xl font-semibold tracking-tight">Line up headphones</h1>
       <p className="mt-3 max-w-md text-ink/70">
-        Clap with the tone so we can line up your headphones.
+        Play the tone, then hold your microphone up to your headphone speaker (or
+        slip off one earcup) so the tone bleeds straight into the mic — no clapping,
+        just let it leak through.
       </p>
       {keptMs != null ? (
         <p className="mt-3 text-sm text-ink-muted">Lined up by {keptMs} ms on this device.</p>
@@ -102,7 +104,7 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
       ) : null}
       {status === 'failed' ? (
         <p role="alert" className="mt-6 text-record-red">
-          We missed that clap — try again.
+          We didn’t hear the tone come back through the mic — check the bleed and try again.
         </p>
       ) : null}
       {status === 'saved' ? (

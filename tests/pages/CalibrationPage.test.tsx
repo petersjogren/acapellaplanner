@@ -27,16 +27,15 @@ describe('CalibrationPage', () => {
     vi.restoreAllMocks()
   })
 
-  it('asks the singer to clap with the tone', () => {
+  it('asks the singer to bleed the tone into the mic, not clap', () => {
     renderPage({
       playBeep: vi.fn(),
       listenUntilPeak: vi.fn(),
     })
 
     expect(screen.getByRole('heading', { name: 'Line up headphones' })).toBeTruthy()
-    expect(
-      screen.getByText('Clap with the tone so we can line up your headphones.'),
-    ).toBeTruthy()
+    expect(screen.getByText(/hold your microphone up to your headphone speaker/)).toBeTruthy()
+    expect(screen.queryByText(/^Clap with the tone/)).toBeNull()
     const measure = screen.getByRole('button', { name: 'Play the tone' })
     expect(measure.getAttribute('aria-label')).toBeNull()
   })
@@ -112,7 +111,7 @@ describe('CalibrationPage', () => {
     expect(io.playBeep).toHaveBeenCalledTimes(2)
   })
 
-  it('says we missed the clap when measurement fails', async () => {
+  it('says the mic did not pick up the tone when measurement fails', async () => {
     renderPage({
       playBeep: vi.fn().mockResolvedValue(1000),
       listenUntilPeak: vi.fn().mockResolvedValue(2000),
@@ -121,7 +120,7 @@ describe('CalibrationPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Play the tone' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toMatch(/missed that clap/i)
+      expect(screen.getByRole('alert').textContent).toMatch(/didn.t hear the tone/i)
     })
     expect(screen.queryByRole('button', { name: 'Keep' })).toBeNull()
   })

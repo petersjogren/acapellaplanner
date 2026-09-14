@@ -19,8 +19,8 @@ export type ClapListenIo = {
 export type BrowserClapIo = ClapListenIo & { dispose: () => void }
 
 /**
- * Clap delay in milliseconds. Rejects measurements outside 0–500ms —
- * those are missed claps or clock glitches, not headphone latency.
+ * Bleed-through delay in milliseconds. Rejects measurements outside 0–500ms —
+ * those are a missed bleed-through or clock glitches, not headphone latency.
  */
 export function computeLatencyMs(beepTime: number, clapTime: number): number {
   const latencyMs = clapTime - beepTime
