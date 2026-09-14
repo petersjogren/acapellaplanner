@@ -81,4 +81,19 @@ describe('SingerShell', () => {
       '/calibrate',
     )
   })
+
+  it('links to the Singers Unlimited workflow doc in a new tab', () => {
+    renderShell(
+      <SingerShell songTitle="When I Fall in Love">
+        <p>Booth</p>
+      </SingerShell>,
+    )
+
+    const link = screen.getByRole('link', { name: 'Why this workflow' })
+    expect(link.getAttribute('href')).toBe(
+      'https://github.com/petersjogren/acapellaplanner/blob/main/docs/workflow-singers-unlimited.md',
+    )
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noreferrer')
+  })
 })

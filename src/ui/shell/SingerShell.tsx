@@ -8,6 +8,9 @@ export type SingerShellProps = {
   projectId?: string
 }
 
+const WORKFLOW_DOC_URL =
+  'https://github.com/petersjogren/acapellaplanner/blob/main/docs/workflow-singers-unlimited.md'
+
 export function SingerShell({
   children,
   songTitle = 'Untitled song',
@@ -34,6 +37,14 @@ export function SingerShell({
               <span className="font-medium text-ink">{partLabel}</span>
             </p>
           ) : null}
+          <a
+            href={WORKFLOW_DOC_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-ink-muted underline-offset-4 hover:underline"
+          >
+            Why this workflow
+          </a>
           <Link
             to="/calibrate"
             className="text-sm text-ink-muted underline-offset-4 hover:underline"
