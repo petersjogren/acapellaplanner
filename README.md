@@ -13,7 +13,7 @@ Local-first. Desktop Chrome MVP; iPad Safari as a booth once the song is prepare
 3. **Mark a phrase** on the ghost — musical sentences and breaths, not arbitrary bars. Name them; add lyrics if you have them.
 4. **Voice parts** — add the roster (S1, A2, …) and how many doubles you want on each.
 5. **Sections** — group a run of phrases as *Follow the ghost* (rubato, no click) or *In time* (optional click). A section is those phrases, sung that way.
-6. Open **Sing** for the booth, or **Review** later to promote keepers and export a zip.
+6. Open **Sing** for the booth, or **Review** later to promote keepers and export a zip or DAW stems.
 
 Optional: crop sheet music onto a phrase so the booth shows only that cue.
 
@@ -49,6 +49,37 @@ song is intact.
 
 The zip is a round-trip/backup format, not a DAW session: takes are
 phrase-length Opus files named by blob id, positioned via `project.json`.
+For DAW work, use [Export stems for DAW](#export-stems-for-daw).
+
+## Export stems for DAW
+
+**Review** has **Export stems for DAW** besides the project zip. It downloads
+`<song-title>.stems.zip`: 16-bit mono PCM WAVs plus a `README.txt`.
+
+The default is **Keepers only** — uncheck it to include unrated and scratch
+takes; zero keepers shows **No takes to export**, unlike
+[`.acapella.zip`](#moving-a-song-between-devices) which includes every take.
+
+Two modes:
+
+- **One track per part (recommended)** — extra files per part when takes
+  overlap. Use this to mix in a DAW.
+- **One file per take** — one WAV per take. Use this to inspect individual
+  takes.
+
+Files are padded with leading silence so they start at ghost 0:00. Drop onto
+tracks and snap to 0:00.
+
+Naming: `Bass/Bass_A.wav` for one track per part; `Bass/B_p1_t1.wav` per take.
+
+A part can produce several files because pre/post-roll tails and doubles
+overlap. Extra files keep that audio instead of truncating it.
+
+Opus to WAV is about 6× larger. Unzipped size is mostly silence; the zip
+compresses it. Review shows an ≈ estimate next to the button.
+
+[`.acapella.zip`](#moving-a-song-between-devices) remains the
+round-trip/backup format.
 
 ## Develop
 
