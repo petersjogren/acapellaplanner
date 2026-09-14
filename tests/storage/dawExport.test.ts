@@ -1,8 +1,10 @@
+import { strFromU8, unzipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import { createEmptyProject, type Phrase, type Take, type VoicePart } from '../../src/domain/schemas.ts'
 import {
   assignLanes,
   bindDecodedDuration,
+  exportDawStemsZip,
   LANE_FADE_MS,
   LANE_MIN_GAP_MS,
   laneLetter,
@@ -593,5 +595,173 @@ describe('songDurationMs', () => {
 
   it('is 0 for an empty project and no segments', () => {
     expect(songDurationMs(createEmptyProject('Song'), [])).toBe(0)
+  })
+})
+
+const zipProject = {
+  ...createEmptyProject('Zip Song'),
+  phrases: [samplePhrase({ id: 'p1', name: 'Phrase 1', startMs: 0, endMs: 5000, preRollMs: 250 })],
+  voiceRoster: [samplePart()],
+  takes: [
+    sampleTake({ id: 't1', phraseId: 'p1', takeIndex: 1, audioBlobId: 'blob-1', rating: 'keeper' }),
+    sampleTake({ id: 't2', phraseId: 'p1', takeIndex: 2, audioBlobId: 'blob-2', rating: 'keeper' }),
+  ],
+}
+
+const overrunProject = {
+  ...createEmptyProject('Overrun'),
+  phrases: [
+    samplePhrase({ id: 'p1', name: 'Phrase 1', startMs: 0, endMs: 1000, preRollMs: 0 }),
+    samplePhrase({ id: 'p2', name: 'Phrase 2', startMs: 1100, endMs: 1600, preRollMs: 0 }),
+  ],
+  voiceRoster: [samplePart()],
+  takes: [
+    sampleTake({
+      id: 'a',
+      phraseId: 'p1',
+      takeIndex: 1,
+      audioBlobId: 'blob-a',
+      rating: 'keeper',
+      durationMs: 1000,
+    }),
+    sampleTake({
+      id: 'b',
+      phraseId: 'p2',
+      takeIndex: 2,
+      audioBlobId: 'blob-b',
+      rating: 'keeper',
+      durationMs: 500,
+    }),
+  ],
+}
+
+const collidingProject = {
+  ...createEmptyProject('Collide'),
+  phrases: [samplePhrase({ id: 'p1', name: 'Phrase 1', startMs: 0, endMs: 5000, preRollMs: 0 })],
+  voiceRoster: [
+    samplePart({ id: 'bass1', name: 'Bass 1', shortLabel: 'B' }),
+    samplePart({ id: 'bass2', name: 'Bass/1', shortLabel: 'B' }),
+  ],
+  takes: [
+    sampleTake({
+      id: 't1',
+      phraseId: 'p1',
+      voicePartId: 'bass1',
+      takeIndex: 1,
+      audioBlobId: 'blob-1',
+      rating: 'keeper',
+    }),
+    sampleTake({
+      id: 't2',
+      phraseId: 'p1',
+      voicePartId: 'bass2',
+      takeIndex: 1,
+      audioBlobId: 'blob-2',
+      rating: 'keeper',
+    }),
+  ],
+}
+
+async function unzipBlob(blob: Blob) {
+  return unzipSync(new Uint8Array(await blob.arrayBuffer()))
+}
+
+const loadShort = async () => bufferOf(Array(100).fill(0.1), 1000)
+
+describe('exportDawStemsZip', () => {
+  describe('lanes', () => {
+    it('writes Bass_A, Bass_B and README with RIFF wavs of equal length', async () => {
+      const zip = await exportDawStemsZip(zipProject, { mode: 'lanes', keepersOnly: true }, loadShort)
+      expect(zip.type).toBe('application/zip')
+      const files = await unzipBlob(zip)
+      expect(Object.keys(files).sort()).toEqual(['Bass/Bass_A.wav', 'Bass/Bass_B.wav', 'README.txt'])
+      const a = files['Bass/Bass_A.wav']!
+      const b = files['Bass/Bass_B.wav']!
+      expect(strFromU8(a.subarray(0, 4))).toBe('RIFF')
+      expect(strFromU8(b.subarray(0, 4))).toBe('RIFF')
+      expect(a.byteLength).toBe(b.byteLength)
+    })
+
+    it('README lists lane path, phrase name, and 0:00', async () => {
+      const zip = await exportDawStemsZip(zipProject, { mode: 'lanes', keepersOnly: true }, loadShort)
+      const files = await unzipBlob(zip)
+      const readme = strFromU8(files['README.txt']!)
+      expect(readme).toContain('Bass/Bass_A.wav')
+      expect(readme).toContain('Phrase 1')
+      expect(readme).toMatch(/0:00/)
+    })
+
+    it('overrunProject yields Bass_A and Bass_B from decoded duration', async () => {
+      const zip = await exportDawStemsZip(overrunProject, { mode: 'lanes', keepersOnly: true }, async (id: string) => {
+        if (id === 'blob-a') return bufferOf(Array(1500).fill(0.1), 1000)
+        if (id === 'blob-b') return bufferOf(Array(500).fill(0.1), 1000)
+        return null
+      })
+      const files = await unzipBlob(zip)
+      const wavs = Object.keys(files)
+        .filter((k) => k.endsWith('.wav'))
+        .sort()
+      expect(wavs).toEqual(['Bass/Bass_A.wav', 'Bass/Bass_B.wav'])
+    })
+
+    it('overrun zip README lists Bass_A and Bass_B with take map from bound duration', async () => {
+      const zip = await exportDawStemsZip(overrunProject, { mode: 'lanes', keepersOnly: true }, async (id: string) => {
+        if (id === 'blob-a') return bufferOf(Array(1500).fill(0.1), 1000)
+        if (id === 'blob-b') return bufferOf(Array(500).fill(0.1), 1000)
+        return null
+      })
+      const files = await unzipBlob(zip)
+      const readme = strFromU8(files['README.txt']!)
+      expect(readme).toMatch(/Bass\/Bass_A\.wav — Phrase 1 take 1 at 0:00/)
+      expect(readme).toMatch(/Bass\/Bass_B\.wav — Phrase 2 take 2 at 0:01/)
+      expect(readme).not.toMatch(/Bass\/Bass_B\.wav\n/)
+    })
+
+    it('disambiguates colliding part names with -2 before .wav', async () => {
+      const zip = await exportDawStemsZip(collidingProject, { mode: 'lanes', keepersOnly: true }, loadShort)
+      const files = await unzipBlob(zip)
+      const wavs = Object.keys(files)
+        .filter((k) => k.endsWith('.wav'))
+        .sort()
+      expect(wavs).toEqual(['Bass-1/Bass-1_A-2.wav', 'Bass-1/Bass-1_A.wav'])
+      expect(wavs).toHaveLength(2)
+    })
+  })
+
+  describe('per-take', () => {
+    it('writes B_p1_t1, B_p1_t2 and README', async () => {
+      const zip = await exportDawStemsZip(zipProject, { mode: 'per-take', keepersOnly: true }, loadShort)
+      const files = await unzipBlob(zip)
+      expect(Object.keys(files).sort()).toEqual(['Bass/B_p1_t1.wav', 'Bass/B_p1_t2.wav', 'README.txt'])
+    })
+
+    it('disambiguates colliding sanitised names with -2 before .wav', async () => {
+      const zip = await exportDawStemsZip(
+        collidingProject,
+        { mode: 'per-take', keepersOnly: true },
+        loadShort,
+      )
+      const files = await unzipBlob(zip)
+      const wavs = Object.keys(files)
+        .filter((k) => k.endsWith('.wav'))
+        .sort()
+      expect(wavs).toEqual(['Bass-1/B_p1_t1-2.wav', 'Bass-1/B_p1_t1.wav'])
+    })
+  })
+
+  describe('missing and empty', () => {
+    it('writes only README.txt when every loadBuffer returns null', async () => {
+      for (const mode of ['lanes', 'per-take'] as const) {
+        const zip = await exportDawStemsZip(zipProject, { mode, keepersOnly: true }, async () => null)
+        const files = await unzipBlob(zip)
+        expect(Object.keys(files)).toEqual(['README.txt'])
+      }
+    })
+
+    it('rejects when there are no takes to export', async () => {
+      await expect(
+        exportDawStemsZip(createEmptyProject('Empty'), { mode: 'lanes', keepersOnly: true }, loadShort),
+      ).rejects.toThrow(/no takes to export/i)
+    })
   })
 })

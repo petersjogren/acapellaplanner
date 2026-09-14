@@ -1,6 +1,7 @@
+import { strToU8, zipSync } from 'fflate'
 import { takePlaybackOffsetMs } from '../audio/latency.ts'
 import type { Phrase, Project } from '../domain/schemas.ts'
-import { floatToPcm16, msToSamples } from './wav.ts'
+import { encodeWavPadded, floatToPcm16, msToSamples, wavFromPcm16 } from './wav.ts'
 
 /** Filesystem-safe path segment. Strips accents so Swedish part names survive. */
 export function safeSegment(text: string): string {
@@ -51,6 +52,7 @@ export type PlannedSegment = {
 }
 
 export type DawExportOptions = {
+  mode?: 'lanes' | 'per-take'
   keepersOnly: boolean
 }
 
@@ -203,4 +205,130 @@ export function songDurationMs(project: Project, segments: PlannedSegment[]): nu
     0,
   )
   return Math.max(ghostMs, lastSegmentEndMs)
+}
+
+function copyBytes(data: Uint8Array): Uint8Array<ArrayBuffer> {
+  const copy = new Uint8Array(data.byteLength)
+  copy.set(data)
+  return copy
+}
+
+function formatTimecode(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSec / 60)
+  const seconds = totalSec % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function uniqueWavPath(files: Record<string, Uint8Array>, path: string): string {
+  if (!files[path]) return path
+  let n = 2
+  while (files[path.replace(/\.wav$/, `-${n}.wav`)]) n++
+  return path.replace(/\.wav$/, `-${n}.wav`)
+}
+
+function readmeText(
+  project: Project,
+  lanes: ExportLane[] | undefined,
+  fileKeys: string[],
+): string {
+  const lines: string[] = [
+    project.title,
+    '',
+    'Drop these files at 0:00 in your DAW. Snap them to the start of the session.',
+    'Silence at the start of each file is intentional padding so takes land on the timeline.',
+    'Sample rate matches the source recordings (16-bit PCM WAV).',
+    '',
+    'Overlapping takes are split across lanes on purpose.',
+    "Stacking all of a part's lanes reproduces the Review mix.",
+    '',
+  ]
+
+  if (lanes) {
+    const listed = new Set<string>()
+    for (const lane of lanes) {
+      if (!fileKeys.includes(lane.path)) continue
+      listed.add(lane.path)
+      for (const segment of lane.segments) {
+        lines.push(
+          `${lane.path} — ${segment.phraseName} take ${segment.takeIndex} at ${formatTimecode(segment.timelineStartMs)}`,
+        )
+      }
+    }
+    for (const key of fileKeys) {
+      if (key.endsWith('.wav') && !listed.has(key)) lines.push(key)
+    }
+  } else {
+    for (const key of fileKeys) {
+      if (key.endsWith('.wav')) lines.push(key)
+    }
+  }
+
+  return lines.join('\n')
+}
+
+export async function exportDawStemsZip(
+  project: Project,
+  options: DawExportOptions,
+  loadBuffer: (audioBlobId: string) => Promise<AudioBuffer | null>,
+): Promise<Blob> {
+  const segments = planSegments(project, options)
+  if (segments.length === 0) throw new Error('No takes to export')
+  const mode = options.mode ?? 'lanes'
+  let files: Record<string, Uint8Array>
+  let lanes: ExportLane[] | undefined
+  if (mode === 'lanes') {
+    const written = await writeLaneFiles(project, segments, loadBuffer)
+    files = written.files
+    lanes = written.lanes
+  } else {
+    files = await writeTakeFiles(segments, loadBuffer)
+  }
+  files['README.txt'] = strToU8(readmeText(project, lanes, Object.keys(files)))
+  return new Blob([copyBytes(zipSync(files))], { type: 'application/zip' })
+}
+
+async function writeLaneFiles(
+  project: Project,
+  segments: PlannedSegment[],
+  loadBuffer: (audioBlobId: string) => Promise<AudioBuffer | null>,
+): Promise<{ files: Record<string, Uint8Array>; lanes: ExportLane[] }> {
+  const buffers = new Map<string, AudioBuffer>()
+  const resolved: PlannedSegment[] = []
+  for (const segment of segments) {
+    const buffer = await loadBuffer(segment.audioBlobId)
+    if (!buffer) continue
+    buffers.set(segment.takeId, buffer)
+    resolved.push(bindDecodedDuration(segment, buffer))
+  }
+  const assigned = assignLanes(resolved)
+  const totalMs = songDurationMs(project, resolved)
+  const rate = buffers.values().next().value?.sampleRate ?? 48000
+  const files: Record<string, Uint8Array> = {}
+  const lanes: ExportLane[] = []
+  for (const lane of assigned) {
+    if (lane.segments.every((s) => !buffers.has(s.takeId))) continue
+    const path = uniqueWavPath(files, lane.path)
+    files[path] = wavFromPcm16(renderLanePcm(lane, { sampleRate: rate, totalMs, buffers }), rate)
+    lanes.push(path === lane.path ? lane : { ...lane, path })
+  }
+  return { files, lanes }
+}
+
+async function writeTakeFiles(
+  segments: PlannedSegment[],
+  loadBuffer: (audioBlobId: string) => Promise<AudioBuffer | null>,
+): Promise<Record<string, Uint8Array>> {
+  const files: Record<string, Uint8Array> = {}
+  const seen = new Map<string, number>()
+  for (const segment of segments) {
+    const buffer = await loadBuffer(segment.audioBlobId)
+    if (!buffer) continue
+    let path = stemPath(segment)
+    const n = (seen.get(path) ?? 0) + 1
+    seen.set(path, n)
+    if (n > 1) path = path.replace(/\.wav$/, `-${n}.wav`)
+    files[path] = encodeWavPadded(buffer, segment.timelineStartMs, segment.trimLeadingMs)
+  }
+  return files
 }
