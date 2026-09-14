@@ -3,7 +3,26 @@ import { requestMicStream } from './record.ts'
 
 export const DEVICE_PROFILE_STORAGE_KEY = 'acapellaplanner.latency'
 export const MAX_LATENCY_MS = 500
-export const PEAK_THRESHOLD = 0.2
+
+/**
+ * A fixed peak threshold cannot work here: a clap on the mic capsule and a
+ * tone bleeding acoustically out of a headphone driver are wildly different
+ * loudnesses. 0.2 (~-14 dBFS) was calibrated for the former and silently
+ * never triggers for the latter, which is what "Line up headphones" actually
+ * asks singers to do (see docs/workflow-singers-unlimited.md — no clapping).
+ * Bleed-through commonly peaks well under -20 dBFS depending on volume and
+ * mic distance, so detection instead adapts to the room: sample a brief
+ * noise floor, then require a peak safely above it.
+ */
+export const MIN_PEAK_THRESHOLD = 0.03 // ~-30 dBFS — realistic floor for headphone bleed
+export const MAX_PEAK_THRESHOLD = 0.2 // never demand louder than a firm clap, even in a noisy room
+export const NOISE_FLOOR_MARGIN = 4 // detection sits this many x above the measured room noise floor
+export const NOISE_SAMPLE_MS = 120 // time spent reading the room before the tone plays
+
+/** Detection threshold for a given room's measured noise-floor peak. */
+export function detectionThreshold(noiseFloorPeak: number): number {
+  return Math.min(MAX_PEAK_THRESHOLD, Math.max(MIN_PEAK_THRESHOLD, noiseFloorPeak * NOISE_FLOOR_MARGIN))
+}
 
 export type DeviceProfile = {
   latencyCompMs: number
@@ -131,6 +150,24 @@ export async function createBrowserClapIo(): Promise<BrowserClapIo> {
   source.connect(analyser)
   const data = new Uint8Array(analyser.fftSize)
 
+  // Read the room briefly before the tone plays so detection adapts to
+  // this mic/space instead of a single threshold that works for no one.
+  const noiseFloorPeak = await new Promise<number>((resolve) => {
+    const start = performance.now()
+    let peak = 0
+    const tick = () => {
+      analyser.getByteTimeDomainData(data)
+      peak = Math.max(peak, peakAmplitude(data))
+      if (performance.now() - start >= NOISE_SAMPLE_MS) {
+        resolve(peak)
+        return
+      }
+      requestAnimationFrame(tick)
+    }
+    tick()
+  })
+  const threshold = detectionThreshold(noiseFloorPeak)
+
   return {
     playBeep: () => playBeepTone(ctx),
     listenUntilPeak: (afterTimeMs) =>
@@ -143,7 +180,7 @@ export async function createBrowserClapIo(): Promise<BrowserClapIo> {
             return
           }
           analyser.getByteTimeDomainData(data)
-          if (now >= afterTimeMs && peakAmplitude(data) >= PEAK_THRESHOLD) {
+          if (now >= afterTimeMs && peakAmplitude(data) >= threshold) {
             resolve(now)
             return
           }

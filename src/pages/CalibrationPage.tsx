@@ -104,7 +104,8 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
       ) : null}
       {status === 'failed' ? (
         <p role="alert" className="mt-6 text-record-red">
-          We didn’t hear the tone come back through the mic — check the bleed and try again.
+          We didn’t hear the tone come back through the mic — turn the headphone volume up a
+          little and hold the mic closer to the earcup, then try again.
         </p>
       ) : null}
       {status === 'saved' ? (

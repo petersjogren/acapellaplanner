@@ -3,8 +3,11 @@ import {
   applyLatencyCompensation,
   takePlaybackOffsetMs,
   computeLatencyMs,
+  detectionThreshold,
   DEVICE_PROFILE_STORAGE_KEY,
   loadDeviceProfile,
+  MAX_PEAK_THRESHOLD,
+  MIN_PEAK_THRESHOLD,
   measureClapLatency,
   saveDeviceProfile,
   storedLatencyCompMs,
@@ -45,6 +48,30 @@ describe('computeLatencyMs', () => {
 
   it('rejects a clap more than 500ms after the beep', () => {
     expect(() => computeLatencyMs(0, 501)).toThrow(/failed measurement/)
+  })
+})
+
+describe('detectionThreshold', () => {
+  it('floors at MIN_PEAK_THRESHOLD for a silent/near-silent room', () => {
+    expect(detectionThreshold(0)).toBe(MIN_PEAK_THRESHOLD)
+    expect(detectionThreshold(0.001)).toBe(MIN_PEAK_THRESHOLD)
+  })
+
+  it('scales with the measured noise floor between the floor and ceiling', () => {
+    // 0.01 * 4 = 0.04, above the 0.03 floor and below the 0.2 ceiling.
+    expect(detectionThreshold(0.01)).toBeCloseTo(0.04)
+  })
+
+  it('caps at MAX_PEAK_THRESHOLD for a loud/noisy room', () => {
+    expect(detectionThreshold(1)).toBe(MAX_PEAK_THRESHOLD)
+  })
+
+  it('sits comfortably below a firm clap, unlike the old fixed 0.2 threshold', () => {
+    // Headphone bleed-through commonly peaks well under -20 dBFS (~0.1); a
+    // fixed 0.2 (~-14 dBFS) threshold never caught it. A quiet room's
+    // adaptive threshold does.
+    const quietRoomBleed = 0.08
+    expect(quietRoomBleed).toBeGreaterThan(detectionThreshold(0.005))
   })
 })
 
