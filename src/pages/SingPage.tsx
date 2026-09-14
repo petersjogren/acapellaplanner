@@ -257,7 +257,7 @@ export function SingPage() {
   const sungPhrases = part ? phrases.filter((item) => isPhraseDone(item, part)).length : 0
 
   return (
-    <SingerShell songTitle={loaded.title} partLabel={part?.name}>
+    <SingerShell songTitle={loaded.title} partLabel={part?.name} projectId={loaded.id}>
       {!ready ? (
         <>
           <p className="font-display text-lyric leading-snug">The booth is quiet.</p>

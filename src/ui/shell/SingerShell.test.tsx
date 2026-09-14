@@ -27,6 +27,29 @@ describe('SingerShell', () => {
     expect(screen.getByText('Alto 2')).toBeTruthy()
   })
 
+  it('links the song title back to Prepare when a project is loaded', () => {
+    renderShell(
+      <SingerShell songTitle="When I Fall in Love" projectId="song-1">
+        <p>Booth</p>
+      </SingerShell>,
+    )
+
+    expect(screen.getByRole('link', { name: 'When I Fall in Love' }).getAttribute('href')).toBe(
+      '/project/song-1/prepare',
+    )
+  })
+
+  it('renders the title as plain text with no project loaded', () => {
+    renderShell(
+      <SingerShell songTitle="When I Fall in Love">
+        <p>Booth</p>
+      </SingerShell>,
+    )
+
+    expect(screen.getByRole('heading', { name: 'When I Fall in Love' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'When I Fall in Love' })).toBeNull()
+  })
+
   it('renders children in the booth content area', () => {
     renderShell(
       <SingerShell songTitle="Ghost lead" partLabel="Soprano 1">

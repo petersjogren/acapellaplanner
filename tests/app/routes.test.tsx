@@ -61,7 +61,9 @@ describe('routes', () => {
     await waitFor(() => {
       expect(screen.getByText(/The booth is quiet/)).toBeTruthy()
     })
-    expect(screen.getByRole('heading', { name: 'Landmark song' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Landmark song' }).getAttribute('href')).toBe(
+      `/project/${projectId}/prepare`,
+    )
     expect(screen.getByRole('link', { name: 'Home' }).getAttribute('href')).toBe('/')
     cleanup()
 
