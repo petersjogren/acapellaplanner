@@ -472,7 +472,10 @@ export function PreparePage() {
         </p>
       ) : null}
       {hasGhost && ghostMeta ? (
-        <section className="mt-8 max-w-3xl" aria-label="Ghost track">
+        <section
+          className="mt-8 max-w-3xl rounded-lg border border-phrase-line bg-phrase-tint p-5"
+          aria-label="Ghost track"
+        >
           <h3 className="font-medium">Ghost track</h3>
           <p className="mt-2">{ghostMeta.filename}</p>
           <p className="mt-1 text-ink-muted">{formatDuration(ghostMeta.durationMs)}</p>

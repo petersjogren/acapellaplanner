@@ -3,9 +3,21 @@
   --ink: #1c1916;
   --record-red: #c23b2a;
   --gold: #c4a35a;
+  --slate: #4d6a8f;
+  --forest: #3f5d4a;
   --paper-shadow: #e8dfd0;
   /* 65% ink on paper #f6f1e8 ≈ 5.18:1 — WCAG AA for small chrome (4.5:1). */
   --ink-muted: color-mix(in srgb, var(--ink) 65%, var(--paper));
+
+  /* Subtle area tints so the phrase/section/voice panels read as distinct
+     without competing with the studio's paper-and-ink palette. Same hues as
+     the voice-part swatches (gold/slate/forest), just far lighter. */
+  --phrase-tint: color-mix(in srgb, var(--gold) 8%, var(--paper));
+  --phrase-line: color-mix(in srgb, var(--gold) 35%, transparent);
+  --section-tint: color-mix(in srgb, var(--slate) 7%, var(--paper));
+  --section-line: color-mix(in srgb, var(--slate) 30%, transparent);
+  --voice-tint: color-mix(in srgb, var(--forest) 7%, var(--paper));
+  --voice-line: color-mix(in srgb, var(--forest) 30%, transparent);
 
   --font-display-family: "Fraunces", "Source Serif 4", Georgia, serif;
   --font-ui-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
@@ -33,6 +45,12 @@
   --color-gold: var(--gold);
   --color-paper-shadow: var(--paper-shadow);
   --color-ink-muted: var(--ink-muted);
+  --color-phrase-tint: var(--phrase-tint);
+  --color-phrase-line: var(--phrase-line);
+  --color-section-tint: var(--section-tint);
+  --color-section-line: var(--section-line);
+  --color-voice-tint: var(--voice-tint);
+  --color-voice-line: var(--voice-line);
   --font-display: var(--font-display-family);
   --font-ui: var(--font-ui-family);
   --text-xs: var(--type-xs);

@@ -70,7 +70,10 @@ export function SectionEditor({
   }
 
   return (
-    <section className="mt-10 max-w-3xl" aria-label="Sections">
+    <section
+      className="mt-10 max-w-3xl rounded-lg border border-section-line bg-section-tint p-5"
+      aria-label="Sections"
+    >
       <h3 className="font-medium">Sections</h3>
       <p className="mt-1 text-sm text-ink-muted">
         Mark a stretch as In time or Follow the ghost. Click only plays inside in-time sections.
@@ -87,7 +90,7 @@ export function SectionEditor({
           {sections.map((item) => (
             <li
               key={item.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-ink/10 px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-section-line/60 bg-paper/60 px-3 py-2"
             >
               <div>
                 <p className="font-medium">{item.name}</p>

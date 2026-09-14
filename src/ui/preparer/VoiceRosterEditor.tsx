@@ -127,7 +127,7 @@ function PartRow({
 
   if (!editing) {
     return (
-      <li className="flex flex-wrap items-center gap-3 rounded-md border border-ink/10 px-3 py-2">
+      <li className="flex flex-wrap items-center gap-3 rounded-md border border-voice-line/60 bg-paper/60 px-3 py-2">
         <span
           className="h-3 w-3 shrink-0 rounded-pill"
           style={{ backgroundColor: part.color }}
@@ -167,7 +167,7 @@ function PartRow({
   const colorLegendId = `edit-color-${part.id}`
 
   return (
-    <li className="rounded-md border border-ink/10 px-3 py-3">
+    <li className="rounded-md border border-voice-line/60 bg-paper/60 px-3 py-3">
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
           Part name
@@ -258,7 +258,10 @@ export function VoiceRosterEditor({
   }
 
   return (
-    <section className="mt-10 max-w-3xl" aria-label="Voice parts">
+    <section
+      className="mt-10 max-w-3xl rounded-lg border border-voice-line bg-voice-tint p-5"
+      aria-label="Voice parts"
+    >
       <h3 className="font-medium">Voice parts</h3>
       <p className="mt-1 text-sm text-ink-muted">Name the parts that stack on the ghost.</p>
       {error ? (
