@@ -214,6 +214,68 @@ describe('SingPage booth flow', () => {
     expect(plan?.status).toBe('enough')
   })
 
+  it('Next persists progress and advances through every phrase, not just the first two', async () => {
+    // Regression: Next used to compute the suggestion off a throwaway local
+    // clone and never persist it, so the saved project never advanced past
+    // phrase 1 — clicking Next repeatedly bounced between phrases 1 and 2
+    // forever instead of reaching phrase 3+.
+    const current = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...current!,
+      phrases: [
+        ...current!.phrases,
+        phrase({ id: 'p3', name: 'third', lyricText: 'third phrase', startMs: 4000, endMs: 5000 }),
+      ],
+    })
+
+    renderSing()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /S1/ })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /S1/ }))
+
+    await waitFor(() => {
+      expect(screen.getByText('when I fall in love')).toBeTruthy()
+    })
+    expect(screen.getByText('Phrase 1 of 3')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => {
+      expect(screen.getByText('it will be forever')).toBeTruthy()
+    })
+    expect(screen.getByText('Phrase 2 of 3')).toBeTruthy()
+
+    let loaded = await repo.getProject(projectId)
+    expect(
+      loaded?.phrases.find((item) => item.id === 'p1')?.partPlan.find((row) => row.voicePartId === 's1')
+        ?.status,
+    ).toBe('enough')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => {
+      expect(screen.getByText('third phrase')).toBeTruthy()
+    })
+    expect(screen.getByText('Phrase 3 of 3')).toBeTruthy()
+
+    loaded = await repo.getProject(projectId)
+    expect(
+      loaded?.phrases.find((item) => item.id === 'p2')?.partPlan.find((row) => row.voicePartId === 's1')
+        ?.status,
+    ).toBe('enough')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => {
+      expect(screen.getByText(/That.s a wrap for Soprano 1/)).toBeTruthy()
+    })
+
+    loaded = await repo.getProject(projectId)
+    expect(
+      loaded?.phrases.find((item) => item.id === 'p3')?.partPlan.find((row) => row.voicePartId === 's1')
+        ?.status,
+    ).toBe('enough')
+  })
+
   it('keeps a saved take after Good enough and Next', async () => {
     const current = await repo.getProject(projectId)
     await repo.saveProject({

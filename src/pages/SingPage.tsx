@@ -213,7 +213,7 @@ export function SingPage() {
     setPhraseId(null)
   }
 
-  async function handleGoodEnough() {
+  async function advancePastPhrase() {
     if (!part || !phrase) return
     setSaveError(null)
     try {
@@ -225,15 +225,12 @@ export function SingPage() {
     }
   }
 
+  function handleGoodEnough() {
+    void advancePastPhrase()
+  }
+
   function handleNext() {
-    if (!part || !phrase) return
-    setSaveError(null)
-    applySuggestion(
-      suggestNext(markEnough(latestProject(), phrase.id, part.id), {
-        voicePartId: part.id,
-      }),
-      part.id,
-    )
+    void advancePastPhrase()
   }
 
   async function handleNeedMoreTakes() {
@@ -299,7 +296,7 @@ export function SingPage() {
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <button
               type="button"
-              onClick={() => void handleGoodEnough()}
+              onClick={handleGoodEnough}
               className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50"
             >
               Good enough
