@@ -13,10 +13,12 @@ import {
   type VoicePart,
 } from '../../src/domain/schemas.ts'
 import { AcapellaDB } from '../../src/storage/db.ts'
+import { exportDawStemsZip } from '../../src/storage/dawExport.ts'
 import {
   createProjectRepository,
   type ProjectRepository,
 } from '../../src/storage/projectRepository.ts'
+import { downloadBlob } from '../../src/storage/projectIO.ts'
 
 vi.mock('../../src/audio/decode.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/audio/decode.ts')>()
@@ -46,6 +48,22 @@ vi.mock('../../src/audio/engine.ts', async (importOriginal) => {
       play: playback.play,
       stop: playback.stop,
     }),
+  }
+})
+
+vi.mock('../../src/storage/projectIO.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/storage/projectIO.ts')>()
+  return {
+    ...actual,
+    downloadBlob: vi.fn(),
+  }
+})
+
+vi.mock('../../src/storage/dawExport.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/storage/dawExport.ts')>()
+  return {
+    ...actual,
+    exportDawStemsZip: vi.fn(),
   }
 })
 
@@ -98,6 +116,9 @@ describe('ReviewPage', () => {
     database = new AcapellaDB(`acapellaplanner-review-${crypto.randomUUID()}`)
     repo = createProjectRepository(database)
     vi.mocked(decodeAudioFile).mockReset()
+    vi.mocked(downloadBlob).mockReset()
+    vi.mocked(exportDawStemsZip).mockReset()
+    vi.mocked(exportDawStemsZip).mockResolvedValue(new Blob(['stems'], { type: 'application/zip' }))
     vi.mocked(decodeAudioFile).mockResolvedValue({
       buffer: { duration: 3, sampleRate: 44100 } as AudioBuffer,
       durationMs: 3000,
@@ -322,5 +343,84 @@ describe('ReviewPage', () => {
     fireEvent.click(noGhost)
     fireEvent.click(withGhost)
     expect(playback.play).not.toHaveBeenCalled()
+  })
+
+  async function saveOverlappingKeepers() {
+    const current = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...current!,
+      takes: [
+        take({ id: 't1', phraseId: 'p1', voicePartId: 's1', takeIndex: 1, rating: 'keeper' }),
+        take({
+          id: 't2',
+          phraseId: 'p1',
+          voicePartId: 's1',
+          takeIndex: 2,
+          audioBlobId: 'blob-2',
+          rating: 'keeper',
+        }),
+      ],
+    })
+  }
+
+  it('Export stems for DAW downloads a .stems.zip of keepers', async () => {
+    await saveOverlappingKeepers()
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Export stems for DAW' })).toBeTruthy()
+    })
+    expect((screen.getByRole('checkbox', { name: 'Keepers only' }) as HTMLInputElement).checked).toBe(
+      true,
+    )
+    expect(
+      (screen.getByRole('radio', { name: 'One track per part (recommended)' }) as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export stems for DAW' }))
+
+    await waitFor(() => {
+      expect(downloadBlob).toHaveBeenCalled()
+    })
+    expect(vi.mocked(downloadBlob).mock.calls[0]?.[1]).toBe('When-I-Fall.stems.zip')
+    expect(vi.mocked(exportDawStemsZip).mock.calls[0]?.[1]).toEqual({
+      mode: 'lanes',
+      keepersOnly: true,
+    })
+  })
+
+  it('passes per-take mode to exportDawStemsZip', async () => {
+    await saveOverlappingKeepers()
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: 'One file per take' })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('radio', { name: 'One file per take' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Export stems for DAW' }))
+
+    await waitFor(() => {
+      expect(exportDawStemsZip).toHaveBeenCalled()
+    })
+    expect(vi.mocked(exportDawStemsZip).mock.calls[0]?.[1]).toMatchObject({ mode: 'per-take' })
+  })
+
+  it('shows No takes to export when keepers only and all takes are unrated', async () => {
+    vi.mocked(exportDawStemsZip).mockRejectedValue(new Error('No takes to export'))
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Export stems for DAW' })).toBeTruthy()
+    })
+    expect((screen.getByRole('checkbox', { name: 'Keepers only' }) as HTMLInputElement).checked).toBe(
+      true,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Export stems for DAW' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/no takes to export/i)
+    })
+    expect(downloadBlob).not.toHaveBeenCalled()
   })
 })

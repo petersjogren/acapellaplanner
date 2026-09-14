@@ -12,11 +12,13 @@ import {
 } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import type { Project, TakeRating } from '../domain/schemas.ts'
+import { exportDawStemsZip } from '../storage/dawExport.ts'
 import {
   downloadBlob,
   exportProjectZip,
   projectZipFilename,
   resolveExportBlob,
+  stemsZipFilename,
 } from '../storage/projectIO.ts'
 import {
   applyTakeRating,
@@ -43,6 +45,9 @@ export function ReviewPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [exportingStems, setExportingStems] = useState(false)
+  const [keepersOnly, setKeepersOnly] = useState(true)
+  const [stemMode, setStemMode] = useState<'lanes' | 'per-take'>('lanes')
   const projectRef = useRef<Project | null>(null)
   const writeQueueRef = useRef(Promise.resolve())
   const bufferRef = useRef<AudioBuffer | null>(null)
@@ -277,18 +282,71 @@ export function ReviewPage() {
     }
   }
 
+  async function handleExportStems() {
+    setExportError(null)
+    setExportingStems(true)
+    try {
+      const current = projectRef.current ?? loaded
+      const loader = createAudioBlobLoader((id) => repo.getAudioBlob(id))
+      const zip = await exportDawStemsZip(current, { mode: stemMode, keepersOnly }, loader)
+      downloadBlob(zip, stemsZipFilename(current.title))
+    } catch (err: unknown) {
+      setExportError(messageFrom(err, 'Could not export stems'))
+    } finally {
+      setExportingStems(false)
+    }
+  }
+
   return (
     <PreparerShell title={loaded.title} current="review" projectId={loaded.id}>
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <h2 className="font-display text-xl font-semibold tracking-tight">Keepers</h2>
-        <button
-          type="button"
-          className="rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:bg-ink/5 disabled:opacity-50"
-          onClick={() => void handleExport()}
-          disabled={exporting}
-        >
-          Export
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={keepersOnly}
+              onChange={(event) => setKeepersOnly(event.target.checked)}
+            />
+            Keepers only
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="daw-stem-mode"
+              value="lanes"
+              checked={stemMode === 'lanes'}
+              onChange={() => setStemMode('lanes')}
+            />
+            One track per part (recommended)
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="daw-stem-mode"
+              value="per-take"
+              checked={stemMode === 'per-take'}
+              onChange={() => setStemMode('per-take')}
+            />
+            One file per take
+          </label>
+          <button
+            type="button"
+            className="rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:bg-ink/5 disabled:opacity-50"
+            onClick={() => void handleExportStems()}
+            disabled={exportingStems}
+          >
+            Export stems for DAW
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:bg-ink/5 disabled:opacity-50"
+            onClick={() => void handleExport()}
+            disabled={exporting}
+          >
+            Export
+          </button>
+        </div>
       </div>
       <p className="mt-3 max-w-xl text-ink/70">
         Hear a take with the ghost or solo, or all keepers together with or without the ghost.
