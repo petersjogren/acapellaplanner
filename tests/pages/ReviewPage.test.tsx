@@ -232,10 +232,9 @@ describe('ReviewPage', () => {
     })
     fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
 
-    const button = await screen.findByRole('button', { name: 'All keepers (no ghost)' })
-    fireEvent.click(button)
-
     await waitFor(() => {
+      const button = screen.queryByRole('button', { name: 'All keepers (no ghost)' })
+      if (button && !button.hasAttribute('disabled')) fireEvent.click(button)
       expect(playback.calls.length).toBe(1)
     })
     expect(playback.calls[0]?.ghostMute).toBe(true)
@@ -247,7 +246,17 @@ describe('ReviewPage', () => {
     })
   })
 
-  it('"All keepers" is disabled on a phrase with no keepers', async () => {
+  it('"All keepers (with ghost)" plays every keeper on the filtered phrase with the ghost audible', async () => {
+    const current = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...current!,
+      takes: [
+        ...current!.takes,
+        take({ id: 't2', phraseId: 'p1', voicePartId: 's1', takeIndex: 2, rating: 'keeper' }),
+        take({ id: 't3', phraseId: 'p1', voicePartId: 's1', takeIndex: 3, rating: 'keeper' }),
+      ],
+    })
+
     renderReview()
 
     await waitFor(() => {
@@ -255,9 +264,33 @@ describe('ReviewPage', () => {
     })
     fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
 
-    const button = await screen.findByRole('button', { name: 'All keepers (no ghost)' })
-    expect(button.hasAttribute('disabled')).toBe(true)
-    fireEvent.click(button)
+    await waitFor(() => {
+      const button = screen.queryByRole('button', { name: 'All keepers (with ghost)' })
+      if (button && !button.hasAttribute('disabled')) fireEvent.click(button)
+      expect(playback.calls.length).toBe(1)
+    })
+    expect(playback.calls[0]?.ghostMute).toBe(false)
+    expect(playback.calls[0]?.extra).toHaveLength(2)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Stop — All keepers (with ghost)' })).toBeTruthy()
+    })
+  })
+
+  it('"All keepers" buttons are disabled on a phrase with no keepers', async () => {
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Phrase')).toBeTruthy()
+    })
+    fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
+
+    const noGhost = await screen.findByRole('button', { name: 'All keepers (no ghost)' })
+    const withGhost = await screen.findByRole('button', { name: 'All keepers (with ghost)' })
+    expect(noGhost.hasAttribute('disabled')).toBe(true)
+    expect(withGhost.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(noGhost)
+    fireEvent.click(withGhost)
     expect(playback.play).not.toHaveBeenCalled()
   })
 })

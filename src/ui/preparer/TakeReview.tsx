@@ -6,9 +6,12 @@ import type { Project, TakeRating } from '../../domain/schemas.ts'
  * Sing-booth "stack" recipe, which folds in the take under review itself. */
 export type ReviewTakeMode = Extract<TakeReviewMode, 'ghost' | 'solo'>
 
+/** All keepers on a phrase, played together, with or without the ghost. */
+export type AllKeepersMode = 'with-ghost' | 'no-ghost'
+
 export type ReviewPlayback =
   | { kind: 'take'; takeId: string; mode: ReviewTakeMode }
-  | { kind: 'phrase'; phraseId: string }
+  | { kind: 'phrase'; phraseId: string; mode: AllKeepersMode }
 
 export type TakeReviewProps = {
   project: Project
@@ -16,7 +19,7 @@ export type TakeReviewProps = {
   onSelectPhrase?: (id: string | null) => void
   onRate: (takeId: string, rating: TakeRating) => void
   onPlayTake: (takeId: string, mode: ReviewTakeMode) => void
-  onPlayAllKeepers: (phraseId: string) => void
+  onPlayAllKeepers: (phraseId: string, mode: AllKeepersMode) => void
   onStop?: () => void
   playing?: ReviewPlayback | null
 }
@@ -76,7 +79,15 @@ export function TakeReview({
   const keeperCountForFilter = phraseFilter
     ? keeperTakesForPhrase(project.takes, phraseFilter).length
     : 0
-  const allKeepersPlaying = playing?.kind === 'phrase' && playing.phraseId === phraseFilter
+
+  const ALL_KEEPERS_MODE_LABELS: Record<AllKeepersMode, string> = {
+    'with-ghost': 'All keepers (with ghost)',
+    'no-ghost': 'All keepers (no ghost)',
+  }
+  const ALL_KEEPERS_MODE_HINTS: Record<AllKeepersMode, string> = {
+    'with-ghost': 'All keepers on this phrase together, ghost audible — check the stack against the lead.',
+    'no-ghost': 'All keepers on this phrase together, ghost muted — check the blend on its own.',
+  }
 
   return (
     <section className="mt-8 max-w-3xl" aria-label="Take review">
@@ -101,24 +112,33 @@ export function TakeReview({
             ))}
           </select>
         </label>
-        {phraseFilter ? (
-          <button
-            type="button"
-            className={buttonClass}
-            aria-pressed={allKeepersPlaying}
-            disabled={keeperCountForFilter === 0}
-            title={
-              keeperCountForFilter === 0
-                ? 'No keepers on this phrase yet'
-                : 'All keepers on this phrase together, ghost muted — check the blend'
-            }
-            onClick={() =>
-              allKeepersPlaying ? onStop?.() : onPlayAllKeepers(phraseFilter)
-            }
-          >
-            {allKeepersPlaying ? 'Stop — All keepers (no ghost)' : 'All keepers (no ghost)'}
-          </button>
-        ) : null}
+        {phraseFilter
+          ? (['with-ghost', 'no-ghost'] as const).map((mode) => {
+              const active =
+                playing?.kind === 'phrase' &&
+                playing.phraseId === phraseFilter &&
+                playing.mode === mode
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  className={buttonClass}
+                  aria-pressed={active}
+                  disabled={keeperCountForFilter === 0}
+                  title={
+                    keeperCountForFilter === 0
+                      ? 'No keepers on this phrase yet'
+                      : ALL_KEEPERS_MODE_HINTS[mode]
+                  }
+                  onClick={() =>
+                    active ? onStop?.() : onPlayAllKeepers(phraseFilter, mode)
+                  }
+                >
+                  {active ? `Stop — ${ALL_KEEPERS_MODE_LABELS[mode]}` : ALL_KEEPERS_MODE_LABELS[mode]}
+                </button>
+              )
+            })
+          : null}
       </div>
       {takes.length === 0 ? (
         <p className="mt-6 text-ink-muted">No takes yet</p>

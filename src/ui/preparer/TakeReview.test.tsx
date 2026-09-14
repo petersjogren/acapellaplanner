@@ -137,7 +137,7 @@ describe('TakeReview', () => {
     expect(onPlayTake).not.toHaveBeenCalled()
   })
 
-  it('offers "All keepers" for the filtered phrase only when it has keepers', () => {
+  it('offers both "All keepers" buttons for the filtered phrase only when it has keepers', () => {
     const onPlayAllKeepers = vi.fn()
     const withKeeper = project({
       takes: [
@@ -153,18 +153,24 @@ describe('TakeReview', () => {
       />,
     )
 
-    // No phrase filter selected yet — the phrase-wide button is not shown.
+    // No phrase filter selected yet — the phrase-wide buttons are not shown.
     expect(screen.queryByRole('button', { name: 'All keepers (no ghost)' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'All keepers (with ghost)' })).toBeNull()
 
     fireEvent.change(screen.getByLabelText('Phrase'), { target: { value: 'p1' } })
-    const button = screen.getByRole('button', { name: 'All keepers (no ghost)' })
-    expect(button.hasAttribute('disabled')).toBe(false)
+    const noGhost = screen.getByRole('button', { name: 'All keepers (no ghost)' })
+    const withGhost = screen.getByRole('button', { name: 'All keepers (with ghost)' })
+    expect(noGhost.hasAttribute('disabled')).toBe(false)
+    expect(withGhost.hasAttribute('disabled')).toBe(false)
 
-    fireEvent.click(button)
-    expect(onPlayAllKeepers).toHaveBeenCalledWith('p1')
+    fireEvent.click(noGhost)
+    expect(onPlayAllKeepers).toHaveBeenCalledWith('p1', 'no-ghost')
+
+    fireEvent.click(withGhost)
+    expect(onPlayAllKeepers).toHaveBeenCalledWith('p1', 'with-ghost')
   })
 
-  it('disables "All keepers" when the filtered phrase has no keepers', () => {
+  it('disables both "All keepers" buttons when the filtered phrase has no keepers', () => {
     render(
       <TakeReview
         project={project()}
@@ -178,9 +184,12 @@ describe('TakeReview', () => {
     expect(
       screen.getByRole('button', { name: 'All keepers (no ghost)' }).hasAttribute('disabled'),
     ).toBe(true)
+    expect(
+      screen.getByRole('button', { name: 'All keepers (with ghost)' }).hasAttribute('disabled'),
+    ).toBe(true)
   })
 
-  it('stops "All keepers" instead of replaying it while it is active for the filtered phrase', () => {
+  it('stops the active "All keepers" mode instead of replaying it', () => {
     const onPlayAllKeepers = vi.fn()
     const onStop = vi.fn()
     const withKeeper = project({
@@ -196,12 +205,15 @@ describe('TakeReview', () => {
         onPlayAllKeepers={onPlayAllKeepers}
         onStop={onStop}
         selectedPhraseId="p1"
-        playing={{ kind: 'phrase', phraseId: 'p1' }}
+        playing={{ kind: 'phrase', phraseId: 'p1', mode: 'no-ghost' }}
       />,
     )
 
-    const button = screen.getByRole('button', { name: 'Stop — All keepers (no ghost)' })
-    fireEvent.click(button)
+    // Only the active mode shows Stop; the other mode is untouched.
+    const stopButton = screen.getByRole('button', { name: 'Stop — All keepers (no ghost)' })
+    expect(screen.getByRole('button', { name: 'All keepers (with ghost)' })).toBeTruthy()
+
+    fireEvent.click(stopButton)
 
     expect(onStop).toHaveBeenCalledTimes(1)
     expect(onPlayAllKeepers).not.toHaveBeenCalled()

@@ -7,6 +7,7 @@ import {
   createAudioBlobLoader,
   loadPlaybackMixForPhrase,
   loadTakeReviewMix,
+  STACK_BUILD_PRESET_ID,
 } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import type { Project, TakeRating } from '../domain/schemas.ts'
@@ -19,6 +20,7 @@ import {
 import {
   applyTakeRating,
   TakeReview,
+  type AllKeepersMode,
   type ReviewPlayback,
   type ReviewTakeMode,
 } from '../ui/preparer/TakeReview.tsx'
@@ -190,7 +192,7 @@ export function ReviewPage() {
     }
   }
 
-  async function handlePlayAllKeepers(phraseId: string) {
+  async function handlePlayAllKeepers(phraseId: string, mode: AllKeepersMode) {
     const current = projectRef.current ?? loaded
     const phrase = current.phrases.find((item) => item.id === phraseId)
     if (!phrase) return
@@ -201,13 +203,16 @@ export function ReviewPage() {
       return
     }
     try {
-      // Blend Check: ghost muted, keepers only — same recipe the booth uses
-      // to check whether a stack holds on its own. The real ghost buffer is
-      // still what the engine times the window against; it just plays silent.
+      // Blend Check (ghost muted) or Stack Build (ghost audible) — the same
+      // two recipes the booth uses, reused here with every keeper on the
+      // phrase instead of just the take under review. The real ghost buffer
+      // is still what the engine times the window against, even when its
+      // gain is muted for the no-ghost mode.
+      const presetId = mode === 'with-ghost' ? STACK_BUILD_PRESET_ID : BLEND_CHECK_PRESET_ID
       const mix = await loadPlaybackMixForPhrase(
         current,
         phraseId,
-        BLEND_CHECK_PRESET_ID,
+        presetId,
         createAudioBlobLoader((id) => repo.getAudioBlob(id)),
       )
       if (generation !== playGenerationRef.current) return
@@ -232,7 +237,7 @@ export function ReviewPage() {
         mix,
       )
       if (generation !== playGenerationRef.current) return
-      setPlaying(started ? { kind: 'phrase', phraseId } : null)
+      setPlaying(started ? { kind: 'phrase', phraseId, mode } : null)
     } catch (err: unknown) {
       if (generation !== playGenerationRef.current) return
       setPlaying(null)
@@ -276,7 +281,7 @@ export function ReviewPage() {
         </button>
       </div>
       <p className="mt-3 max-w-xl text-ink/70">
-        Hear a take with the ghost or solo, or all keepers together to check the blend.
+        Hear a take with the ghost or solo, or all keepers together with or without the ghost.
       </p>
       {playError ? (
         <p role="alert" className="mt-4 text-record-red">
@@ -297,7 +302,7 @@ export function ReviewPage() {
         project={loaded}
         onRate={(takeId, rating) => void handleRate(takeId, rating)}
         onPlayTake={(takeId, mode) => void handlePlayTake(takeId, mode)}
-        onPlayAllKeepers={(phraseId) => void handlePlayAllKeepers(phraseId)}
+        onPlayAllKeepers={(phraseId, mode) => void handlePlayAllKeepers(phraseId, mode)}
         onStop={handleStop}
         playing={playing}
       />
