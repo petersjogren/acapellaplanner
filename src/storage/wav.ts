@@ -57,3 +57,33 @@ export function wavFromPcm16(pcm: Int16Array, sampleRate: number): Uint8Array {
 export function encodeWav(buffer: AudioBuffer): Uint8Array {
   return wavFromPcm16(floatToPcm16(buffer.getChannelData(0)), buffer.sampleRate)
 }
+
+export function msToSamples(ms: number, sampleRate: number): number {
+  if (!Number.isFinite(ms) || ms <= 0) return 0
+  return Math.round((ms / 1000) * sampleRate)
+}
+
+/**
+ * WAV with `padLeadingMs` of silence in front, so the file can be dropped at
+ * 0:00 in a DAW and land at its timeline position. Used by per-take export
+ * mode; lane mode writes into a shared lane buffer instead.
+ *
+ * `trimLeadingMs` removes round-trip latency from the head of the take —
+ * playback does this via a buffer read offset (takePlaybackOffsetMs), so an
+ * export that skipped it would sit late by exactly that much.
+ */
+export function encodeWavPadded(
+  buffer: AudioBuffer,
+  padLeadingMs: number,
+  trimLeadingMs = 0,
+): Uint8Array {
+  const rate = buffer.sampleRate
+  const pad = msToSamples(padLeadingMs, rate)
+  const source = buffer.getChannelData(0)
+  const trim = Math.min(msToSamples(trimLeadingMs, rate), source.length)
+  const kept = source.subarray(trim)
+
+  const pcm = new Int16Array(pad + kept.length)
+  pcm.set(floatToPcm16(kept), pad)
+  return wavFromPcm16(pcm, rate)
+}

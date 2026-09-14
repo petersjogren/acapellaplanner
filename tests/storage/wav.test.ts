@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { encodeWav, floatToPcm16, wavFromPcm16 } from '../../src/storage/wav.ts'
+import { encodeWav, encodeWavPadded, floatToPcm16, msToSamples, wavFromPcm16 } from '../../src/storage/wav.ts'
 
 function bufferOf(samples: number[], sampleRate = 48000): AudioBuffer {
   return {
@@ -59,5 +59,43 @@ describe('encodeWav', () => {
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     expect(bytes.byteLength).toBe(44 + 8)
     expect(dv.getInt16(44 + 6, true)).toBe(32767)
+  })
+})
+
+describe('msToSamples', () => {
+  it('rounds to the nearest sample and floors at zero', () => {
+    expect(msToSamples(1, 48000)).toBe(48)
+    expect(msToSamples(-500, 48000)).toBe(0)
+    expect(msToSamples(Number.NaN, 48000)).toBe(0)
+  })
+})
+
+describe('encodeWavPadded', () => {
+  it('prepends silence for the timeline offset', () => {
+    const bytes = encodeWavPadded(bufferOf([1, 1, 1, 1]), 1)
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    expect(dv.getUint32(40, true)).toBe((48 + 4) * 2)
+    expect(dv.getInt16(44, true)).toBe(0)
+    expect(dv.getInt16(44 + 47 * 2, true)).toBe(0)
+    expect(dv.getInt16(44 + 48 * 2, true)).toBe(32767)
+  })
+
+  it('is identical to encodeWav when the offset is zero', () => {
+    const plain = encodeWav(bufferOf([0.25, -0.25]))
+    const padded = encodeWavPadded(bufferOf([0.25, -0.25]), 0)
+    expect(Array.from(padded)).toEqual(Array.from(plain))
+  })
+
+  it('ignores a negative or non-finite offset', () => {
+    expect(encodeWavPadded(bufferOf([1]), -500).byteLength).toBe(44 + 2)
+    expect(encodeWavPadded(bufferOf([1]), Number.NaN).byteLength).toBe(44 + 2)
+  })
+
+  it('trims leading latency compensation from the take', () => {
+    const junk = new Array(48).fill(0.9)
+    const bytes = encodeWavPadded(bufferOf([...junk, 0.1]), 0, 1)
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    expect(dv.getUint32(40, true)).toBe(2)
+    expect(dv.getInt16(44, true)).toBe(Math.round(0.1 * 32767))
   })
 })
