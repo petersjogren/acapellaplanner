@@ -8,11 +8,14 @@ import {
   laneLetter,
   lanePath,
   planSegments,
+  renderLanePcm,
   safeSegment,
   segmentStartMs,
   stemPath,
+  type ExportLane,
   type PlannedSegment,
 } from '../../src/storage/dawExport.ts'
+import { msToSamples } from '../../src/storage/wav.ts'
 
 function samplePhrase(overrides: Partial<Phrase> = {}): Phrase {
   return {
@@ -258,6 +261,16 @@ function bufferOf(samples: number[], sampleRate = 1000): AudioBuffer {
   } as unknown as AudioBuffer
 }
 
+function laneOf(segments: PlannedSegment[], partName = 'Bass'): ExportLane {
+  return {
+    voicePartId: segments[0]?.voicePartId ?? 'bass',
+    partName,
+    laneIndex: 0,
+    path: 'Bass/Bass_A.wav',
+    segments,
+  }
+}
+
 function laneKeys(lanes: ReturnType<typeof assignLanes>): string[] {
   return lanes.map((lane) => `${lane.path}:${lane.segments.map((s) => s.takeId).join(',')}`)
 }
@@ -431,5 +444,125 @@ describe('assignLanes', () => {
     expect(boundA.durationMs).toBe(1500)
     expect(a.durationMs).toBe(1000)
     expect(assignLanes([boundA, b])).toHaveLength(2)
+  })
+})
+
+describe('renderLanePcm', () => {
+  const RATE = 48000
+
+  it('output length is totalMs at sampleRate', () => {
+    const pcm = renderLanePcm(laneOf([seg({ takeId: 'a' })]), {
+      sampleRate: RATE,
+      totalMs: 2000,
+      buffers: new Map([['a', bufferOf(Array(msToSamples(100, RATE)).fill(1), RATE)]]),
+    })
+    expect(pcm.length).toBe(RATE * 2)
+  })
+
+  it('places a 100ms segment of 1.0 at 1000ms', () => {
+    const pcm = renderLanePcm(
+      laneOf([seg({ takeId: 'a', timelineStartMs: 1000, durationMs: 100 })]),
+      {
+        sampleRate: RATE,
+        totalMs: 2000,
+        buffers: new Map([['a', bufferOf(Array(msToSamples(100, RATE)).fill(1), RATE)]]),
+      },
+    )
+    expect(pcm[0]).toBe(0)
+    expect(pcm[RATE - 1]).toBe(0)
+    expect(pcm[RATE + 480]).toBe(32767)
+  })
+
+  it('applies linear edge fades so first and last samples of a segment are 0', () => {
+    const count = msToSamples(100, RATE)
+    const pcm = renderLanePcm(
+      laneOf([seg({ takeId: 'a', timelineStartMs: 1000, durationMs: 100 })]),
+      {
+        sampleRate: RATE,
+        totalMs: 2000,
+        buffers: new Map([['a', bufferOf(Array(count).fill(1), RATE)]]),
+      },
+    )
+    expect(pcm[RATE]).toBe(0)
+    expect(Math.abs(pcm[RATE + 120] ?? 0)).toBeLessThan(32767)
+    expect(pcm[RATE + count - 1]).toBe(0)
+  })
+
+  it('trims trimLeadingMs off the source head', () => {
+    const samples = [...Array(48).fill(0.9), ...Array(RATE).fill(0.1)]
+    const pcm = renderLanePcm(
+      laneOf([seg({ takeId: 'a', timelineStartMs: 0, trimLeadingMs: 1 })]),
+      {
+        sampleRate: RATE,
+        totalMs: 1000,
+        buffers: new Map([['a', bufferOf(samples, RATE)]]),
+      },
+    )
+    // i=47 is the last junk (0.9) sample if trimLeadingMs is ignored.
+    // After a 1ms trim it is faded 0.1, not faded 0.9.
+    const edge = msToSamples(LANE_FADE_MS, RATE)
+    const i = 47
+    expect(pcm[0]).toBe(0)
+    expect(pcm[i]).toBe(Math.round(0.1 * (i / edge) * 32767))
+    expect(pcm[i]).not.toBe(Math.round(0.9 * (i / edge) * 32767))
+  })
+
+  it('skips segments whose buffer is missing without throwing', () => {
+    const pcm = renderLanePcm(laneOf([seg({ takeId: 'missing' })]), {
+      sampleRate: RATE,
+      totalMs: 1000,
+      buffers: new Map(),
+    })
+    expect(pcm.every((v: number) => v === 0)).toBe(true)
+  })
+
+  it('truncates overhang so output length stays totalMs', () => {
+    const pcm = renderLanePcm(laneOf([seg({ takeId: 'a', timelineStartMs: 0 })]), {
+      sampleRate: RATE,
+      totalMs: 1000,
+      buffers: new Map([['a', bufferOf(Array(RATE * 2).fill(1), RATE)]]),
+    })
+    expect(pcm.length).toBe(RATE)
+  })
+
+  it('skips a segment that starts past the end', () => {
+    const pcm = renderLanePcm(laneOf([seg({ takeId: 'a', timelineStartMs: 2000 })]), {
+      sampleRate: RATE,
+      totalMs: 1000,
+      buffers: new Map([['a', bufferOf(Array(RATE).fill(1), RATE)]]),
+    })
+    expect(pcm.length).toBe(RATE)
+    expect(pcm.every((v: number) => v === 0)).toBe(true)
+  })
+
+  it('adds overlapping segments instead of overwriting', () => {
+    const pcm = renderLanePcm(
+      laneOf([
+        seg({ takeId: 'a', timelineStartMs: 0, durationMs: 1000 }),
+        seg({ takeId: 'b', timelineStartMs: 1100, durationMs: 500, takeIndex: 2 }),
+      ]),
+      {
+        sampleRate: 1000,
+        totalMs: 2000,
+        buffers: new Map([
+          ['a', bufferOf(Array(1500).fill(0.5), 1000)],
+          ['b', bufferOf(Array(500).fill(0.5), 1000)],
+        ]),
+      },
+    )
+    expect(pcm[1200] ?? 0).toBeGreaterThan(Math.round(0.5 * 32767))
+  })
+
+  it('shrinks fades on a short 3ms segment instead of ducking it', () => {
+    const count = msToSamples(3, RATE)
+    const pcm = renderLanePcm(
+      laneOf([seg({ takeId: 'a', timelineStartMs: 0, durationMs: 3 })]),
+      {
+        sampleRate: RATE,
+        totalMs: 1000,
+        buffers: new Map([['a', bufferOf(Array(count).fill(1), RATE)]]),
+      },
+    )
+    expect(Math.max(...pcm)).toBeGreaterThan(0.9 * 32767)
   })
 })

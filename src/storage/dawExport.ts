@@ -1,5 +1,6 @@
 import { takePlaybackOffsetMs } from '../audio/latency.ts'
 import type { Phrase, Project } from '../domain/schemas.ts'
+import { floatToPcm16, msToSamples } from './wav.ts'
 
 /** Filesystem-safe path segment. Strips accents so Swedish part names survive. */
 export function safeSegment(text: string): string {
@@ -158,4 +159,37 @@ export function assignLanes(segments: PlannedSegment[]): ExportLane[] {
     lanes.push(...partLanes)
   }
   return lanes
+}
+
+export type RenderLaneOptions = {
+  sampleRate: number
+  totalMs: number
+  buffers: Map<string, AudioBuffer>
+}
+
+export function renderLanePcm(lane: ExportLane, options: RenderLaneOptions): Int16Array {
+  const { sampleRate, totalMs, buffers } = options
+  const acc = new Float32Array(msToSamples(totalMs, sampleRate))
+  const fade = Math.max(1, msToSamples(LANE_FADE_MS, sampleRate))
+
+  for (const segment of lane.segments) {
+    const buffer = buffers.get(segment.takeId)
+    if (!buffer) continue
+    const source = buffer.getChannelData(0)
+    const trim = Math.min(msToSamples(segment.trimLeadingMs, sampleRate), source.length)
+    const kept = source.subarray(trim)
+
+    const writeAt = msToSamples(segment.timelineStartMs, sampleRate)
+    const room = acc.length - writeAt
+    if (room <= 0) continue
+    const count = Math.min(kept.length, room)
+    const edge = Math.min(fade, Math.floor(count / 2)) || 1
+
+    for (let i = 0; i < count; i++) {
+      const fromEnd = count - 1 - i
+      const gain = Math.min(i < edge ? i / edge : 1, fromEnd < edge ? fromEnd / edge : 1)
+      acc[writeAt + i] += (kept[i] ?? 0) * gain
+    }
+  }
+  return floatToPcm16(acc)
 }
