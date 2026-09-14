@@ -11,6 +11,7 @@ import {
   renderLanePcm,
   safeSegment,
   segmentStartMs,
+  songDurationMs,
   stemPath,
   type ExportLane,
   type PlannedSegment,
@@ -564,5 +565,33 @@ describe('renderLanePcm', () => {
       },
     )
     expect(Math.max(...pcm)).toBeGreaterThan(0.9 * 32767)
+  })
+})
+
+describe('songDurationMs', () => {
+  it('uses ghost duration 240000 when longer than segments', () => {
+    const withGhost = {
+      ...createEmptyProject('Song'),
+      settings: { language: 'en', ghostMeta: { filename: 'ghost.wav', durationMs: 240000 } },
+    }
+    expect(songDurationMs(withGhost, [seg({ timelineStartMs: 0, durationMs: 1000 })])).toBe(240000)
+  })
+
+  it('uses last segment end when ghostMeta is missing (9750 + 4000 = 13750)', () => {
+    expect(songDurationMs(createEmptyProject('Song'), [seg({ timelineStartMs: 9750, durationMs: 4000 })])).toBe(
+      13750,
+    )
+  })
+
+  it('does not truncate a singer when ghost is shorter than the last take', () => {
+    const withGhost = {
+      ...createEmptyProject('Song'),
+      settings: { language: 'en', ghostMeta: { filename: 'ghost.wav', durationMs: 1000 } },
+    }
+    expect(songDurationMs(withGhost, [seg({ timelineStartMs: 0, durationMs: 5000 })])).toBe(5000)
+  })
+
+  it('is 0 for an empty project and no segments', () => {
+    expect(songDurationMs(createEmptyProject('Song'), [])).toBe(0)
   })
 })

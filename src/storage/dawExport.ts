@@ -193,3 +193,14 @@ export function renderLanePcm(lane: ExportLane, options: RenderLaneOptions): Int
   }
   return floatToPcm16(acc)
 }
+
+/** Lane length: the ghost track, or the last take, whichever runs longer.
+ *  Call this on bindDecodedDuration output so an overrun take extends the file. */
+export function songDurationMs(project: Project, segments: PlannedSegment[]): number {
+  const ghostMs = project.settings.ghostMeta?.durationMs ?? 0
+  const lastSegmentEndMs = segments.reduce(
+    (max, segment) => Math.max(max, segment.timelineStartMs + segment.durationMs),
+    0,
+  )
+  return Math.max(ghostMs, lastSegmentEndMs)
+}
