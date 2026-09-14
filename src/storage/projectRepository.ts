@@ -1,3 +1,4 @@
+import { migrateAndParseProject } from '../domain/migrations.ts'
 import { ProjectSchema, type Project } from '../domain/schemas.ts'
 import { db as defaultDb, type AcapellaDB, type AudioBlobRecord } from './db.ts'
 
@@ -6,13 +7,13 @@ export function createProjectRepository(database: AcapellaDB = defaultDb) {
     async listProjects(): Promise<Project[]> {
       const rows = await database.projects.toArray()
       return rows
-        .map((row) => ProjectSchema.parse(row))
+        .map((row) => migrateAndParseProject(row))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     },
 
     async getProject(id: string): Promise<Project | undefined> {
       const row = await database.projects.get(id)
-      return row === undefined ? undefined : ProjectSchema.parse(row)
+      return row === undefined ? undefined : migrateAndParseProject(row)
     },
 
     async saveProject(project: Project): Promise<Project> {

@@ -49,6 +49,19 @@ describe('projectIO', () => {
     await expect(importProjectZip(broken)).rejects.toThrow()
   })
 
+  it('imports a pre-schemaVersion zip (exported before the field existed)', async () => {
+    const { schemaVersion: _drop, ...legacyShape } = createEmptyProject('Legacy song')
+    const legacyZip = new Blob(
+      [zipSync({ 'project.json': strToU8(JSON.stringify(legacyShape)) })],
+      { type: 'application/zip' },
+    )
+
+    const { project: imported } = await importProjectZip(legacyZip)
+
+    expect(imported.schemaVersion).toBe(1)
+    expect(imported.title).toBe('Legacy song')
+  })
+
   it('throws when project.json fails schema parse', async () => {
     const broken = new Blob(
       [zipSync({ 'project.json': strToU8(JSON.stringify({ title: 'Nope' })) })],

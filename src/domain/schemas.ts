@@ -222,8 +222,23 @@ export const ProjectSettingsSchema = z.object({
   ghostMeta: GhostMetaSchema.optional(),
 })
 
+/**
+ * Bumped whenever ProjectSchema's shape changes in a way that is not
+ * backward-compatible (required field added, field renamed/removed/
+ * reshaped). Optional-field additions do not need a bump — Zod already
+ * handles those as "missing" on old data.
+ *
+ * Every project.json ever exported (or saved to IndexedDB) before this field
+ * existed is implicitly v1 — see domain/migrations.ts, which stamps that
+ * default in before ProjectSchema.parse() ever sees the data. Add migration
+ * steps there when this number goes up; ProjectSchema itself always
+ * describes only the current shape.
+ */
+export const CURRENT_SCHEMA_VERSION = 1
+
 export const ProjectSchema = z
   .object({
+    schemaVersion: z.int().positive(),
     id: z.string().min(1),
     title: z.string().min(1),
     key: z.string().optional(),
@@ -280,6 +295,7 @@ export type Project = z.infer<typeof ProjectSchema>
 export function createEmptyProject(title = 'Untitled song'): Project {
   const now = new Date().toISOString()
   return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     id: crypto.randomUUID(),
     title,
     defaultTuningHz: 440,

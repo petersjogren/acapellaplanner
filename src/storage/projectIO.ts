@@ -1,4 +1,5 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
+import { migrateAndParseProject } from '../domain/migrations.ts'
 import { ProjectSchema, type Project } from '../domain/schemas.ts'
 import type { AudioBlobKind } from './db.ts'
 
@@ -164,7 +165,7 @@ export async function importProjectZip(
   if (!projectBytes) {
     throw new Error('Missing project.json')
   }
-  const project = ProjectSchema.parse(JSON.parse(strFromU8(projectBytes)))
+  const project = migrateAndParseProject(JSON.parse(strFromU8(projectBytes)))
   const allowed = new Set(collectProjectBlobIds(project))
   const blobs: ImportedProjectBlob[] = []
   for (const [path, data] of Object.entries(files)) {

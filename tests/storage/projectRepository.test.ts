@@ -97,6 +97,18 @@ describe('projectRepository', () => {
     await expect(repo.listProjects()).rejects.toThrow()
   })
 
+  it('migrates a pre-schemaVersion row on read (data saved before the field existed)', async () => {
+    const { schemaVersion: _drop, ...legacyShape } = createEmptyProject('Legacy row')
+    await database.projects.put(legacyShape as unknown as Project)
+
+    const loaded = await repo.getProject(legacyShape.id)
+    expect(loaded?.schemaVersion).toBe(1)
+    expect(loaded?.title).toBe('Legacy row')
+
+    const listed = await repo.listProjects()
+    expect(listed.find((project) => project.id === legacyShape.id)?.schemaVersion).toBe(1)
+  })
+
   it('round-trips an audio blob', async () => {
     const project = await repo.saveProject(createEmptyProject())
     const blob = new Blob(['ghost-audio'], { type: 'audio/webm' })

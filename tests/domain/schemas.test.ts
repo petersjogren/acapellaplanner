@@ -40,6 +40,7 @@ describe('createEmptyProject', () => {
     const project = createEmptyProject()
     const parsed = ProjectSchema.parse(project)
 
+    expect(parsed.schemaVersion).toBe(1)
     expect(parsed.title).toBe('Untitled song')
     expect(parsed.defaultTuningHz).toBe(440)
     expect(parsed.ghostTrackId).toBeNull()
@@ -79,6 +80,11 @@ describe('createEmptyProject', () => {
       filename: 'lead.wav',
       durationMs: 83400,
     })
+  })
+
+  it('rejects a project missing schemaVersion (use migrateAndParseProject for untrusted data)', () => {
+    const { schemaVersion: _drop, ...withoutVersion } = createEmptyProject()
+    expect(ProjectSchema.safeParse(withoutVersion).success).toBe(false)
   })
 })
 
