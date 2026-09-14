@@ -12,7 +12,7 @@ import {
 } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import type { Project, TakeRating } from '../domain/schemas.ts'
-import { exportDawStemsZip } from '../storage/dawExport.ts'
+import { estimateStemBytes, exportDawStemsZip } from '../storage/dawExport.ts'
 import {
   downloadBlob,
   exportProjectZip,
@@ -34,6 +34,30 @@ import { useLoadedProject } from './useLoadedProject.ts'
 
 function messageFrom(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+const LARGE_UNZIPPED_BYTES = 200 * 1024 * 1024
+
+function formatUnzippedSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${Math.round(bytes)} B`
+}
+
+export function formatStemSizeHint(
+  estimate: { fileCount: number; unzippedBytes: number },
+  mode: 'lanes' | 'per-take',
+): string {
+  const files = estimate.fileCount === 1 ? 'file' : 'files'
+  const size = formatUnzippedSize(estimate.unzippedBytes)
+  if (estimate.unzippedBytes > LARGE_UNZIPPED_BYTES) {
+    const laneNote =
+      mode === 'lanes'
+        ? ' Lane mode is usually the smaller download despite full-length files.'
+        : ''
+    return `≈ ${estimate.fileCount} ${files}, ${size} unzipped. Padding is mostly silence and compresses well in the zip.${laneNote}`
+  }
+  return `≈ ${estimate.fileCount} ${files}, ${size} unzipped. Zip is smaller — silence compresses.`
 }
 
 export function ReviewPage() {
@@ -338,6 +362,9 @@ export function ReviewPage() {
           >
             Export stems for DAW
           </button>
+          <span className="text-sm text-ink/70">
+            {formatStemSizeHint(estimateStemBytes(loaded, { mode: stemMode, keepersOnly }), stemMode)}
+          </span>
           <button
             type="button"
             className="rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:bg-ink/5 disabled:opacity-50"

@@ -4,6 +4,7 @@ import { createEmptyProject, type Phrase, type Take, type VoicePart } from '../.
 import {
   assignLanes,
   bindDecodedDuration,
+  estimateStemBytes,
   exportDawStemsZip,
   LANE_FADE_MS,
   LANE_MIN_GAP_MS,
@@ -567,6 +568,98 @@ describe('renderLanePcm', () => {
       },
     )
     expect(Math.max(...pcm)).toBeGreaterThan(0.9 * 32767)
+  })
+})
+
+describe('estimateStemBytes', () => {
+  const RATE = 48000
+  const HEADER = 44
+
+  const oneKeeper = {
+    ...createEmptyProject('Song'),
+    phrases: [samplePhrase({ id: 'p1', name: 'Phrase 1', startMs: 0, endMs: 5000, preRollMs: 0 })],
+    voiceRoster: [samplePart()],
+    takes: [
+      sampleTake({
+        id: 't1',
+        phraseId: 'p1',
+        takeIndex: 1,
+        audioBlobId: 'blob-1',
+        rating: 'keeper' as const,
+        durationMs: 4000,
+      }),
+    ],
+    settings: { language: 'en' as const, ghostMeta: { filename: 'ghost.wav', durationMs: 10000 } },
+  }
+
+  it('lanes: 1 part, 1 keeper, 10s ghost → 1 file and exact WAV bytes at 48 kHz', () => {
+    const estimate = estimateStemBytes(oneKeeper, { mode: 'lanes', keepersOnly: true })
+    expect(estimate.fileCount).toBe(1)
+    expect(estimate.unzippedBytes).toBe(1 * (10000 / 1000) * RATE * 2 + 1 * HEADER)
+    expect(estimate.unzippedBytes).toBe(960044)
+  })
+
+  it('per-take: 1 keeper at 0 with duration 4000 → PCM bytes without header', () => {
+    const estimate = estimateStemBytes(oneKeeper, { mode: 'per-take', keepersOnly: true })
+    expect(estimate.fileCount).toBe(1)
+    expect(estimate.unzippedBytes).toBe(((0 + 4000) / 1000) * RATE * 2)
+    expect(estimate.unzippedBytes).toBe(384000)
+  })
+
+  it('per-take: timelineStartMs 1000 + duration 4000 includes leading padding (480000, not 384000)', () => {
+    const padded = {
+      ...oneKeeper,
+      phrases: [samplePhrase({ id: 'p1', name: 'Phrase 1', startMs: 1000, endMs: 5000, preRollMs: 0 })],
+    }
+    const estimate = estimateStemBytes(padded, { mode: 'per-take', keepersOnly: true })
+    expect(estimate.fileCount).toBe(1)
+    expect(estimate.unzippedBytes).toBe(((1000 + 4000) / 1000) * RATE * 2)
+    expect(estimate.unzippedBytes).toBe(480000)
+    expect(estimate.unzippedBytes).not.toBe(384000)
+  })
+
+  it('lanes: two overlapping keepers on the same phrase → 2 files and laneCount multiplier', () => {
+    const overlapping = {
+      ...oneKeeper,
+      takes: [
+        sampleTake({
+          id: 't1',
+          phraseId: 'p1',
+          takeIndex: 1,
+          audioBlobId: 'blob-1',
+          rating: 'keeper' as const,
+          durationMs: 4000,
+        }),
+        sampleTake({
+          id: 't2',
+          phraseId: 'p1',
+          takeIndex: 2,
+          audioBlobId: 'blob-2',
+          rating: 'keeper' as const,
+          durationMs: 4000,
+        }),
+      ],
+    }
+    const estimate = estimateStemBytes(overlapping, { mode: 'lanes', keepersOnly: true })
+    const songMs = 10000
+    expect(estimate.fileCount).toBe(2)
+    expect(estimate.unzippedBytes).toBe(2 * (songMs / 1000) * RATE * 2 + 2 * HEADER)
+    expect(estimate.unzippedBytes).toBe(1920088)
+    expect(estimate.unzippedBytes).not.toBe(960044)
+  })
+
+  it('defaults to lanes when mode is omitted', () => {
+    expect(estimateStemBytes(oneKeeper, { keepersOnly: true })).toEqual({
+      fileCount: 1,
+      unzippedBytes: 960044,
+    })
+  })
+
+  it('is 0 files and 0 bytes when nothing is planned', () => {
+    expect(estimateStemBytes(createEmptyProject('Empty'), { mode: 'lanes', keepersOnly: true })).toEqual({
+      fileCount: 0,
+      unzippedBytes: 0,
+    })
   })
 })
 

@@ -1,7 +1,7 @@
 import { strToU8, zipSync } from 'fflate'
 import { takePlaybackOffsetMs } from '../audio/latency.ts'
 import type { Phrase, Project } from '../domain/schemas.ts'
-import { encodeWavPadded, floatToPcm16, msToSamples, wavFromPcm16 } from './wav.ts'
+import { encodeWavPadded, floatToPcm16, msToSamples, WAV_HEADER_BYTES, wavFromPcm16 } from './wav.ts'
 
 /** Filesystem-safe path segment. Strips accents so Swedish part names survive. */
 export function safeSegment(text: string): string {
@@ -205,6 +205,31 @@ export function songDurationMs(project: Project, segments: PlannedSegment[]): nu
     0,
   )
   return Math.max(ghostMs, lastSegmentEndMs)
+}
+
+/** Pre-decode size guess. Lane count may differ after bindDecodedDuration. */
+export const ESTIMATE_SAMPLE_RATE = 48000
+
+export type StemByteEstimate = {
+  fileCount: number
+  unzippedBytes: number
+}
+
+export function estimateStemBytes(project: Project, options: DawExportOptions): StemByteEstimate {
+  const segments = planSegments(project, options)
+  const mode = options.mode ?? 'lanes'
+  const rate = ESTIMATE_SAMPLE_RATE
+  if (mode === 'lanes') {
+    const laneCount = assignLanes(segments).length
+    const totalMs = songDurationMs(project, segments)
+    const unzippedBytes = laneCount * (totalMs / 1000) * rate * 2 + laneCount * WAV_HEADER_BYTES
+    return { fileCount: laneCount, unzippedBytes }
+  }
+  const unzippedBytes = segments.reduce(
+    (sum, segment) => sum + ((segment.timelineStartMs + segment.durationMs) / 1000) * rate * 2,
+    0,
+  )
+  return { fileCount: segments.length, unzippedBytes }
 }
 
 function copyBytes(data: Uint8Array): Uint8Array<ArrayBuffer> {

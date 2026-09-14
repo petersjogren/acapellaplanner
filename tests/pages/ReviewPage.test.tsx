@@ -18,6 +18,7 @@ import {
   createProjectRepository,
   type ProjectRepository,
 } from '../../src/storage/projectRepository.ts'
+import { formatStemSizeHint } from '../../src/pages/ReviewPage.tsx'
 import { downloadBlob } from '../../src/storage/projectIO.ts'
 
 vi.mock('../../src/audio/decode.ts', async (importOriginal) => {
@@ -103,6 +104,22 @@ function take(
     ...overrides,
   }
 }
+
+describe('formatStemSizeHint', () => {
+  const large = { fileCount: 2, unzippedBytes: 250 * 1024 * 1024 }
+
+  it('warns when unzipped size is over ~200MB in lanes mode', () => {
+    expect(formatStemSizeHint(large, 'lanes')).toBe(
+      '≈ 2 files, 250.0 MB unzipped. Padding is mostly silence and compresses well in the zip. Lane mode is usually the smaller download despite full-length files.',
+    )
+  })
+
+  it('warns when unzipped size is over ~200MB in per-take mode without the lane note', () => {
+    expect(formatStemSizeHint(large, 'per-take')).toBe(
+      '≈ 2 files, 250.0 MB unzipped. Padding is mostly silence and compresses well in the zip.',
+    )
+  })
+})
 
 describe('ReviewPage', () => {
   let database: AcapellaDB
@@ -404,6 +421,17 @@ describe('ReviewPage', () => {
       expect(exportDawStemsZip).toHaveBeenCalled()
     })
     expect(vi.mocked(exportDawStemsZip).mock.calls[0]?.[1]).toMatchObject({ mode: 'per-take' })
+  })
+
+  it('shows an approximate stem export size next to Export stems', async () => {
+    await saveOverlappingKeepers()
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Export stems for DAW' })).toBeTruthy()
+    })
+    expect(screen.getByText(/≈/)).toBeTruthy()
+    expect(screen.getByText(/unzipped/i)).toBeTruthy()
   })
 
   it('shows No takes to export when keepers only and all takes are unrated', async () => {
