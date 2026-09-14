@@ -1,8 +1,8 @@
 name: Deploy to GitHub Pages
 
-# Manual only. GitHub Pages needs a public repo (or Pro), so an automatic
-# deploy on every push to main would fail and mail about it each time.
-# To deploy automatically once Pages is enabled, restore:
+# Manual only, by design — publishing a fresh preview build every time main
+# changes isn't wanted; deploy when the preparer/singer actually wants the
+# live site to catch up. To redeploy on every push instead, add:
 #   push:
 #     branches: [main]
 on:

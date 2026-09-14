@@ -1,5 +1,7 @@
 # Acapella Planner
 
+Live: **https://petersjogren.github.io/acapellaplanner/**
+
 A ghost-track overdub booth for stacked a cappella — not a DAW. The ghost’s phrasing is the clock; the singer only listens and sings back.
 
 Local-first. Desktop Chrome MVP; iPad Safari as a booth once the song is prepared.
@@ -64,16 +66,17 @@ Stack: Vite + React + TypeScript, Tailwind CSS v4, Dexie, Zod, React Router.
 
 ## Deploy to GitHub Pages
 
-GitHub Pages requires a **public repository** (or GitHub Pro for a private one).
-While this repo is private the deploy cannot run, so the workflow is
-**manual-only** — it will not fire on push. Run it from **Actions → Deploy to
-GitHub Pages → Run workflow**, or restore the `push:` trigger in
-`.github/workflows/deploy.yml` once Pages is available.
+The site is live at **https://petersjogren.github.io/acapellaplanner/**.
 
-**One-time setup, required before the first deploy:** in the repository,
-**Settings → Pages → Source → GitHub Actions**. Until that is set, the workflow
-fails at *Configure Pages* with `Get Pages site failed … Not Found` — the token
-a workflow gets cannot enable Pages by itself.
+Deploys are **manual-only** — pushing to `main` does not redeploy the site.
+Run **Actions → Deploy to GitHub Pages → Run workflow** whenever you want the
+live site to catch up to `main`.
+
+**One-time setup** (already done for this repo): **Settings → Pages → Source →
+GitHub Actions**. Without that the workflow fails at *Configure Pages* with
+`Get Pages site failed … Not Found` — the token a workflow gets cannot enable
+Pages by itself, and GitHub Pages requires a **public repository** (or GitHub
+Pro for a private one) in the first place.
 
 The workflow runs lint and tests before publishing, so a failing build is never
 deployed.
