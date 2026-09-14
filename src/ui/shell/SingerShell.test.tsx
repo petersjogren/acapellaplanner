@@ -82,18 +82,15 @@ describe('SingerShell', () => {
     )
   })
 
-  it('links to the Singers Unlimited workflow doc in a new tab', () => {
+  it('links to the Singers Unlimited workflow explainer', () => {
     renderShell(
       <SingerShell songTitle="When I Fall in Love">
         <p>Booth</p>
       </SingerShell>,
     )
 
-    const link = screen.getByRole('link', { name: 'Why this workflow' })
-    expect(link.getAttribute('href')).toBe(
-      'https://github.com/petersjogren/acapellaplanner/blob/main/docs/workflow-singers-unlimited.md',
+    expect(screen.getByRole('link', { name: 'Why this workflow' }).getAttribute('href')).toBe(
+      '/workflow',
     )
-    expect(link.getAttribute('target')).toBe('_blank')
-    expect(link.getAttribute('rel')).toBe('noreferrer')
   })
 })

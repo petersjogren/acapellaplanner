@@ -10,10 +10,12 @@ import { NotFound } from '../pages/NotFound.tsx'
 import { PreparePage } from '../pages/PreparePage.tsx'
 import { ReviewPage } from '../pages/ReviewPage.tsx'
 import { SingPage } from '../pages/SingPage.tsx'
+import { WorkflowPage } from '../pages/WorkflowPage.tsx'
 
 export const APP_ROUTES = [
   { path: '/', Component: HomePage },
   { path: '/calibrate', Component: CalibrationPage },
+  { path: '/workflow', Component: WorkflowPage },
   { path: '/project/:id/prepare', Component: PreparePage },
   { path: '/project/:id/sing', Component: SingPage },
   { path: '/project/:id/review', Component: ReviewPage },

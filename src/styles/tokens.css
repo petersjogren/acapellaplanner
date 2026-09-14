@@ -133,3 +133,90 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Long-form doc pages (e.g. the Singers Unlimited workflow explainer) render
+   from markdown -> HTML with no Tailwind classes on individual tags, so give
+   the raw elements a studio-appropriate look here instead of per-page CSS. */
+.doc-prose h1 {
+  font-family: var(--font-display-family);
+  font-size: var(--type-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.doc-prose h2 {
+  font-family: var(--font-display-family);
+  font-size: var(--type-xl);
+  font-weight: 600;
+  margin-top: 2.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.doc-prose h3 {
+  font-family: var(--font-display-family);
+  font-size: var(--type-lg);
+  font-weight: 600;
+  margin-top: 2rem;
+}
+
+.doc-prose p {
+  margin-top: 1rem;
+  color: color-mix(in srgb, var(--ink) 85%, var(--paper));
+  line-height: 1.65;
+}
+
+.doc-prose ul,
+.doc-prose ol {
+  margin-top: 1rem;
+  padding-left: 1.4rem;
+  color: color-mix(in srgb, var(--ink) 85%, var(--paper));
+  line-height: 1.65;
+}
+
+.doc-prose li + li {
+  margin-top: 0.35rem;
+}
+
+.doc-prose strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.doc-prose em {
+  font-style: italic;
+}
+
+.doc-prose table {
+  margin-top: 1.25rem;
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.doc-prose th,
+.doc-prose td {
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.doc-prose th {
+  background: var(--phrase-tint);
+  font-weight: 600;
+}
+
+.doc-prose code {
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 0.9em;
+  background: color-mix(in srgb, var(--ink) 6%, var(--paper));
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+}
+
+.doc-prose hr {
+  margin: 2rem 0;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+}
