@@ -91,13 +91,20 @@ export function kindForBlobId(project: Project, id: string): AudioBlobKind {
   return 'other'
 }
 
-export function projectZipFilename(title: string): string {
-  const slug = title
+export function projectTitleSlug(title: string): string {
+  return title
     .trim()
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80)
-  return `${slug || 'song'}.acapella.zip`
+}
+
+export function projectZipFilename(title: string): string {
+  return `${projectTitleSlug(title) || 'song'}.acapella.zip`
+}
+
+export function stemsZipFilename(title: string): string {
+  return `${projectTitleSlug(title) || 'song'}.stems.zip`
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

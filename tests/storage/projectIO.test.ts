@@ -6,6 +6,9 @@ import {
   downloadBlob,
   exportProjectZip,
   importProjectZip,
+  projectTitleSlug,
+  projectZipFilename,
+  stemsZipFilename,
 } from '../../src/storage/projectIO.ts'
 
 describe('projectIO', () => {
@@ -102,6 +105,23 @@ describe('projectIO', () => {
     expect(audioBlobIdFromZipPath('audio/nested/../slip.webm')).toBeNull()
     expect(audioBlobIdFromZipPath('audio/nested/foo.webm')).toBeNull()
     expect(audioBlobIdFromZipPath('audio//double.webm')).toBeNull()
+  })
+})
+
+describe('zip filenames', () => {
+  it('builds both zip names from the same title slug', () => {
+    const title = 'When I Fall In Love'
+    const slug = projectTitleSlug(title)
+    expect(slug).toBe('When-I-Fall-In-Love')
+    expect(projectZipFilename(title)).toBe(`${slug}.acapella.zip`)
+    expect(stemsZipFilename(title)).toBe(`${slug}.stems.zip`)
+    expect(stemsZipFilename(title)).toBe('When-I-Fall-In-Love.stems.zip')
+  })
+
+  it('falls back to song when the title is only punctuation', () => {
+    expect(projectTitleSlug('!!!')).toBe('')
+    expect(projectZipFilename('!!!')).toBe('song.acapella.zip')
+    expect(stemsZipFilename('!!!')).toBe('song.stems.zip')
   })
 })
 
