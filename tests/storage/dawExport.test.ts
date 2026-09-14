@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { createEmptyProject, type Phrase, type Take, type VoicePart } from '../../src/domain/schemas.ts'
 import {
+  assignLanes,
+  bindDecodedDuration,
+  LANE_FADE_MS,
+  LANE_MIN_GAP_MS,
   laneLetter,
   lanePath,
   planSegments,
   safeSegment,
   segmentStartMs,
   stemPath,
+  type PlannedSegment,
 } from '../../src/storage/dawExport.ts'
 
 function samplePhrase(overrides: Partial<Phrase> = {}): Phrase {
@@ -223,5 +228,208 @@ describe('planSegments', () => {
     expect(ids).toEqual(['take-p1', 'take-unrated', 'take-p2', 'take-late'])
     const starts = planSegments(project, { keepersOnly: false }).map((segment) => segment.timelineStartMs)
     expect(starts).toEqual([0, 0, 9750, 9750])
+  })
+})
+
+function seg(partial: Partial<PlannedSegment> = {}): PlannedSegment {
+  return {
+    takeId: 't',
+    audioBlobId: 'blob',
+    voicePartId: 'bass',
+    partName: 'Bass',
+    shortLabel: 'B',
+    phraseIndex: 1,
+    phraseName: 'P',
+    takeIndex: 1,
+    timelineStartMs: 0,
+    trimLeadingMs: 0,
+    durationMs: 1000,
+    ...partial,
+  }
+}
+
+function bufferOf(samples: number[], sampleRate = 1000): AudioBuffer {
+  return {
+    numberOfChannels: 1,
+    length: samples.length,
+    sampleRate,
+    duration: samples.length / sampleRate,
+    getChannelData: () => Float32Array.from(samples),
+  } as unknown as AudioBuffer
+}
+
+function laneKeys(lanes: ReturnType<typeof assignLanes>): string[] {
+  return lanes.map((lane) => `${lane.path}:${lane.segments.map((s) => s.takeId).join(',')}`)
+}
+
+describe('bindDecodedDuration', () => {
+  it('binds 1500-sample buffer @ 1kHz minus 50ms trim to 1450; does not mutate original', () => {
+    const original = seg({ durationMs: 1000, trimLeadingMs: 50 })
+    const bound = bindDecodedDuration(original, bufferOf(Array(1500).fill(0), 1000))
+    expect(bound.durationMs).toBe(1450)
+    expect(bound).not.toBe(original)
+    expect(original.durationMs).toBe(1000)
+  })
+
+  it('clamps durationMs to 0 when trim is longer than the buffer', () => {
+    const original = seg({ durationMs: 1000, trimLeadingMs: 2000 })
+    const bound = bindDecodedDuration(original, bufferOf(Array(500).fill(0), 1000))
+    expect(bound.durationMs).toBe(0)
+    expect(original.durationMs).toBe(1000)
+  })
+})
+
+describe('assignLanes', () => {
+  it('is LANE_FADE_MS 5 and LANE_MIN_GAP_MS 10', () => {
+    expect(LANE_FADE_MS).toBe(5)
+    expect(LANE_MIN_GAP_MS).toBe(2 * LANE_FADE_MS)
+    expect(LANE_MIN_GAP_MS).toBe(10)
+  })
+
+  it('puts non-overlapping 0-1000 and 5000-6000 on 1 lane [a,b]', () => {
+    const a = seg({ takeId: 'a', timelineStartMs: 0, durationMs: 1000 })
+    const b = seg({ takeId: 'b', timelineStartMs: 5000, durationMs: 1000 })
+    const lanes = assignLanes([a, b])
+    expect(lanes).toHaveLength(1)
+    expect(lanes[0]?.path).toBe('Bass/Bass_A.wav')
+    expect(lanes[0]?.segments.map((s) => s.takeId)).toEqual(['a', 'b'])
+  })
+
+  it('opens 2 lanes when 0-1000 overlaps 900-1900', () => {
+    const a = seg({ takeId: 'a', timelineStartMs: 0, durationMs: 1000 })
+    const b = seg({ takeId: 'b', timelineStartMs: 900, durationMs: 1000 })
+    const lanes = assignLanes([a, b])
+    expect(lanes).toHaveLength(2)
+    expect(lanes[0]?.segments.map((s) => s.takeId)).toEqual(['a'])
+    expect(lanes[1]?.segments.map((s) => s.takeId)).toEqual(['b'])
+  })
+
+  it('opens 3 lanes Bass_A/B/C for three doubles at the same start', () => {
+    const doubles = [1, 2, 3].map((n) =>
+      seg({ takeId: `d${n}`, takeIndex: n, timelineStartMs: 0, durationMs: 1000 }),
+    )
+    const lanes = assignLanes(doubles)
+    expect(lanes.map((lane) => lane.path)).toEqual([
+      'Bass/Bass_A.wav',
+      'Bass/Bass_B.wav',
+      'Bass/Bass_C.wav',
+    ])
+    expect(lanes.map((lane) => lane.laneIndex)).toEqual([0, 1, 2])
+    expect(lanes.map((lane) => lane.segments.map((s) => s.takeId))).toEqual([['d1'], ['d2'], ['d3']])
+  })
+
+  it('reuses lane A after it ended (a 0-1000, b 500-1500, c 5000-6000 → A has a,c; B has b)', () => {
+    const a = seg({ takeId: 'a', timelineStartMs: 0, durationMs: 1000 })
+    const b = seg({ takeId: 'b', timelineStartMs: 500, durationMs: 1000 })
+    const c = seg({ takeId: 'c', timelineStartMs: 5000, durationMs: 1000 })
+    const lanes = assignLanes([a, b, c])
+    expect(lanes).toHaveLength(2)
+    expect(lanes[0]?.segments.map((s) => s.takeId)).toEqual(['a', 'c'])
+    expect(lanes[1]?.segments.map((s) => s.takeId)).toEqual(['b'])
+  })
+
+  it('opens a second lane when b starts at 1000+LANE_MIN_GAP_MS-1', () => {
+    const a = seg({ takeId: 'a', timelineStartMs: 0, durationMs: 1000 })
+    const b = seg({
+      takeId: 'b',
+      timelineStartMs: 1000 + LANE_MIN_GAP_MS - 1,
+      durationMs: 1000,
+    })
+    const lanes = assignLanes([a, b])
+    expect(lanes).toHaveLength(2)
+  })
+
+  it('never mixes voice parts on a lane; Alto_A and Bass_A stay separate', () => {
+    const alto = seg({
+      takeId: 'alto',
+      voicePartId: 'alto',
+      partName: 'Alto',
+      shortLabel: 'A',
+      timelineStartMs: 0,
+      durationMs: 1000,
+    })
+    const bass = seg({
+      takeId: 'bass',
+      voicePartId: 'bass',
+      partName: 'Bass',
+      shortLabel: 'B',
+      timelineStartMs: 0,
+      durationMs: 1000,
+    })
+    const lanes = assignLanes([bass, alto])
+    expect(lanes.map((lane) => lane.path)).toEqual(['Alto/Alto_A.wav', 'Bass/Bass_A.wav'])
+    expect(lanes.every((lane) => new Set(lane.segments.map((s) => s.voicePartId)).size === 1)).toBe(
+      true,
+    )
+  })
+
+  it('orders parts by partName then id, Alto then Tenor, not insertion order', () => {
+    const tenor = seg({
+      takeId: 'tenor',
+      voicePartId: 'tenor',
+      partName: 'Tenor',
+      shortLabel: 'T',
+    })
+    const alto = seg({
+      takeId: 'alto',
+      voicePartId: 'alto',
+      partName: 'Alto',
+      shortLabel: 'A',
+    })
+    const lanes = assignLanes([tenor, alto])
+    expect(lanes.map((lane) => lane.path)).toEqual(['Alto/Alto_A.wav', 'Tenor/Tenor_A.wav'])
+    expect(lanes.map((lane) => lane.partName)).toEqual(['Alto', 'Tenor'])
+  })
+
+  it('is deterministic regardless of input order', () => {
+    const a = seg({ takeId: 'a', timelineStartMs: 0, durationMs: 1000, takeIndex: 1 })
+    const b = seg({ takeId: 'b', timelineStartMs: 500, durationMs: 1000, takeIndex: 2 })
+    const c = seg({ takeId: 'c', timelineStartMs: 5000, durationMs: 1000, takeIndex: 3 })
+    const forward = assignLanes([a, b, c])
+    const reversed = assignLanes([c, b, a])
+    expect(laneKeys(reversed).sort()).toEqual(laneKeys(forward).sort())
+    expect(laneKeys(reversed)).toEqual(laneKeys(forward))
+  })
+
+  it('never overlaps segments inside a lane (prev end <= next start)', () => {
+    const many = [
+      seg({ takeId: 'a', timelineStartMs: 0, durationMs: 800, takeIndex: 1 }),
+      seg({ takeId: 'b', timelineStartMs: 200, durationMs: 800, takeIndex: 2 }),
+      seg({ takeId: 'c', timelineStartMs: 400, durationMs: 800, takeIndex: 3 }),
+      seg({ takeId: 'd', timelineStartMs: 2000, durationMs: 500, takeIndex: 4 }),
+      seg({ takeId: 'e', timelineStartMs: 2100, durationMs: 500, takeIndex: 5 }),
+      seg({ takeId: 'f', timelineStartMs: 4000, durationMs: 200, takeIndex: 6 }),
+      seg({
+        takeId: 'g',
+        voicePartId: 'alto',
+        partName: 'Alto',
+        timelineStartMs: 0,
+        durationMs: 3000,
+        takeIndex: 1,
+      }),
+    ]
+    const lanes = assignLanes(many)
+    for (const lane of lanes) {
+      for (let i = 1; i < lane.segments.length; i++) {
+        const prev = lane.segments[i - 1]!
+        const next = lane.segments[i]!
+        expect(prev.timelineStartMs + prev.durationMs).toBeLessThanOrEqual(next.timelineStartMs)
+      }
+    }
+  })
+
+  it('returns [] for []', () => {
+    expect(assignLanes([])).toEqual([])
+  })
+
+  it('opens a second lane after bindDecodedDuration overrun; estimate stays on 1 lane', () => {
+    const a = seg({ takeId: 'a', timelineStartMs: 0, durationMs: 1000, trimLeadingMs: 0 })
+    const b = seg({ takeId: 'b', timelineStartMs: 1100, durationMs: 500, takeIndex: 2 })
+    expect(assignLanes([a, b])).toHaveLength(1)
+
+    const boundA = bindDecodedDuration(a, bufferOf(Array(1500).fill(0), 1000))
+    expect(boundA.durationMs).toBe(1500)
+    expect(a.durationMs).toBe(1000)
+    expect(assignLanes([boundA, b])).toHaveLength(2)
   })
 })

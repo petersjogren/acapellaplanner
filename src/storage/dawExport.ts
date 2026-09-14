@@ -91,3 +91,71 @@ export function planSegments(project: Project, options: DawExportOptions): Plann
       a.takeIndex - b.takeIndex,
   )
 }
+
+export const LANE_FADE_MS = 5
+export const LANE_MIN_GAP_MS = 2 * LANE_FADE_MS
+
+export function bindDecodedDuration(
+  segment: PlannedSegment,
+  buffer: AudioBuffer,
+): PlannedSegment {
+  const audibleMs = Math.max(0, buffer.duration * 1000 - segment.trimLeadingMs)
+  return { ...segment, durationMs: audibleMs }
+}
+
+export type ExportLane = {
+  voicePartId: string
+  partName: string
+  laneIndex: number
+  path: string
+  segments: PlannedSegment[]
+}
+
+export function assignLanes(segments: PlannedSegment[]): ExportLane[] {
+  const byPart = new Map<string, PlannedSegment[]>()
+  for (const segment of segments) {
+    const existing = byPart.get(segment.voicePartId)
+    if (existing) existing.push(segment)
+    else byPart.set(segment.voicePartId, [segment])
+  }
+
+  const partIds = [...byPart.keys()].sort((a, b) => {
+    const nameA = byPart.get(a)?.[0]?.partName ?? ''
+    const nameB = byPart.get(b)?.[0]?.partName ?? ''
+    return nameA.localeCompare(nameB) || a.localeCompare(b)
+  })
+
+  const lanes: ExportLane[] = []
+  for (const voicePartId of partIds) {
+    const ordered = [...(byPart.get(voicePartId) ?? [])].sort(
+      (a, b) =>
+        a.timelineStartMs - b.timelineStartMs ||
+        a.phraseIndex - b.phraseIndex ||
+        a.takeIndex - b.takeIndex ||
+        a.takeId.localeCompare(b.takeId),
+    )
+    const partLanes: ExportLane[] = []
+    const laneEndMs: number[] = []
+    for (const segment of ordered) {
+      const segmentEndMs = segment.timelineStartMs + segment.durationMs
+      let index = laneEndMs.findIndex(
+        (endMs) => endMs + LANE_MIN_GAP_MS <= segment.timelineStartMs,
+      )
+      if (index === -1) {
+        index = laneEndMs.length
+        laneEndMs.push(Number.NEGATIVE_INFINITY)
+        partLanes.push({
+          voicePartId,
+          partName: segment.partName,
+          laneIndex: index,
+          path: lanePath(segment.partName, index),
+          segments: [],
+        })
+      }
+      laneEndMs[index] = Math.max(laneEndMs[index] ?? segmentEndMs, segmentEndMs)
+      partLanes[index]!.segments.push(segment)
+    }
+    lanes.push(...partLanes)
+  }
+  return lanes
+}
