@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   applyLatencyCompensation,
+  audioTimesToPerfMs,
   BEEP_DURATION_S,
   BEEP_GAIN,
   binForFreq,
   takePlaybackOffsetMs,
+  CLAP_REFRACTORY_MS,
   CLAP_STABLE_MAD_MS,
+  clickTrainAudioTimes,
   computeLatencyMs,
   DEVICE_PROFILE_STORAGE_KEY,
   estimateClapClickLatency,
@@ -16,6 +19,7 @@ import {
   measureClapLatency,
   median,
   saveDeviceProfile,
+  shouldRecordClapOnset,
   storedLatencyCompMs,
   toneSnrDb,
   type DeviceProfile,
@@ -292,5 +296,39 @@ describe('estimateClapClickLatency', () => {
   it('rejects a median above MAX_LATENCY_MS', () => {
     const lateClaps = clicks.map((t) => t + MAX_LATENCY_MS + 100)
     expect(estimateClapClickLatency(clicks, lateClaps)).toBeNull()
+  })
+})
+
+describe('clickTrainAudioTimes', () => {
+  it('schedules 12 clicks at 100 BPM starting at 1.0', () => {
+    const times = clickTrainAudioTimes(1.0, 12, 100)
+    expect(times).toHaveLength(12)
+    expect(times[0]).toBe(1.0)
+    expect(times[1]! - times[0]!).toBeCloseTo(0.6)
+    expect(times[11]).toBeCloseTo(1 + 11 * 0.6)
+  })
+})
+
+describe('audioTimesToPerfMs', () => {
+  it('maps audio-clock times linearly onto the performance timeline', () => {
+    expect(audioTimesToPerfMs([1, 1.6, 2.2], 1, 1000)).toEqual([1000, 1600, 2200])
+  })
+})
+
+describe('shouldRecordClapOnset', () => {
+  it('rejects a peak below the noise floor threshold', () => {
+    expect(shouldRecordClapOnset(0.05, 0.02, 1000, Number.NEGATIVE_INFINITY)).toBe(false)
+  })
+
+  it('accepts a peak above the noise floor threshold', () => {
+    expect(shouldRecordClapOnset(0.2, 0.02, 1000, Number.NEGATIVE_INFINITY)).toBe(true)
+  })
+
+  it('blocks a second peak inside the refractory window', () => {
+    expect(shouldRecordClapOnset(0.2, 0.02, 1000 + 100, 1000)).toBe(false)
+  })
+
+  it('accepts a peak again after the refractory window', () => {
+    expect(shouldRecordClapOnset(0.2, 0.02, 1000 + CLAP_REFRACTORY_MS, 1000)).toBe(true)
   })
 })

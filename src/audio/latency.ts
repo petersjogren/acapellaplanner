@@ -1,4 +1,5 @@
 import { getAudioContext, resumeAudioContext } from './context.ts'
+import { framePeakAbs, smoothLevel } from './micLevel.ts'
 import { isProcessedCapture, micProcessingFlags, requestMicStream } from './record.ts'
 
 export const DEVICE_PROFILE_STORAGE_KEY = 'acapellaplanner.latency'
@@ -26,6 +27,8 @@ export const CLAP_ONSET_GATE = 0.25
 export const CLAP_REFRACTORY_MS = 180
 export const CLAP_STABLE_MAD_MS = 25
 export const CLAP_STABLE_IQR_MS = 40
+export const CLAP_NOISE_MULTIPLIER = 4
+export const CLAP_ABS_FLOOR = 0.08
 
 export type DeviceProfile = {
   latencyCompMs: number
@@ -38,18 +41,6 @@ export type ClapListenIo = {
   listenUntilPeak: (afterTimeMs: number) => Promise<number>
 }
 
-export type BrowserClapIo = ClapListenIo & {
-  dispose: () => void
-  captureIsProcessed: boolean
-}
-
-export type BeepProbe = {
-  durationS: number
-  gain: number
-}
-
-export type DetectionFrame = { tMs: number; present: boolean }
-
 export type ClapClickEstimate = {
   latencyMs: number
   matchCount: number
@@ -57,6 +48,22 @@ export type ClapClickEstimate = {
   iqrMs: number
   stable: boolean
 }
+
+export type CalibrationIo = ClapListenIo & {
+  captureIsProcessed: boolean
+  getLevel: () => number
+  runClickClapMeasure: () => Promise<ClapClickEstimate>
+  dispose: () => void
+}
+export type BrowserCalibrationIo = CalibrationIo
+export type BrowserClapIo = CalibrationIo
+
+export type BeepProbe = {
+  durationS: number
+  gain: number
+}
+
+export type DetectionFrame = { tMs: number; present: boolean }
 
 export function binForFreq(freqHz: number, sampleRate: number, fftSize: number): number {
   return Math.round(freqHz / (sampleRate / fftSize))
@@ -235,6 +242,33 @@ export function estimateClapClickLatency(
   return { latencyMs, matchCount, madMs, iqrMs, stable }
 }
 
+export function clickTrainAudioTimes(tFirst: number, count: number, bpm: number): number[] {
+  const intervalS = 60 / bpm
+  return Array.from({ length: count }, (_, i) => tFirst + i * intervalS)
+}
+
+export function audioTimesToPerfMs(
+  audioTimes: number[],
+  audioOrigin: number,
+  perfOrigin: number,
+): number[] {
+  return audioTimes.map((when) => perfOrigin + (when - audioOrigin) * 1000)
+}
+
+export function shouldRecordClapOnset(
+  peak: number,
+  noiseFloor: number,
+  nowMs: number,
+  lastClapMs: number,
+  opts?: { refractoryMs?: number; gate?: number; floorMul?: number; absFloor?: number },
+): boolean {
+  const refractoryMs = opts?.refractoryMs ?? CLAP_REFRACTORY_MS
+  const floorMul = opts?.floorMul ?? CLAP_NOISE_MULTIPLIER
+  const absFloor = opts?.absFloor ?? CLAP_ABS_FLOOR
+  if (nowMs - lastClapMs < refractoryMs) return false
+  return peak >= Math.max(noiseFloor * floorMul, absFloor)
+}
+
 export function loadDeviceProfile(): DeviceProfile | null {
   try {
     const raw = localStorage.getItem(DEVICE_PROFILE_STORAGE_KEY)
@@ -302,7 +336,44 @@ export async function playBeepTone(
   return beepTime
 }
 
-export async function createBrowserClapIo(): Promise<BrowserClapIo> {
+export async function playClickTrain(
+  ctx: AudioContext,
+  opts?: { count?: number; bpm?: number; preRollMs?: number; gain?: number },
+): Promise<{ clickPerfMs: number[]; done: Promise<void> }> {
+  await resumeAudioContext(ctx)
+  const count = opts?.count ?? CLAP_CLICK_COUNT
+  const bpm = opts?.bpm ?? CLAP_CLICK_BPM
+  const preRollMs = opts?.preRollMs ?? CLAP_PRE_ROLL_MS
+  const gainValue = opts?.gain ?? CLAP_CLICK_GAIN
+  const audioOrigin = ctx.currentTime
+  const perfOrigin = performance.now()
+  const tFirst = audioOrigin + preRollMs / 1000
+  const clickAudio = clickTrainAudioTimes(tFirst, count, bpm)
+  const clickPerfMs = audioTimesToPerfMs(clickAudio, audioOrigin, perfOrigin)
+  for (const when of clickAudio) {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = CLAP_CLICK_FREQ_HZ
+    gain.gain.value = gainValue
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(when)
+    osc.stop(when + CLAP_CLICK_DURATION_S)
+    osc.onended = () => {
+      osc.disconnect()
+      gain.disconnect()
+    }
+  }
+  const lastEnd = (clickAudio[clickAudio.length - 1] ?? tFirst) + CLAP_CLICK_DURATION_S
+  const done = new Promise<void>((resolve) => {
+    const waitMs = Math.max(0, (lastEnd - ctx.currentTime) * 1000) + CLAP_POST_ROLL_MS
+    setTimeout(resolve, waitMs)
+  })
+  return { clickPerfMs, done }
+}
+
+export async function createBrowserCalibrationIo(): Promise<BrowserCalibrationIo> {
   const ctx = getAudioContext()
   await resumeAudioContext(ctx)
   const stream = await requestMicStream()
@@ -314,11 +385,43 @@ export async function createBrowserClapIo(): Promise<BrowserClapIo> {
   analyser.maxDecibels = -20
   source.connect(analyser)
   const freq = new Float32Array(analyser.frequencyBinCount)
+  const timeDomain = new Float32Array(analyser.fftSize)
   const toneBin = binForFreq(TONE_FREQ_HZ, ctx.sampleRate, analyser.fftSize)
   const captureIsProcessed = isProcessedCapture(micProcessingFlags(stream))
 
+  let currentLevel = 0
+  let rafId = 0
+  let disposed = false
+  let measuring = false
+  let noiseEma = 0
+  let noiseFloor = 0.01
+  let firstClickPerfMs: number | null = null
+  let lastClapMs = Number.NEGATIVE_INFINITY
+  let clapOnsets: number[] = []
+
+  const tickLevel = () => {
+    if (disposed) return
+    analyser.getFloatTimeDomainData(timeDomain)
+    const peak = framePeakAbs(timeDomain)
+    currentLevel = smoothLevel(currentLevel, peak)
+    if (measuring) {
+      const now = performance.now()
+      if (firstClickPerfMs == null || now < firstClickPerfMs) {
+        noiseEma = smoothLevel(noiseEma, peak)
+        noiseFloor = Math.max(noiseEma, 0.01)
+      }
+      if (shouldRecordClapOnset(peak, noiseFloor, now, lastClapMs)) {
+        lastClapMs = now
+        clapOnsets.push(now)
+      }
+    }
+    rafId = requestAnimationFrame(tickLevel)
+  }
+  rafId = requestAnimationFrame(tickLevel)
+
   return {
     captureIsProcessed,
+    getLevel: () => currentLevel,
     playBeep: () => playBeepTone(ctx),
     listenUntilPeak: (afterTimeMs) =>
       new Promise((resolve, reject) => {
@@ -348,9 +451,31 @@ export async function createBrowserClapIo(): Promise<BrowserClapIo> {
         }
         tick()
       }),
+    runClickClapMeasure: async () => {
+      clapOnsets = []
+      lastClapMs = Number.NEGATIVE_INFINITY
+      noiseEma = 0
+      noiseFloor = 0.01
+      firstClickPerfMs = null
+      measuring = true
+      const { clickPerfMs, done } = await playClickTrain(ctx)
+      firstClickPerfMs = clickPerfMs[0] ?? null
+      await done
+      measuring = false
+      const estimate = estimateClapClickLatency(clickPerfMs, clapOnsets)
+      if (!estimate?.stable) throw new Error('failed measurement')
+      return estimate
+    },
     dispose: () => {
+      disposed = true
+      measuring = false
+      cancelAnimationFrame(rafId)
       source.disconnect()
       stream.getTracks().forEach((track) => track.stop())
     },
   }
+}
+
+export async function createBrowserClapIo(): Promise<BrowserClapIo> {
+  return createBrowserCalibrationIo()
 }
