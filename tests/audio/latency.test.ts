@@ -5,13 +5,16 @@ import {
   BEEP_GAIN,
   binForFreq,
   takePlaybackOffsetMs,
+  CLAP_STABLE_MAD_MS,
   computeLatencyMs,
   DEVICE_PROFILE_STORAGE_KEY,
+  estimateClapClickLatency,
   findToneOnset,
   isTonePresent,
   loadDeviceProfile,
   MAX_LATENCY_MS,
   measureClapLatency,
+  median,
   saveDeviceProfile,
   storedLatencyCompMs,
   toneSnrDb,
@@ -227,5 +230,67 @@ describe('measureClapLatency', () => {
         listenUntilPeak: async () => 1900,
       }),
     ).rejects.toThrow(/failed measurement/)
+  })
+})
+
+describe('median', () => {
+  it('is NaN for an empty list', () => {
+    expect(median([])).toBeNaN()
+  })
+
+  it('is the middle value of an odd-length list', () => {
+    expect(median([1, 3, 2])).toBe(2)
+  })
+
+  it('is the mean of the two middle values of an even-length list', () => {
+    expect(median([1, 4, 2, 3])).toBe(2.5)
+  })
+
+  it('does not mutate the input', () => {
+    const xs = [3, 1]
+    median(xs)
+    expect(xs).toEqual([3, 1])
+  })
+})
+
+describe('estimateClapClickLatency', () => {
+  const clicks = [1000, 1600, 2200, 2800, 3400, 4000, 4600, 5200]
+  const claps = clicks.map((t, i) => t + 87 + (i % 2 === 0 ? 3 : -2))
+
+  it('estimates median latency near 87ms and marks stable', () => {
+    const est = estimateClapClickLatency(clicks, claps)!
+    expect(est.latencyMs).toBe(88)
+    expect(est.stable).toBe(true)
+    expect(est.matchCount).toBeGreaterThanOrEqual(6)
+  })
+
+  it('returns null when only 2 claps land', () => {
+    expect(estimateClapClickLatency(clicks, claps.slice(0, 2))).toBeNull()
+  })
+
+  it('pairs high-jitter claps but marks the estimate unstable when MAD exceeds the threshold', () => {
+    const jitterClicks = Array.from({ length: 8 }, (_, i) => i * 600)
+    const jitter = [80, -70, 90, -85, 75, -60, 95, -50]
+    const jitterClaps = jitterClicks.map((t, i) => t + 87 + jitter[i]!)
+    const est = estimateClapClickLatency(jitterClicks, jitterClaps)
+    expect(est).not.toBeNull()
+    expect(est!.matchCount).toBeGreaterThanOrEqual(6)
+    expect(est!.stable).toBe(false)
+    expect(est!.madMs).toBeGreaterThan(CLAP_STABLE_MAD_MS)
+  })
+
+  it('ignores a double-clap outlier via median', () => {
+    const withOutlier = [...claps, claps[0]! + 400]
+    expect(estimateClapClickLatency(clicks, withOutlier)!.latencyMs).toBe(88)
+  })
+
+  it('rejects a negative median latency', () => {
+    const earlyClaps = clicks.map((t) => t - 50)
+    expect(estimateClapClickLatency(clicks, earlyClaps)).toBeNull()
+  })
+
+  it('rejects a median above MAX_LATENCY_MS', () => {
+    const lateClaps = clicks.map((t) => t + MAX_LATENCY_MS + 100)
+    expect(estimateClapClickLatency(clicks, lateClaps)).toBeNull()
   })
 })

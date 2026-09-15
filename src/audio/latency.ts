@@ -13,6 +13,20 @@ export const BEEP_GAIN = 0.9
 export const BEEP_FADE_S = 0.012
 export const WARMUP_MS = 300
 
+export const CLAP_CLICK_BPM = 100
+export const CLAP_CLICK_COUNT = 12
+export const CLAP_CLICK_GAIN = 0.35
+export const CLAP_CLICK_FREQ_HZ = 1000
+export const CLAP_CLICK_DURATION_S = 0.02
+export const CLAP_PRE_ROLL_MS = 400
+export const CLAP_POST_ROLL_MS = 600
+export const CLAP_MIN_MATCHES = 6
+export const CLAP_MAX_PAIR_ERROR_MS = 120
+export const CLAP_ONSET_GATE = 0.25
+export const CLAP_REFRACTORY_MS = 180
+export const CLAP_STABLE_MAD_MS = 25
+export const CLAP_STABLE_IQR_MS = 40
+
 export type DeviceProfile = {
   latencyCompMs: number
   updatedAt: string
@@ -35,6 +49,14 @@ export type BeepProbe = {
 }
 
 export type DetectionFrame = { tMs: number; present: boolean }
+
+export type ClapClickEstimate = {
+  latencyMs: number
+  matchCount: number
+  madMs: number
+  iqrMs: number
+  stable: boolean
+}
 
 export function binForFreq(freqHz: number, sampleRate: number, fftSize: number): number {
   return Math.round(freqHz / (sampleRate / fftSize))
@@ -121,6 +143,96 @@ export function applyLatencyCompensation(
 export function takePlaybackOffsetMs(latencyCompMs: number | undefined): number {
   if (latencyCompMs == null || !Number.isFinite(latencyCompMs)) return 0
   return Math.max(0, latencyCompMs)
+}
+
+/** Empty → NaN. Sorts a copy. Even length → mean of the two middle values. */
+export function median(xs: number[]): number {
+  if (xs.length === 0) return Number.NaN
+  const sorted = [...xs].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
+}
+
+/**
+ * Median clap−click delay from a click train. Coarse-searches latency,
+ * then refines pairs at the winning offset. Null when too few matches
+ * or the median is outside 0…maxLatencyMs.
+ */
+export function estimateClapClickLatency(
+  clickPerfMs: number[],
+  clapPerfMs: number[],
+  opts?: {
+    minMatches?: number
+    maxLatencyMs?: number
+    stableMadMs?: number
+    coarseStepMs?: number
+    pairGateMs?: number
+  },
+): ClapClickEstimate | null {
+  if (clickPerfMs.length === 0 || clapPerfMs.length === 0) return null
+
+  const minMatches = opts?.minMatches ?? CLAP_MIN_MATCHES
+  const maxLatencyMs = opts?.maxLatencyMs ?? MAX_LATENCY_MS
+  const stableMadMs = opts?.stableMadMs ?? CLAP_STABLE_MAD_MS
+  const coarseStepMs = opts?.coarseStepMs ?? 5
+  const pairGateMs = opts?.pairGateMs ?? CLAP_MAX_PAIR_ERROR_MS
+
+  const clicks = [...clickPerfMs].sort((a, b) => a - b)
+  const claps = [...clapPerfMs].sort((a, b) => a - b)
+
+  const pairResiduals = (latencyMs: number): number[] => {
+    const used = claps.map(() => false)
+    const residuals: number[] = []
+    for (const click of clicks) {
+      const target = click + latencyMs
+      let bestIdx = -1
+      let bestDist = Infinity
+      for (let i = 0; i < claps.length; i++) {
+        if (used[i]) continue
+        const dist = Math.abs(claps[i]! - target)
+        if (dist <= pairGateMs && dist < bestDist) {
+          bestDist = dist
+          bestIdx = i
+        }
+      }
+      if (bestIdx >= 0) {
+        used[bestIdx] = true
+        residuals.push(claps[bestIdx]! - click)
+      }
+    }
+    return residuals
+  }
+
+  let bestScore = 0
+  let bestMad = Infinity
+  let bestL: number | null = null
+  for (let L = 0; L <= maxLatencyMs; L += coarseStepMs) {
+    const residuals = pairResiduals(L)
+    if (residuals.length === 0) continue
+    const center = median(residuals)
+    const mad = median(residuals.map((r) => Math.abs(r - center)))
+    if (residuals.length > bestScore || (residuals.length === bestScore && mad < bestMad)) {
+      bestScore = residuals.length
+      bestMad = mad
+      bestL = Math.round(center)
+    }
+  }
+  if (bestL == null) return null
+
+  const residuals = pairResiduals(bestL)
+  if (residuals.length < minMatches) return null
+
+  const latencyMs = Math.round(median(residuals))
+  if (latencyMs < 0 || latencyMs > maxLatencyMs) return null
+
+  const madMs = median(residuals.map((r) => Math.abs(r - latencyMs)))
+  const sorted = [...residuals].sort((a, b) => a - b)
+  const n = sorted.length
+  const iqrMs = sorted[Math.floor((n - 1) * 0.75)]! - sorted[Math.floor((n - 1) * 0.25)]!
+  const matchCount = residuals.length
+  const stable = matchCount >= minMatches && madMs <= stableMadMs
+
+  return { latencyMs, matchCount, madMs, iqrMs, stable }
 }
 
 export function loadDeviceProfile(): DeviceProfile | null {
