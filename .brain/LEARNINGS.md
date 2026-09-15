@@ -18,10 +18,12 @@ Using `phrase.startMs` as stem origin places every file late by its pre-roll. Sk
 
 ## Safari / capture
 
-- Don’t `decodeAudioData` on a context you then close.
-- Don’t revoke an object URL in the same turn as `a.click()` (1 s delay in `downloadBlob`).
+- Don't `decodeAudioData` on a context you then close.
+- Don't revoke an object URL in the same turn as `a.click()` (1 s delay in `downloadBlob`).
 - `{ audio: true }` turns on Chrome voice-call DSP and ducks sung takes against the ghost. Ask for raw capture; warn if settings still show AEC/NS/AGC.
-- Latency calibration is headphone **bleed-through**, not a clap. Detect **880 Hz vs neighbouring bins** (`smoothingTimeConstant = 0`); peak floors (0.2, then 0.03) never heard quiet leak. One tap; silent warmup. Without a meter, a dead mic and no bleed both looked like “tone not detected.” Clap-with-click is round-trip **plus** human offset. A short 12-click median+MAD run was enough to save three different “stable” answers: click leak (~20 ms, first peak + refractory ate the real clap), a one-beat alias (~650 ms, pairing search out to 800 ms > 600 ms period), or the real clap (~90 ms). Do not stop on 6 pairs. Replace a quieter onset with a louder one in ~160 ms; cap pairing at 400 ms; sequential Normal–Normal on MAD inliers; min 16 closed clicks; keep going while the 95% half-width is wide or MAD is high. Still applied as a buffer skip, never by shifting phrase start. iOS may keep AEC and/or route Web Audio to the earpiece while the mic is open — unfixable from the page; headphones, or type ms after a miss.
+- Latency calibration is headphone **bleed-through**, not a clap. Detect **880 Hz vs neighbouring bins** (`smoothingTimeConstant = 0`); peak floors (0.2, then 0.03) never heard quiet leak. One tap; silent warmup. Without a meter, a dead mic and no bleed both looked like "tone not detected." Clap-with-click is round-trip **plus** human offset. A short 12-click median+MAD run was enough to save three different "stable" answers: click leak (~20 ms, first peak + refractory ate the real clap), a one-beat alias (~650 ms, pairing search out to 800 ms > 600 ms period), or the real clap (~90 ms). Do not stop on 6 pairs. Replace a quieter onset with a louder one in ~160 ms; cap pairing at 400 ms; sequential Normal–Normal on MAD inliers; min 16 closed clicks; keep going while the 95% half-width is wide or MAD is high. Still applied as a buffer skip, never by shifting phrase start. iOS may keep AEC and/or route Web Audio to the earpiece while the mic is open — unfixable from the page; headphones, or type ms after a miss.
+- Safe-area insets (`env(safe-area-inset-*)`) must go through Tailwind arbitrary values (`pl-[max(1rem,env(safe-area-inset-left))]`), not an inline `style={{ paddingInline: ... }}` alongside a `px-*` class — the inline style wins the cascade and silently zeroes the padding on every viewport, not just notched ones. Caught by screenshotting an emulated iPhone, not by tests (jsdom has no `env()`).
+- `min-h-screen` (`100vh`) undercounts Safari's dynamic toolbar; use `min-h-dvh` for phone-viewport shells.
 
 ## Persistence races
 

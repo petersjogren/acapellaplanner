@@ -28,11 +28,16 @@ export function PreparerShell({
   projectId,
 }: PreparerShellProps) {
   return (
-    <div className="flex min-h-screen bg-paper font-ui text-ink fade-in">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-ink/10 px-5 py-8">
-        <h1 className="font-display text-lg font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 text-sm text-ink-muted">Studio desk</p>
-        <nav aria-label="Studio" className="mt-10 flex flex-col gap-1">
+    <div className="flex min-h-dvh flex-col bg-paper font-ui text-ink fade-in pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:flex-row">
+      <aside className="flex shrink-0 flex-col border-b border-ink/10 py-4 pl-[max(1rem,env(safe-area-inset-left))] pr-4 sm:pl-[max(1.25rem,env(safe-area-inset-left))] md:w-56 md:border-r md:border-b-0 md:py-8">
+        <div className="flex items-baseline justify-between gap-4 md:block">
+          <h1 className="font-display text-lg font-semibold tracking-tight">{title}</h1>
+          <p className="mt-1 text-sm text-ink-muted md:block">Studio desk</p>
+        </div>
+        <nav
+          aria-label="Studio"
+          className="mt-4 flex flex-row gap-1 overflow-x-auto md:mt-10 md:flex-col md:overflow-visible"
+        >
           {NAV.map((item) => {
             const active = current === item.id
             return (
@@ -41,7 +46,7 @@ export function PreparerShell({
                 to={navHref(item.id, projectId)}
                 aria-current={active ? 'page' : undefined}
                 className={clsx(
-                  'rounded-md px-3 py-2 studio-transition',
+                  'shrink-0 rounded-md px-3 py-2 studio-transition',
                   active ? 'bg-ink text-paper' : 'text-ink/80 hover:bg-ink/5',
                 )}
               >
@@ -54,7 +59,7 @@ export function PreparerShell({
                     />
                   ) : null}
                 </span>
-                <span className={clsx('block text-xs', active ? 'text-paper/80' : 'text-ink-muted')}>
+                <span className={clsx('hidden text-xs md:block', active ? 'text-paper/80' : 'text-ink-muted')}>
                   {item.hint}
                 </span>
               </Link>
@@ -63,12 +68,12 @@ export function PreparerShell({
         </nav>
         <Link
           to="/calibrate"
-          className="mt-auto pt-8 text-sm text-ink-muted underline-offset-4 hover:underline"
+          className="mt-3 text-sm text-ink-muted underline-offset-4 hover:underline md:mt-auto md:pt-8"
         >
           Line up headphones
         </Link>
       </aside>
-      <main className="min-w-0 flex-1 px-10 py-8">{children}</main>
+      <main className="min-w-0 flex-1 py-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:py-6 md:py-8 md:pl-[max(2.5rem,env(safe-area-inset-left))] md:pr-[max(2.5rem,env(safe-area-inset-right))]">{children}</main>
     </div>
   )
 }

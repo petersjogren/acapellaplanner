@@ -2,7 +2,7 @@
 
 As of 2026-09-15 (branch `main`).
 
-Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is documented with mic/PWA caveats, not proven in CI.
+Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is documented with mic/PWA caveats, not proven in CI. iPhone Safari (portrait + landscape) is responsive at the shell/page level — same layout as desktop/iPad above `md:`, not proven in CI (manual browser-emulation screenshots only).
 
 ## What works
 
@@ -15,6 +15,8 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 - Schema v2 + migration from v1 section time ranges.
 
 ## Just landed
+
+Phone Safari responsive pass (no web layout change): `PreparerShell`/`SingerShell`/`HomePage` collapse nav and stack content below `md:`, safe-area insets via Tailwind arbitrary values (not inline `style`, which silently zeroed padding — see LEARNINGS), display/lyric type scales down under 430px width or short landscape height. `HomePage` song-list row (title/date/Rename/Export/Delete) stacks into a bordered card on phones instead of cramming onto one line; unchanged at `sm:`+.
 
 Clap-with-click: longer train (up to 40 clicks) with early stop when the posterior is tight. MAD outlier drop, louder-peak replacement so click leak does not steal the clap, pairing capped below one beat so ~650 ms aliases cannot save.
 

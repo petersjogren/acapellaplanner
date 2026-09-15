@@ -38,6 +38,25 @@
   --fade-duration: 700ms;
 }
 
+/* Phones (portrait and landscape): the desktop/iPad scale is tuned for wider
+   viewports. Shrink display-scale type so headlines and lyric type fit
+   without introducing a second, phone-specific layout. */
+@media (max-width: 430px) {
+  :root {
+    --type-xl: 1.375rem;
+    --type-display: 1.75rem;
+    --type-lyric: 1.625rem;
+  }
+}
+
+@media (max-height: 430px) and (orientation: landscape) {
+  :root {
+    --type-xl: 1.25rem;
+    --type-display: 1.5rem;
+    --type-lyric: 1.375rem;
+  }
+}
+
 @theme inline {
   --color-paper: var(--paper);
   --color-ink: var(--ink);

@@ -15,19 +15,19 @@ export function SingerShell({
   projectId,
 }: SingerShellProps) {
   return (
-    <div className="flex min-h-screen flex-col bg-paper font-ui text-ink fade-in">
-      <header className="flex items-baseline justify-between gap-6 px-8 py-5">
+    <div className="flex min-h-dvh flex-col bg-paper font-ui text-ink fade-in pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+      <header className="flex flex-col gap-3 py-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:py-5 md:flex-row md:items-baseline md:justify-between md:gap-6 md:pl-[max(2rem,env(safe-area-inset-left))] md:pr-[max(2rem,env(safe-area-inset-right))]">
         {projectId ? (
           <Link
             to={`/project/${projectId}/prepare`}
-            className="font-display text-2xl font-semibold tracking-tight studio-transition hover:text-record-red"
+            className="font-display text-xl font-semibold tracking-tight studio-transition hover:text-record-red sm:text-2xl"
           >
             {songTitle}
           </Link>
         ) : (
-          <h1 className="font-display text-2xl font-semibold tracking-tight">{songTitle}</h1>
+          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">{songTitle}</h1>
         )}
-        <div className="flex items-baseline gap-6">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 sm:gap-6">
           {partLabel ? (
             <p className="text-sm tracking-wide text-ink/70">
               You are singing:{' '}
@@ -54,7 +54,7 @@ export function SingerShell({
           </Link>
         </div>
       </header>
-      <main className="flex flex-1 flex-col px-8 pb-12">{children}</main>
+      <main className="flex flex-1 flex-col pb-8 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pb-8 md:pb-12 md:pl-[max(2rem,env(safe-area-inset-left))] md:pr-[max(2rem,env(safe-area-inset-right))]">{children}</main>
     </div>
   )
 }

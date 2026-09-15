@@ -142,7 +142,7 @@ export function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-paper px-10 py-8 font-ui text-ink fade-in">
+    <div className="min-h-dvh bg-paper py-6 font-ui text-ink fade-in pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))] md:py-8 md:pl-[max(2.5rem,env(safe-area-inset-left))] md:pr-[max(2.5rem,env(safe-area-inset-right))]">
       <h1 className="font-display text-2xl font-semibold tracking-tight">Acapella Planner</h1>
       <p className="mt-1 text-sm text-ink-muted">Songs on the desk</p>
       <Link
@@ -151,7 +151,7 @@ export function HomePage() {
       >
         Line up headphones
       </Link>
-      <div className="mt-8 flex flex-wrap items-end gap-6">
+      <div className="mt-8 flex flex-wrap items-end gap-4 sm:gap-6">
         <button
           type="button"
           className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red disabled:opacity-50"
@@ -182,12 +182,15 @@ export function HomePage() {
       ) : projects === null || projects.length === 0 ? (
         error ? null : <p className="mt-8 text-ink-muted">No songs yet</p>
       ) : (
-        <ul className="mt-8 flex max-w-xl flex-col gap-2">
+        <ul className="mt-8 flex max-w-xl flex-col gap-3 sm:gap-2">
           {projects.map((project) => (
-            <li key={project.id} className="flex items-center gap-2">
+            <li
+              key={project.id}
+              className="flex flex-col gap-3 rounded-md border border-ink/10 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 sm:border-0 sm:p-0"
+            >
               {renamingId === project.id ? (
                 <form
-                  className="flex min-w-0 flex-1 items-center gap-2"
+                  className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
                   onSubmit={(event) => {
                     event.preventDefault()
                     void handleRename(project)
@@ -222,61 +225,63 @@ export function HomePage() {
                 <>
                   <Link
                     to={`/project/${project.id}/prepare`}
-                    className="flex min-w-0 flex-1 items-baseline justify-between gap-4 rounded-md px-3 py-2 studio-transition hover:bg-ink/5"
+                    className="flex min-w-0 flex-col gap-0.5 rounded-md studio-transition hover:bg-ink/5 sm:flex-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4 sm:px-3 sm:py-2"
                   >
                     <span className="font-medium">{project.title}</span>
                     <time className="text-sm text-ink-muted" dateTime={project.updatedAt}>
                       {new Date(project.updatedAt).toLocaleString()}
                     </time>
                   </Link>
-                  <button
-                    type="button"
-                    className="shrink-0 rounded-md border border-ink/15 px-3 py-1.5 text-sm font-medium studio-transition hover:bg-ink/5"
-                    aria-label={`Rename ${project.title}`}
-                    onClick={() => startRename(project)}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    type="button"
-                    className="shrink-0 rounded-md border border-ink/15 px-3 py-1.5 text-sm font-medium studio-transition hover:bg-ink/5"
-                    aria-label={`Export ${project.title}`}
-                    onClick={() => void handleExport(project)}
-                  >
-                    Export
-                  </button>
-                  {pendingDeleteId === project.id ? (
-                    <>
-                      <button
-                        type="button"
-                        className="shrink-0 rounded-md bg-record-red px-3 py-1.5 text-sm font-medium text-paper studio-transition"
-                        aria-label={`Confirm delete ${project.title}`}
-                        onClick={() => void handleDelete(project)}
-                      >
-                        Delete for good
-                      </button>
-                      <button
-                        type="button"
-                        className="shrink-0 rounded-md border border-ink/15 px-3 py-1.5 text-sm font-medium studio-transition hover:bg-ink/5"
-                        onClick={() => setPendingDeleteId(null)}
-                      >
-                        Keep
-                      </button>
-                    </>
-                  ) : (
+                  <div className="flex flex-wrap gap-2 sm:contents">
                     <button
                       type="button"
-                      className="shrink-0 rounded-md border border-ink/15 px-3 py-1.5 text-sm font-medium text-record-red studio-transition hover:bg-record-red/10"
-                      aria-label={`Delete ${project.title}`}
-                      onClick={() => {
-                        setError(null)
-                        setRenamingId(null)
-                        setPendingDeleteId(project.id)
-                      }}
+                      className="shrink-0 rounded-md border border-ink/15 px-3 py-1.5 text-sm font-medium studio-transition hover:bg-ink/5"
+                      aria-label={`Rename ${project.title}`}
+                      onClick={() => startRename(project)}
                     >
-                      Delete
+                      Rename
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md border border-ink/15 px-3 py-1.5 text-sm font-medium studio-transition hover:bg-ink/5"
+                      aria-label={`Export ${project.title}`}
+                      onClick={() => void handleExport(project)}
+                    >
+                      Export
+                    </button>
+                    {pendingDeleteId === project.id ? (
+                      <>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-md bg-record-red px-3 py-1.5 text-sm font-medium text-paper studio-transition"
+                          aria-label={`Confirm delete ${project.title}`}
+                          onClick={() => void handleDelete(project)}
+                        >
+                          Delete for good
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-md border border-ink/15 px-3 py-1.5 text-sm font-medium studio-transition hover:bg-ink/5"
+                          onClick={() => setPendingDeleteId(null)}
+                        >
+                          Keep
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-md border border-ink/15 px-3 py-1.5 text-sm font-medium text-record-red studio-transition hover:bg-record-red/10"
+                        aria-label={`Delete ${project.title}`}
+                        onClick={() => {
+                          setError(null)
+                          setRenamingId(null)
+                          setPendingDeleteId(project.id)
+                        }}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </>
               )}
             </li>
