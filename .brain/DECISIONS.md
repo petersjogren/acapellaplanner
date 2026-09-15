@@ -19,7 +19,7 @@ Record only choices that future work must not silently reverse.
 
 ## Audio / export
 
-- Latency lineup: default **tone bleed-through** (880 Hz SNR). Alternate **clap-with-click** (median of paired residuals, MAD gate). Shared mic meter + Check mic on calibrate. Manual ms after a miss. Still buffer skip, never phrase shift.
+- Latency lineup: default **tone bleed-through** (880 Hz SNR). Alternate **clap-with-click**: sequential Normal–Normal on MAD inliers, min 16 closed clicks, pair latency capped at 400 ms (below one beat at 100 BPM), louder-peak replacement for headphone click leak. Shared mic meter + Check mic. Manual ms after a miss. Still buffer skip, never phrase shift.
 - Decode and play share one AudioContext.
 - Mix recipes are three builtins (Ghost Focus / Stack Build / Blend Check), not a user mixer. Take review: ghost / stack / solo. Review page all-keepers: with-ghost / no-ghost, one phrase or whole song.
 - Stem format: 16-bit PCM WAV, mono, decode-context sample rate (no extra resampler). Absolute pad from 0:00. Default **lanes**, keepers-only. Naming: `Bass/Bass_A.wav` vs `Bass/B_p1_t1.wav`.

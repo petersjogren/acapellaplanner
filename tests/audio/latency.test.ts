@@ -6,8 +6,12 @@ import {
   BEEP_GAIN,
   binForFreq,
   takePlaybackOffsetMs,
+  CLAP_MIN_CLICKS_BEFORE_STOP,
+  CLAP_PAIR_WAIT_MS,
   CLAP_REFRACTORY_MS,
+  CLAP_REPLACE_WINDOW_MS,
   CLAP_STABLE_MAD_MS,
+  clapMeasureShouldStop,
   clickTrainAudioTimes,
   computeLatencyMs,
   DEVICE_PROFILE_STORAGE_KEY,
@@ -15,11 +19,15 @@ import {
   findToneOnset,
   isTonePresent,
   loadDeviceProfile,
+  mad,
   MAX_LATENCY_MS,
   measureClapLatency,
   median,
+  normalNormalPosterior,
+  rejectOutliersMad,
   saveDeviceProfile,
   shouldRecordClapOnset,
+  shouldReplaceClapOnset,
   storedLatencyCompMs,
   toneSnrDb,
   type DeviceProfile,
@@ -257,15 +265,58 @@ describe('median', () => {
   })
 })
 
+describe('mad and rejectOutliersMad', () => {
+  it('is NaN for an empty list', () => {
+    expect(mad([])).toBeNaN()
+  })
+
+  it('is zero when every value is the same', () => {
+    expect(mad([90, 90, 90])).toBe(0)
+  })
+
+  it('drops far residuals and keeps the tight cluster', () => {
+    const xs = [88, 90, 91, 89, 92, 87, 90, 88, 91, 89, 400, 12]
+    const kept = rejectOutliersMad(xs)
+    expect(kept.every((x) => x > 80 && x < 100)).toBe(true)
+    expect(kept).toHaveLength(10)
+  })
+
+  it('keeps short lists intact', () => {
+    expect(rejectOutliersMad([90, 400])).toEqual([90, 400])
+  })
+})
+
+describe('normalNormalPosterior', () => {
+  it('returns the prior when there are no observations', () => {
+    expect(normalNormalPosterior([])).toEqual({ meanMs: 90, stdMs: 120 })
+  })
+
+  it('hardly moves a tight 90ms cluster toward the prior', () => {
+    const obs = Array.from({ length: 16 }, () => 90)
+    const post = normalNormalPosterior(obs)
+    expect(post.meanMs).toBeCloseTo(90, 0)
+    expect(1.96 * post.stdMs).toBeLessThan(15)
+  })
+
+  it('keeps a consistent 19ms wired cluster near 19ms', () => {
+    const obs = Array.from({ length: 16 }, () => 19)
+    const post = normalNormalPosterior(obs)
+    expect(post.meanMs).toBeCloseTo(19, 0)
+  })
+})
+
 describe('estimateClapClickLatency', () => {
-  const clicks = [1000, 1600, 2200, 2800, 3400, 4000, 4600, 5200]
+  const clicks = Array.from({ length: 16 }, (_, i) => 1000 + i * 600)
   const claps = clicks.map((t, i) => t + 87 + (i % 2 === 0 ? 3 : -2))
 
-  it('estimates median latency near 87ms and marks stable', () => {
+  it('estimates posterior mean near 87ms and marks stable', () => {
     const est = estimateClapClickLatency(clicks, claps)!
-    expect(est.latencyMs).toBe(88)
+    expect(est.latencyMs).toBeGreaterThanOrEqual(85)
+    expect(est.latencyMs).toBeLessThanOrEqual(90)
     expect(est.stable).toBe(true)
-    expect(est.matchCount).toBeGreaterThanOrEqual(6)
+    expect(est.nInliers).toBeGreaterThanOrEqual(10)
+    expect(est.matchCount).toBeGreaterThanOrEqual(10)
+    expect(1.96 * est.posteriorStdMs).toBeLessThanOrEqual(15)
   })
 
   it('returns null when only 2 claps land', () => {
@@ -273,19 +324,37 @@ describe('estimateClapClickLatency', () => {
   })
 
   it('pairs high-jitter claps but marks the estimate unstable when MAD exceeds the threshold', () => {
-    const jitterClicks = Array.from({ length: 8 }, (_, i) => i * 600)
-    const jitter = [80, -70, 90, -85, 75, -60, 95, -50]
+    const jitterClicks = Array.from({ length: 16 }, (_, i) => i * 600)
+    const jitter = [80, -70, 90, -85, 75, -60, 95, -50, 70, -65, 85, -55, 78, -72, 88, -48]
     const jitterClaps = jitterClicks.map((t, i) => t + 87 + jitter[i]!)
     const est = estimateClapClickLatency(jitterClicks, jitterClaps)
     expect(est).not.toBeNull()
-    expect(est!.matchCount).toBeGreaterThanOrEqual(6)
+    expect(est!.matchCount).toBeGreaterThanOrEqual(10)
     expect(est!.stable).toBe(false)
     expect(est!.madMs).toBeGreaterThan(CLAP_STABLE_MAD_MS)
   })
 
-  it('ignores a double-clap outlier via median', () => {
-    const withOutlier = [...claps, claps[0]! + 400]
-    expect(estimateClapClickLatency(clicks, withOutlier)!.latencyMs).toBe(88)
+  it('ignores a double-clap outlier via MAD rejection', () => {
+    const withOutlier = claps.map((c, i) => (i === 3 ? c + 90 : c))
+    const est = estimateClapClickLatency(clicks, withOutlier)!
+    expect(est.latencyMs).toBeGreaterThanOrEqual(85)
+    expect(est.latencyMs).toBeLessThanOrEqual(90)
+    expect(est.nInliers).toBeLessThan(est.matchCount)
+  })
+
+  it('does not lock onto a one-beat (~600ms) alias', () => {
+    const lateClaps = clicks.map((t) => t + 650)
+    const est = estimateClapClickLatency(clicks, lateClaps)
+    if (est) {
+      expect(est.latencyMs).toBeLessThan(400)
+      expect(est.latencyMs).not.toBeGreaterThanOrEqual(600)
+    }
+  })
+
+  it('refuses to save a bimodal bleed-vs-clap mix', () => {
+    const mixed = clicks.map((t, i) => t + (i % 2 === 0 ? 19 : 90))
+    const est = estimateClapClickLatency(clicks, mixed)
+    expect(est == null || est.stable === false).toBe(true)
   })
 
   it('rejects a negative median latency', () => {
@@ -293,9 +362,34 @@ describe('estimateClapClickLatency', () => {
     expect(estimateClapClickLatency(clicks, earlyClaps)).toBeNull()
   })
 
-  it('rejects a median above MAX_LATENCY_MS', () => {
-    const lateClaps = clicks.map((t) => t + MAX_LATENCY_MS + 100)
+  it('rejects a cluster above the pair-latency cap', () => {
+    const lateClaps = clicks.map((t) => t + 450)
     expect(estimateClapClickLatency(clicks, lateClaps)).toBeNull()
+  })
+})
+
+describe('clapMeasureShouldStop', () => {
+  const clicks = Array.from({ length: 20 }, (_, i) => 1000 + i * 600)
+  const claps = clicks.map((t, i) => t + 88 + (i % 2 === 0 ? 2 : -1))
+
+  it('does not stop before 16 clicks have closed their pair window', () => {
+    const now = clicks[CLAP_MIN_CLICKS_BEFORE_STOP - 2]! + CLAP_PAIR_WAIT_MS
+    expect(clapMeasureShouldStop(now, clicks, claps)).toBeNull()
+  })
+
+  it('stops once 16 tight claps have closed', () => {
+    const now = clicks[CLAP_MIN_CLICKS_BEFORE_STOP - 1]! + CLAP_PAIR_WAIT_MS
+    const est = clapMeasureShouldStop(now, clicks, claps)
+    expect(est).not.toBeNull()
+    expect(est!.stable).toBe(true)
+    expect(est!.latencyMs).toBeGreaterThanOrEqual(85)
+    expect(est!.latencyMs).toBeLessThanOrEqual(91)
+  })
+
+  it('keeps going when closed clicks are still sloppy', () => {
+    const sloppy = clicks.map((t, i) => t + (i % 2 === 0 ? 20 : 180))
+    const now = clicks[19]! + CLAP_PAIR_WAIT_MS
+    expect(clapMeasureShouldStop(now, clicks, sloppy)).toBeNull()
   })
 })
 
@@ -330,5 +424,19 @@ describe('shouldRecordClapOnset', () => {
 
   it('accepts a peak again after the refractory window', () => {
     expect(shouldRecordClapOnset(0.2, 0.02, 1000 + CLAP_REFRACTORY_MS, 1000)).toBe(true)
+  })
+})
+
+describe('shouldReplaceClapOnset', () => {
+  it('replaces a quieter click-leak with a louder clap in the same window', () => {
+    expect(shouldReplaceClapOnset(0.5, 0.12, 1090, 1015)).toBe(true)
+  })
+
+  it('does not replace after the replace window', () => {
+    expect(shouldReplaceClapOnset(0.5, 0.12, 1015 + CLAP_REPLACE_WINDOW_MS, 1015)).toBe(false)
+  })
+
+  it('does not replace a quieter later peak', () => {
+    expect(shouldReplaceClapOnset(0.1, 0.4, 1090, 1015)).toBe(false)
   })
 })

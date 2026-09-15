@@ -291,10 +291,12 @@ describe('CalibrationPage', () => {
   it('clap mode auto-saves stable estimate', async () => {
     const runClickClapMeasure = vi.fn().mockResolvedValue({
       latencyMs: 92,
-      matchCount: 8,
+      matchCount: 16,
       madMs: 6,
       iqrMs: 10,
       stable: true,
+      nInliers: 16,
+      posteriorStdMs: 3,
     })
     const playBeep = vi.fn()
 
@@ -380,6 +382,8 @@ describe('CalibrationPage', () => {
       madMs: number
       iqrMs: number
       stable: boolean
+      nInliers: number
+      posteriorStdMs: number
     }) => void = () => undefined
 
     renderPage({
@@ -399,7 +403,7 @@ describe('CalibrationPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Listening…' })).toBeTruthy()
     })
-    expect(screen.getByRole('status').textContent).toMatch(/Clap with the clicks/)
+    expect(screen.getByRole('status').textContent).toMatch(/clapping with the clicks/i)
     expect((screen.getByRole('button', { name: 'Tone' }) as HTMLButtonElement).disabled).toBe(true)
     expect(
       (screen.getByRole('button', { name: 'Clap with the click' }) as HTMLButtonElement).disabled,
@@ -407,10 +411,12 @@ describe('CalibrationPage', () => {
 
     resolveMeasure({
       latencyMs: 40,
-      matchCount: 8,
+      matchCount: 16,
       madMs: 4,
       iqrMs: 8,
       stable: true,
+      nInliers: 16,
+      posteriorStdMs: 2,
     })
     await waitFor(() => {
       expect(screen.getByText(/Lined up by 40 ms/)).toBeTruthy()

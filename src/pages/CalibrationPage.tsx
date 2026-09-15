@@ -241,7 +241,7 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
       <h1 className="font-display text-2xl font-semibold tracking-tight">Line up headphones</h1>
       <p className="mt-3 max-w-md text-ink/70">
         {mode === 'clap'
-          ? 'Headphones on. We’ll play a steady click for a few seconds — clap once on each click, same hand, same place. Stop when it says lined up.'
+          ? 'Headphones on. We’ll keep a click going — clap once on each click, same hand, same place. Keep going until it says lined up.'
           : 'Headphones: slip one cup so the mic hears the driver. Phone: volume up, don’t cover the mic. Then tap Line up.'}
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
@@ -294,7 +294,7 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
       ) : null}
       {status === 'listening' ? (
         <p role="status" aria-live="polite" className="mt-6 text-ink/70">
-          {mode === 'clap' ? 'Clap with the clicks…' : 'Listening…'}
+          {mode === 'clap' ? 'Keep clapping with the clicks…' : 'Listening…'}
         </p>
       ) : null}
       {status === 'failed' ? (

@@ -15,20 +15,30 @@ export const BEEP_FADE_S = 0.012
 export const WARMUP_MS = 300
 
 export const CLAP_CLICK_BPM = 100
-export const CLAP_CLICK_COUNT = 12
+export const CLAP_CLICK_COUNT = 40
 export const CLAP_CLICK_GAIN = 0.35
 export const CLAP_CLICK_FREQ_HZ = 1000
 export const CLAP_CLICK_DURATION_S = 0.02
 export const CLAP_PRE_ROLL_MS = 400
 export const CLAP_POST_ROLL_MS = 600
-export const CLAP_MIN_MATCHES = 6
+export const CLAP_MIN_MATCHES = 10
+export const CLAP_MIN_CLICKS_BEFORE_STOP = 16
 export const CLAP_MAX_PAIR_ERROR_MS = 120
+export const CLAP_MAX_PAIR_LATENCY_MS = 400
+export const CLAP_PAIR_WAIT_MS = 350
 export const CLAP_ONSET_GATE = 0.25
 export const CLAP_REFRACTORY_MS = 180
-export const CLAP_STABLE_MAD_MS = 25
+export const CLAP_REPLACE_WINDOW_MS = 160
+export const CLAP_STABLE_MAD_MS = 20
 export const CLAP_STABLE_IQR_MS = 40
+export const CLAP_POSTERIOR_HALF_WIDTH_MS = 15
+export const CLAP_OUTLIER_MAD_K = 2.5
+export const CLAP_PRIOR_MEAN_MS = 90
+export const CLAP_PRIOR_STD_MS = 120
+export const CLAP_OBS_STD_FLOOR_MS = 8
 export const CLAP_NOISE_MULTIPLIER = 4
 export const CLAP_ABS_FLOOR = 0.08
+const MAD_TO_STD = 1.4826
 
 export type DeviceProfile = {
   latencyCompMs: number
@@ -47,6 +57,8 @@ export type ClapClickEstimate = {
   madMs: number
   iqrMs: number
   stable: boolean
+  nInliers: number
+  posteriorStdMs: number
 }
 
 export type CalibrationIo = ClapListenIo & {
@@ -160,18 +172,62 @@ export function median(xs: number[]): number {
   return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
 }
 
+/** Median absolute deviation from the median. Empty → NaN. */
+export function mad(xs: number[]): number {
+  if (xs.length === 0) return Number.NaN
+  const center = median(xs)
+  return median(xs.map((x) => Math.abs(x - center)))
+}
+
+/** Drop points farther than `k` Gaussian-scaled MADs from the median. */
+export function rejectOutliersMad(xs: number[], k = CLAP_OUTLIER_MAD_K): number[] {
+  if (xs.length < 3) return [...xs]
+  const center = median(xs)
+  const spread = mad(xs)
+  if (!(spread > 0)) return [...xs]
+  const thresh = k * MAD_TO_STD * spread
+  return xs.filter((x) => Math.abs(x - center) <= thresh)
+}
+
 /**
- * Median clap−click delay from a click train. Coarse-searches latency,
- * then refines pairs at the winning offset. Null when too few matches
- * or the median is outside 0…maxLatencyMs.
+ * Conjugate Normal–Normal update for unknown mean, known σ.
+ * Default σ is max(floor, 1.4826 × MAD) so a tight clap cluster
+ * yields a tight posterior and a sloppy one keeps us listening.
+ */
+export function normalNormalPosterior(
+  observations: number[],
+  opts?: { priorMeanMs?: number; priorStdMs?: number; obsStdMs?: number },
+): { meanMs: number; stdMs: number } {
+  const priorMeanMs = opts?.priorMeanMs ?? CLAP_PRIOR_MEAN_MS
+  const priorStdMs = opts?.priorStdMs ?? CLAP_PRIOR_STD_MS
+  if (observations.length === 0) return { meanMs: priorMeanMs, stdMs: priorStdMs }
+  const spread = mad(observations)
+  const fromMad = Number.isFinite(spread) ? MAD_TO_STD * spread : CLAP_OBS_STD_FLOOR_MS
+  const obsStdMs = opts?.obsStdMs ?? Math.max(CLAP_OBS_STD_FLOOR_MS, fromMad)
+  const priorPrec = 1 / (priorStdMs * priorStdMs)
+  const dataPrec = observations.length / (obsStdMs * obsStdMs)
+  const meanBar = observations.reduce((sum, x) => sum + x, 0) / observations.length
+  const postPrec = priorPrec + dataPrec
+  return {
+    meanMs: (priorMeanMs * priorPrec + meanBar * dataPrec) / postPrec,
+    stdMs: Math.sqrt(1 / postPrec),
+  }
+}
+
+/**
+ * Median clap−click delay from a click train. Coarse-searches latency
+ * (capped below one click period so a late cluster cannot alias to ~600 ms),
+ * drops MAD outliers, then a Normal–Normal posterior. Null when too few
+ * inliers or the mean is outside 0…maxPairLatencyMs.
  */
 export function estimateClapClickLatency(
   clickPerfMs: number[],
   clapPerfMs: number[],
   opts?: {
     minMatches?: number
-    maxLatencyMs?: number
+    maxPairLatencyMs?: number
     stableMadMs?: number
+    posteriorHalfWidthMs?: number
     coarseStepMs?: number
     pairGateMs?: number
   },
@@ -179,8 +235,9 @@ export function estimateClapClickLatency(
   if (clickPerfMs.length === 0 || clapPerfMs.length === 0) return null
 
   const minMatches = opts?.minMatches ?? CLAP_MIN_MATCHES
-  const maxLatencyMs = opts?.maxLatencyMs ?? MAX_LATENCY_MS
+  const maxPairLatencyMs = opts?.maxPairLatencyMs ?? CLAP_MAX_PAIR_LATENCY_MS
   const stableMadMs = opts?.stableMadMs ?? CLAP_STABLE_MAD_MS
+  const posteriorHalfWidthMs = opts?.posteriorHalfWidthMs ?? CLAP_POSTERIOR_HALF_WIDTH_MS
   const coarseStepMs = opts?.coarseStepMs ?? 5
   const pairGateMs = opts?.pairGateMs ?? CLAP_MAX_PAIR_ERROR_MS
 
@@ -213,33 +270,55 @@ export function estimateClapClickLatency(
   let bestScore = 0
   let bestMad = Infinity
   let bestL: number | null = null
-  for (let L = 0; L <= maxLatencyMs; L += coarseStepMs) {
+  for (let L = 0; L <= maxPairLatencyMs; L += coarseStepMs) {
     const residuals = pairResiduals(L)
     if (residuals.length === 0) continue
     const center = median(residuals)
-    const mad = median(residuals.map((r) => Math.abs(r - center)))
-    if (residuals.length > bestScore || (residuals.length === bestScore && mad < bestMad)) {
+    const spread = mad(residuals)
+    if (residuals.length > bestScore || (residuals.length === bestScore && spread < bestMad)) {
       bestScore = residuals.length
-      bestMad = mad
+      bestMad = spread
       bestL = Math.round(center)
     }
   }
   if (bestL == null) return null
 
   const residuals = pairResiduals(bestL)
-  if (residuals.length < minMatches) return null
+  const inliers = rejectOutliersMad(residuals)
+  if (inliers.length < minMatches) return null
 
-  const latencyMs = Math.round(median(residuals))
-  if (latencyMs < 0 || latencyMs > maxLatencyMs) return null
+  const belief = normalNormalPosterior(inliers)
+  const latencyMs = Math.round(belief.meanMs)
+  if (latencyMs < 0 || latencyMs > maxPairLatencyMs) return null
 
-  const madMs = median(residuals.map((r) => Math.abs(r - latencyMs)))
-  const sorted = [...residuals].sort((a, b) => a - b)
+  const madMs = mad(inliers)
+  const sorted = [...inliers].sort((a, b) => a - b)
   const n = sorted.length
   const iqrMs = sorted[Math.floor((n - 1) * 0.75)]! - sorted[Math.floor((n - 1) * 0.25)]!
-  const matchCount = residuals.length
-  const stable = matchCount >= minMatches && madMs <= stableMadMs
+  const halfWidth = 1.96 * belief.stdMs
+  const stable = inliers.length >= minMatches && madMs <= stableMadMs && halfWidth <= posteriorHalfWidthMs
 
-  return { latencyMs, matchCount, madMs, iqrMs, stable }
+  return {
+    latencyMs,
+    matchCount: residuals.length,
+    madMs,
+    iqrMs,
+    stable,
+    nInliers: inliers.length,
+    posteriorStdMs: belief.stdMs,
+  }
+}
+
+/** True when enough closed clicks have a tight posterior — stop the train. */
+export function clapMeasureShouldStop(
+  nowMs: number,
+  clickPerfMs: number[],
+  clapPerfMs: number[],
+): ClapClickEstimate | null {
+  const closed = clickPerfMs.filter((t) => nowMs >= t + CLAP_PAIR_WAIT_MS)
+  if (closed.length < CLAP_MIN_CLICKS_BEFORE_STOP) return null
+  const estimate = estimateClapClickLatency(closed, clapPerfMs)
+  return estimate?.stable ? estimate : null
 }
 
 export function clickTrainAudioTimes(tFirst: number, count: number, bpm: number): number[] {
@@ -267,6 +346,23 @@ export function shouldRecordClapOnset(
   const absFloor = opts?.absFloor ?? CLAP_ABS_FLOOR
   if (nowMs - lastClapMs < refractoryMs) return false
   return peak >= Math.max(noiseFloor * floorMul, absFloor)
+}
+
+/**
+ * Headphone click leak often fires first; the real clap is louder a moment later.
+ * Replace the last onset when a higher peak arrives inside the window.
+ */
+export function shouldReplaceClapOnset(
+  peak: number,
+  lastPeak: number,
+  nowMs: number,
+  lastClapMs: number,
+  opts?: { replaceWindowMs?: number },
+): boolean {
+  const replaceWindowMs = opts?.replaceWindowMs ?? CLAP_REPLACE_WINDOW_MS
+  if (nowMs <= lastClapMs) return false
+  if (nowMs - lastClapMs >= replaceWindowMs) return false
+  return peak > lastPeak
 }
 
 export function loadDeviceProfile(): DeviceProfile | null {
@@ -339,7 +435,7 @@ export async function playBeepTone(
 export async function playClickTrain(
   ctx: AudioContext,
   opts?: { count?: number; bpm?: number; preRollMs?: number; gain?: number },
-): Promise<{ clickPerfMs: number[]; done: Promise<void> }> {
+): Promise<{ clickPerfMs: number[]; done: Promise<void>; stop: () => void }> {
   await resumeAudioContext(ctx)
   const count = opts?.count ?? CLAP_CLICK_COUNT
   const bpm = opts?.bpm ?? CLAP_CLICK_BPM
@@ -350,6 +446,7 @@ export async function playClickTrain(
   const tFirst = audioOrigin + preRollMs / 1000
   const clickAudio = clickTrainAudioTimes(tFirst, count, bpm)
   const clickPerfMs = audioTimesToPerfMs(clickAudio, audioOrigin, perfOrigin)
+  const nodes: Array<{ osc: OscillatorNode; when: number }> = []
   for (const when of clickAudio) {
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
@@ -364,13 +461,38 @@ export async function playClickTrain(
       osc.disconnect()
       gain.disconnect()
     }
+    nodes.push({ osc, when })
   }
   const lastEnd = (clickAudio[clickAudio.length - 1] ?? tFirst) + CLAP_CLICK_DURATION_S
+  let finished = false
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  let resolveDone: () => void = () => undefined
   const done = new Promise<void>((resolve) => {
-    const waitMs = Math.max(0, (lastEnd - ctx.currentTime) * 1000) + CLAP_POST_ROLL_MS
-    setTimeout(resolve, waitMs)
+    resolveDone = () => {
+      if (finished) return
+      finished = true
+      resolve()
+    }
   })
-  return { clickPerfMs, done }
+  const armTimer = (waitMs: number) => {
+    if (timeoutId !== undefined) clearTimeout(timeoutId)
+    timeoutId = setTimeout(resolveDone, Math.max(0, waitMs))
+  }
+  armTimer((lastEnd - ctx.currentTime) * 1000 + CLAP_POST_ROLL_MS)
+  const stop = () => {
+    const now = ctx.currentTime
+    for (const { osc, when } of nodes) {
+      if (when > now) {
+        try {
+          osc.stop(now)
+        } catch {
+          // already stopped
+        }
+      }
+    }
+    armTimer(CLAP_POST_ROLL_MS)
+  }
+  return { clickPerfMs, done, stop }
 }
 
 export async function createBrowserCalibrationIo(): Promise<BrowserCalibrationIo> {
@@ -397,6 +519,7 @@ export async function createBrowserCalibrationIo(): Promise<BrowserCalibrationIo
   let noiseFloor = 0.01
   let firstClickPerfMs: number | null = null
   let lastClapMs = Number.NEGATIVE_INFINITY
+  let lastClapPeak = 0
   let clapOnsets: number[] = []
 
   const tickLevel = () => {
@@ -409,9 +532,13 @@ export async function createBrowserCalibrationIo(): Promise<BrowserCalibrationIo
       if (firstClickPerfMs == null || now < firstClickPerfMs) {
         noiseEma = smoothLevel(noiseEma, peak)
         noiseFloor = Math.max(noiseEma, 0.01)
-      }
-      if (shouldRecordClapOnset(peak, noiseFloor, now, lastClapMs)) {
+      } else if (clapOnsets.length > 0 && shouldReplaceClapOnset(peak, lastClapPeak, now, lastClapMs)) {
+        clapOnsets[clapOnsets.length - 1] = now
         lastClapMs = now
+        lastClapPeak = peak
+      } else if (shouldRecordClapOnset(peak, noiseFloor, now, lastClapMs)) {
+        lastClapMs = now
+        lastClapPeak = peak
         clapOnsets.push(now)
       }
     }
@@ -454,15 +581,37 @@ export async function createBrowserCalibrationIo(): Promise<BrowserCalibrationIo
     runClickClapMeasure: async () => {
       clapOnsets = []
       lastClapMs = Number.NEGATIVE_INFINITY
+      lastClapPeak = 0
       noiseEma = 0
       noiseFloor = 0.01
       firstClickPerfMs = null
       measuring = true
-      const { clickPerfMs, done } = await playClickTrain(ctx)
+      let stoppedEarly = false
+      const { clickPerfMs, done, stop } = await playClickTrain(ctx)
       firstClickPerfMs = clickPerfMs[0] ?? null
-      await done
-      measuring = false
-      const estimate = estimateClapClickLatency(clickPerfMs, clapOnsets)
+      let watchId = 0
+      const watch = () => {
+        if (!measuring || stoppedEarly) return
+        if (clapMeasureShouldStop(performance.now(), clickPerfMs, clapOnsets)) {
+          stoppedEarly = true
+          stop()
+          return
+        }
+        watchId = requestAnimationFrame(watch)
+      }
+      watchId = requestAnimationFrame(watch)
+      try {
+        await done
+      } finally {
+        measuring = false
+        cancelAnimationFrame(watchId)
+      }
+      const now = performance.now()
+      const closed = clickPerfMs.filter((t) => now >= t + CLAP_PAIR_WAIT_MS)
+      const estimate = estimateClapClickLatency(
+        closed.length >= CLAP_MIN_CLICKS_BEFORE_STOP ? closed : clickPerfMs,
+        clapOnsets,
+      )
       if (!estimate?.stable) throw new Error('failed measurement')
       return estimate
     },
