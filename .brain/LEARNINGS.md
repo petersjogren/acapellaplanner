@@ -27,6 +27,8 @@ Using `phrase.startMs` as stem origin places every file late by its pre-roll. Sk
 
 React state is stale under rapid phrase/part edits and booth advances. `projectRef` + serialized write queue. RecordControl persist is async after pass complete — `flushSaves` before marking enough.
 
+Reset singer `voicePartId` / `phraseId` on the **route** project id, not when `project.id` first hydrates. `undefined → id` after the first PartPicker paint will clear a pick in the same tick (jsdom/CI `Need more takes` wrap-up flake).
+
 Engine `generation` must bump on `stop()` so late `onended` / timers don’t start the next loop or fire UI.
 
 ## Pages / PWA

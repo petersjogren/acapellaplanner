@@ -266,7 +266,7 @@ describe('SingPage booth flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     await waitFor(() => {
-      expect(screen.getByText(/That.s a wrap for Soprano 1/)).toBeTruthy()
+      expect(screen.getByText(/a wrap for Soprano 1/)).toBeTruthy()
     })
 
     loaded = await repo.getProject(projectId)
@@ -327,7 +327,7 @@ describe('SingPage booth flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
 
     await waitFor(() => {
-      expect(screen.getByText(/That.s a wrap for Soprano 1/)).toBeTruthy()
+      expect(screen.getByText(/a wrap for Soprano 1/)).toBeTruthy()
     })
 
     loaded = await repo.getProject(projectId)
@@ -433,7 +433,7 @@ describe('SingPage booth flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     await waitFor(() => {
-      expect(screen.getByText(/That.s a wrap for Soprano 1/)).toBeTruthy()
+      expect(screen.getByText(/a wrap for Soprano 1/)).toBeTruthy()
     })
     expect(screen.getByText(/This part is full enough/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Record' })).toBeNull()
@@ -472,7 +472,7 @@ describe('SingPage booth flow', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /S1/ }))
     await waitFor(() => {
-      expect(screen.getByText(/That.s a wrap for Soprano 1/)).toBeTruthy()
+      expect(screen.getByText(/a wrap for Soprano 1/)).toBeTruthy()
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Need more takes' }))

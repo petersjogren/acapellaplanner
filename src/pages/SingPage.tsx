@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import { decodeAudioFile } from '../audio/decode.ts'
 import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
@@ -40,6 +41,7 @@ function isPhraseDone(phrase: Phrase, part: VoicePart): boolean {
 }
 
 export function SingPage() {
+  const { id: routeProjectId } = useParams()
   const { project, error, setProject } = useLoadedProject()
   const repo = useProjectRepository()
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null)
@@ -56,7 +58,6 @@ export function SingPage() {
 
   bufferRef.current = buffer
 
-  const projectId = project && typeof project === 'object' ? project.id : undefined
   const liveProject = project && typeof project === 'object' ? project : null
   const boothPhrase = liveProject && phraseId
     ? liveProject.phrases.find((item) => item.id === phraseId)
@@ -70,11 +71,13 @@ export function SingPage() {
     }
   }, [project])
 
+  // Bind to the route song, not loaded project.id — hydrating undefined → id
+  // used to run after the first PartPicker paint and wipe a same-tick pick.
   useEffect(() => {
     setVoicePartId(null)
     setPhraseId(null)
     setSaveError(null)
-  }, [projectId])
+  }, [routeProjectId])
 
   useEffect(() => {
     let cancelled = false
