@@ -1,18 +1,25 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  createBrowserClapIo,
+  createBrowserCalibrationIo,
   loadDeviceProfile,
   MAX_LATENCY_MS,
   measureClapLatency,
   saveDeviceProfile,
   WARMUP_MS,
-  type BrowserClapIo,
+  type CalibrationIo,
   type ClapListenIo,
 } from '../audio/latency.ts'
+import { classifyMicLevel } from '../audio/micLevel.ts'
+import { MicLevelMeter } from '../ui/shared/MicLevelMeter.tsx'
+
+const SILENT_LEVEL = 0.02
+
+export type CalibrationPageIo = ClapListenIo &
+  Partial<Pick<CalibrationIo, 'getLevel' | 'captureIsProcessed' | 'dispose'>>
 
 export type CalibrationPageProps = {
-  io?: ClapListenIo
+  io?: CalibrationPageIo
 }
 
 function sleep(ms: number): Promise<void> {
@@ -35,24 +42,139 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
     () => loadDeviceProfile()?.latencyCompMs ?? null,
   )
   const [captureBlocked, setCaptureBlocked] = useState(false)
+  const [silentMic, setSilentMic] = useState(false)
   const [typedMs, setTypedMs] = useState('')
+  const [armed, setArmed] = useState(false)
+  const [level, setLevel] = useState(0)
+  const [living, setLiving] = useState(false)
+
+  const aliveRef = useRef(true)
+  const ioRef = useRef<CalibrationPageIo | null>(null)
+  const createdByPageRef = useRef(false)
+  const needsWarmupRef = useRef(false)
+  const ensureIoInflightRef = useRef<Promise<CalibrationPageIo> | null>(null)
+
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+      if (createdByPageRef.current) {
+        ioRef.current?.dispose?.()
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!armed) return
+    const getLevel = ioRef.current?.getLevel
+    if (typeof getLevel !== 'function') return
+    let raf = 0
+    let cancelled = false
+    const tick = () => {
+      if (cancelled) return
+      const reading = classifyMicLevel(getLevel())
+      setLevel(reading.level)
+      setLiving(reading.living)
+      raf = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+    }
+  }, [armed])
+
+  function ensureIo(): Promise<CalibrationPageIo> {
+    if (ioRef.current) return Promise.resolve(ioRef.current)
+    if (io) {
+      ioRef.current = io
+      return Promise.resolve(io)
+    }
+    if (!ensureIoInflightRef.current) {
+      ensureIoInflightRef.current = createBrowserCalibrationIo()
+        .then((created) => {
+          if (!aliveRef.current) {
+            created.dispose?.()
+            throw new Error('Calibration page unmounted')
+          }
+          ioRef.current = created
+          createdByPageRef.current = true
+          needsWarmupRef.current = true
+          return created
+        })
+        .finally(() => {
+          ensureIoInflightRef.current = null
+        })
+    }
+    return ensureIoInflightRef.current
+  }
+
+  function armFrom(used: CalibrationPageIo): void {
+    if (typeof used.getLevel === 'function') {
+      const reading = classifyMicLevel(used.getLevel())
+      setLevel(reading.level)
+      setLiving(reading.living)
+    }
+    setArmed(true)
+  }
+
+  async function handleCheckMic() {
+    try {
+      const used = await ensureIo()
+      if (!aliveRef.current) return
+      armFrom(used)
+    } catch {
+      // Permission failure or unmount: leave Check mic visible.
+    }
+  }
 
   async function handleMeasure() {
     setStatus('listening')
     setCaptureBlocked(false)
-    let browserIo: BrowserClapIo | undefined
+    setSilentMic(false)
+    let maxLevel = 0
+    let raf = 0
     try {
-      const used = io ?? (browserIo = await createBrowserClapIo())
-      if (!io) await sleep(WARMUP_MS)
+      const used = await ensureIo()
+      if (!aliveRef.current) return
+      armFrom(used)
+      if (needsWarmupRef.current) {
+        await sleep(WARMUP_MS)
+        needsWarmupRef.current = false
+      }
+      const sampleLevel = () => {
+        if (typeof used.getLevel !== 'function') return
+        const next = used.getLevel()
+        if (next > maxLevel) maxLevel = next
+      }
+      sampleLevel()
+      if (typeof used.getLevel === 'function') {
+        const tick = () => {
+          sampleLevel()
+          raf = requestAnimationFrame(tick)
+        }
+        tick()
+      }
       const ms = Math.round(await measureClapLatency(used))
       persistMs(ms)
       setKeptMs(ms)
       setStatus('saved')
     } catch {
-      setCaptureBlocked(browserIo?.captureIsProcessed === true)
+      if (!aliveRef.current) return
+      const used = ioRef.current
+      if (typeof used?.getLevel === 'function') {
+        const next = used.getLevel()
+        if (next > maxLevel) maxLevel = next
+        if (maxLevel < SILENT_LEVEL) {
+          setSilentMic(true)
+          setStatus('failed')
+          return
+        }
+      }
+      setCaptureBlocked(used?.captureIsProcessed === true)
       setStatus('failed')
     } finally {
-      browserIo?.dispose()
+      if (raf) cancelAnimationFrame(raf)
     }
   }
 
@@ -68,6 +190,13 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
 
   const buttonLabel =
     status === 'listening' ? 'Listening…' : keptMs != null ? 'Line up again' : 'Line up'
+  const showCheckMic = !armed && status !== 'listening'
+  const showMeter = armed && typeof ioRef.current?.getLevel === 'function'
+  const failCopy = silentMic
+    ? 'Mic is silent. Check permission and the mic hole.'
+    : captureBlocked
+      ? 'This phone is blocking the tone. Use headphones.'
+      : 'We didn’t hear the tone. Closer to the speaker, a bit louder, then Line up again.'
 
   return (
     <div className="min-h-screen bg-paper px-10 py-8 font-ui text-ink fade-in">
@@ -80,6 +209,15 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
         <p className="mt-3 text-sm text-ink-muted">Lined up by {keptMs} ms on this device.</p>
       ) : null}
       <div className="mt-8 flex flex-wrap items-center gap-3">
+        {showCheckMic ? (
+          <button
+            type="button"
+            onClick={() => void handleCheckMic()}
+            className="rounded-md px-4 py-2 text-sm font-medium text-ink/80 studio-transition hover:bg-ink/5"
+          >
+            Check mic
+          </button>
+        ) : null}
         <button
           type="button"
           disabled={status === 'listening'}
@@ -90,6 +228,11 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
           {buttonLabel}
         </button>
       </div>
+      {showMeter ? (
+        <div className="mt-4">
+          <MicLevelMeter level={level} living={living} />
+        </div>
+      ) : null}
       {status === 'listening' ? (
         <p role="status" aria-live="polite" className="mt-6 text-ink/70">
           Listening…
@@ -98,9 +241,7 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
       {status === 'failed' ? (
         <>
           <p role="alert" className="mt-6 text-record-red">
-            {captureBlocked
-              ? 'This phone is blocking the tone. Use headphones.'
-              : 'We didn’t hear the tone. Closer to the speaker, a bit louder, then Line up again.'}
+            {failCopy}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <label className="text-sm text-ink/70">

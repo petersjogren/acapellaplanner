@@ -2,13 +2,24 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  createBrowserCalibrationIo,
   DEVICE_PROFILE_STORAGE_KEY,
   loadDeviceProfile,
   type ClapListenIo,
 } from '../../src/audio/latency.ts'
-import { CalibrationPage } from '../../src/pages/CalibrationPage.tsx'
+import { CalibrationPage, type CalibrationPageIo } from '../../src/pages/CalibrationPage.tsx'
 
-function renderPage(io: ClapListenIo) {
+vi.mock('../../src/audio/latency.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/audio/latency.ts')>()
+  return {
+    ...actual,
+    createBrowserCalibrationIo: vi.fn(),
+  }
+})
+
+type TestIo = ClapListenIo & { getLevel?: () => number; dispose?: () => void }
+
+function renderPage(io?: TestIo) {
   return render(
     <MemoryRouter>
       <CalibrationPage io={io} />
@@ -16,9 +27,18 @@ function renderPage(io: ClapListenIo) {
   )
 }
 
+function deferredIo() {
+  let resolve!: (value: CalibrationPageIo) => void
+  const promise = new Promise<CalibrationPageIo>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 describe('CalibrationPage', () => {
   beforeEach(() => {
     localStorage.clear()
+    vi.mocked(createBrowserCalibrationIo).mockReset()
   })
 
   afterEach(() => {
@@ -142,5 +162,106 @@ describe('CalibrationPage', () => {
       expect(screen.getByText(/Lined up by 120 ms/)).toBeTruthy()
     })
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('reveals a mic meter after Check mic and hides the button', async () => {
+    renderPage({
+      playBeep: vi.fn(),
+      listenUntilPeak: vi.fn(),
+      getLevel: () => 0.5,
+    })
+
+    expect(screen.queryByRole('meter')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Check mic' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('meter')).toBeTruthy()
+    })
+    expect(screen.queryByRole('button', { name: 'Check mic' })).toBeNull()
+    expect(screen.queryByText(/^Clap with the tone/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /clap/i })).toBeNull()
+
+    await waitFor(() => {
+      expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBe('0.5')
+    })
+    expect(screen.getByText('living')).toBeTruthy()
+  })
+
+  it('shares one in-flight ensureIo and hides Check mic as soon as Line up starts', async () => {
+    const pending = deferredIo()
+    vi.mocked(createBrowserCalibrationIo).mockReturnValue(pending.promise)
+    const created: CalibrationPageIo = {
+      playBeep: vi.fn().mockResolvedValue(1000),
+      listenUntilPeak: vi.fn().mockResolvedValue(1040),
+      getLevel: () => 0.5,
+      dispose: vi.fn(),
+    }
+
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Check mic' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Line up' }))
+
+    expect(createBrowserCalibrationIo).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Listening…' })).toBeTruthy()
+    })
+    expect(screen.queryByRole('button', { name: 'Check mic' })).toBeNull()
+
+    pending.resolve(created)
+    await waitFor(() => {
+      expect(screen.getByText(/Lined up by 40 ms/)).toBeTruthy()
+    })
+    expect(createBrowserCalibrationIo).toHaveBeenCalledTimes(1)
+  })
+
+  it('disposes page-created IO if unmounted before create resolves', async () => {
+    const pending = deferredIo()
+    vi.mocked(createBrowserCalibrationIo).mockReturnValue(pending.promise)
+    const dispose = vi.fn()
+    const created: CalibrationPageIo = {
+      playBeep: vi.fn(),
+      listenUntilPeak: vi.fn(),
+      getLevel: () => 0,
+      dispose,
+    }
+
+    const view = renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Line up' }))
+    expect(createBrowserCalibrationIo).toHaveBeenCalledTimes(1)
+    view.unmount()
+    pending.resolve(created)
+
+    await waitFor(() => {
+      expect(dispose).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('leaves Check mic visible when permission fails', async () => {
+    vi.mocked(createBrowserCalibrationIo).mockRejectedValue(new Error('NotAllowedError'))
+
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Check mic' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Check mic' })).toBeTruthy()
+    })
+    expect(screen.queryByRole('meter')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('says the mic is silent when measurement fails and getLevel stays at 0', async () => {
+    renderPage({
+      playBeep: vi.fn().mockResolvedValue(1000),
+      listenUntilPeak: vi.fn().mockResolvedValue(2000),
+      getLevel: () => 0,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Line up' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/Mic is silent/i)
+    })
+    expect(screen.getByRole('alert').textContent).not.toMatch(/didn.t hear the tone/i)
+    expect(screen.getByLabelText(/Or type it/)).toBeTruthy()
   })
 })
