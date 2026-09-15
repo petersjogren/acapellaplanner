@@ -6,7 +6,7 @@ The ghost’s phrasing is the clock; the singer only listens and sings back.
 Live: https://petersjogren.github.io/acapellaplanner/
 
 User-facing docs: `README.md`, `docs/workflow-singers-unlimited.md` (also served at `/workflow`).
-Agent contract: `.brain/MAINTENANCE.md` (keep this folder in lockstep with code).
+Agent contract: `AGENTS.md` and `.brain/MAINTENANCE.md` (keep this folder in lockstep with code).
 
 ## Roles
 

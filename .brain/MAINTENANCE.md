@@ -17,4 +17,4 @@ This folder is the engineering on-ramp. User docs stay in `README.md` / `docs/`.
 
 Keep entries high-signal. Do not restate filenames or README quickstart. If unsure, write `uncertain:` — do not invent.
 
-Repo-root `AGENTS.md` should point here and repeat the product rails. If that file is missing, treat this document as the contract.
+Repo-root `AGENTS.md` points here and repeats the product rails. Treat either file as the contract.
