@@ -21,7 +21,7 @@ Using `phrase.startMs` as stem origin places every file late by its pre-roll. Sk
 - Don’t `decodeAudioData` on a context you then close.
 - Don’t revoke an object URL in the same turn as `a.click()` (1 s delay in `downloadBlob`).
 - `{ audio: true }` turns on Chrome voice-call DSP and ducks sung takes against the ghost. Ask for raw capture; warn if settings still show AEC/NS/AGC.
-- Latency calibration is headphone **bleed-through**, not a clap. Detect **880 Hz vs neighbouring bins** (`smoothingTimeConstant = 0`); peak floors (0.2, then 0.03) never heard quiet leak. One tap; silent warmup. iOS may keep AEC and/or route Web Audio to the earpiece while the mic is open — unfixable from the page; headphones, or type ms after a miss. Still applied as a buffer skip, never by shifting phrase start.
+- Latency calibration is headphone **bleed-through**, not a clap. Detect **880 Hz vs neighbouring bins** (`smoothingTimeConstant = 0`); peak floors (0.2, then 0.03) never heard quiet leak. One tap; silent warmup. Without a meter, a dead mic and no bleed both looked like “tone not detected.” Clap-with-click needs many pairs + MAD — a single clap peak is how the old detector failed. iOS may keep AEC and/or route Web Audio to the earpiece while the mic is open — unfixable from the page; headphones, or type ms after a miss. Still applied as a buffer skip, never by shifting phrase start.
 
 ## Persistence races
 
