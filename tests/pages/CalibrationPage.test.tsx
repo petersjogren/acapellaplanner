@@ -17,7 +17,7 @@ vi.mock('../../src/audio/latency.ts', async (importOriginal) => {
   }
 })
 
-type TestIo = ClapListenIo & { getLevel?: () => number; dispose?: () => void }
+type TestIo = CalibrationPageIo
 
 function renderPage(io?: TestIo) {
   return render(
@@ -179,7 +179,7 @@ describe('CalibrationPage', () => {
     })
     expect(screen.queryByRole('button', { name: 'Check mic' })).toBeNull()
     expect(screen.queryByText(/^Clap with the tone/)).toBeNull()
-    expect(screen.queryByRole('button', { name: /clap/i })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Line up' })).toBeTruthy()
 
     await waitFor(() => {
       expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBe('0.5')
@@ -263,5 +263,158 @@ describe('CalibrationPage', () => {
     })
     expect(screen.getByRole('alert').textContent).not.toMatch(/didn.t hear the tone/i)
     expect(screen.getByLabelText(/Or type it/)).toBeTruthy()
+  })
+
+  it('offers Tone and Clap with the click', () => {
+    renderPage({
+      playBeep: vi.fn(),
+      listenUntilPeak: vi.fn(),
+    })
+
+    const tone = screen.getByRole('button', { name: 'Tone' })
+    const clap = screen.getByRole('button', { name: 'Clap with the click' })
+    expect(tone.getAttribute('aria-pressed')).toBe('true')
+    expect(clap.getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByText(/slip one cup so the mic hears the driver/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Line up' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Check mic' })).toBeTruthy()
+
+    fireEvent.click(clap)
+    expect(clap.getAttribute('aria-pressed')).toBe('true')
+    expect(tone.getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByText(/clap once on each click/i)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Start' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Check mic' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Line up' })).toBeNull()
+  })
+
+  it('clap mode auto-saves stable estimate', async () => {
+    const runClickClapMeasure = vi.fn().mockResolvedValue({
+      latencyMs: 92,
+      matchCount: 8,
+      madMs: 6,
+      iqrMs: 10,
+      stable: true,
+    })
+    const playBeep = vi.fn()
+
+    renderPage({
+      playBeep,
+      listenUntilPeak: vi.fn(),
+      getLevel: () => 0.2,
+      captureIsProcessed: false,
+      runClickClapMeasure,
+      dispose: vi.fn(),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clap with the click' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Lined up by 92 ms on this device/)).toBeTruthy()
+    })
+    expect(loadDeviceProfile()?.latencyCompMs).toBe(92)
+    expect(playBeep).not.toHaveBeenCalled()
+    expect(runClickClapMeasure).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Start again' })).toBeTruthy()
+  })
+
+  it('clap failure shows lock copy and type-ms', async () => {
+    renderPage({
+      playBeep: vi.fn(),
+      listenUntilPeak: vi.fn(),
+      getLevel: () => 0.2,
+      captureIsProcessed: true,
+      runClickClapMeasure: vi.fn().mockRejectedValue(new Error('failed measurement')),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clap with the click' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/couldn.t lock the timing/i)
+    })
+    expect(screen.getByRole('alert').textContent).toMatch(/switch to Tone/)
+    expect(screen.getByRole('alert').textContent).not.toMatch(/blocking the tone/i)
+    expect(screen.getByLabelText(/Or type it/)).toBeTruthy()
+  })
+
+  it('treats missing runClickClapMeasure as clap fail', async () => {
+    renderPage({
+      playBeep: vi.fn(),
+      listenUntilPeak: vi.fn(),
+      getLevel: () => 0.4,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clap with the click' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/couldn.t lock the timing/i)
+    })
+    expect(screen.getByLabelText(/Or type it/)).toBeTruthy()
+  })
+
+  it('silent mic still wins on clap fail when getLevel stays at 0', async () => {
+    renderPage({
+      playBeep: vi.fn(),
+      listenUntilPeak: vi.fn(),
+      getLevel: () => 0,
+      runClickClapMeasure: vi.fn().mockRejectedValue(new Error('failed measurement')),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clap with the click' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/Mic is silent/i)
+    })
+    expect(screen.getByRole('alert').textContent).not.toMatch(/couldn.t lock/i)
+    expect(screen.getByLabelText(/Or type it/)).toBeTruthy()
+  })
+
+  it('announces Clap with the clicks while measuring and disables mode switch', async () => {
+    let resolveMeasure: (value: {
+      latencyMs: number
+      matchCount: number
+      madMs: number
+      iqrMs: number
+      stable: boolean
+    }) => void = () => undefined
+
+    renderPage({
+      playBeep: vi.fn(),
+      listenUntilPeak: vi.fn(),
+      runClickClapMeasure: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveMeasure = resolve
+          }),
+      ),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clap with the click' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Listening…' })).toBeTruthy()
+    })
+    expect(screen.getByRole('status').textContent).toMatch(/Clap with the clicks/)
+    expect((screen.getByRole('button', { name: 'Tone' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(
+      (screen.getByRole('button', { name: 'Clap with the click' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    resolveMeasure({
+      latencyMs: 40,
+      matchCount: 8,
+      madMs: 4,
+      iqrMs: 8,
+      stable: true,
+    })
+    await waitFor(() => {
+      expect(screen.getByText(/Lined up by 40 ms/)).toBeTruthy()
+    })
+    expect((screen.getByRole('button', { name: 'Tone' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })

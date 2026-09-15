@@ -16,7 +16,9 @@ import { MicLevelMeter } from '../ui/shared/MicLevelMeter.tsx'
 const SILENT_LEVEL = 0.02
 
 export type CalibrationPageIo = ClapListenIo &
-  Partial<Pick<CalibrationIo, 'getLevel' | 'captureIsProcessed' | 'dispose'>>
+  Partial<Pick<CalibrationIo, 'getLevel' | 'captureIsProcessed' | 'dispose' | 'runClickClapMeasure'>>
+
+type CalibrationMode = 'tone' | 'clap'
 
 export type CalibrationPageProps = {
   io?: CalibrationPageIo
@@ -37,6 +39,7 @@ function persistMs(ms: number): void {
 }
 
 export function CalibrationPage({ io }: CalibrationPageProps = {}) {
+  const [mode, setMode] = useState<CalibrationMode>('tone')
   const [status, setStatus] = useState<'idle' | 'listening' | 'saved' | 'failed'>('idle')
   const [keptMs, setKeptMs] = useState<number | null>(
     () => loadDeviceProfile()?.latencyCompMs ?? null,
@@ -128,7 +131,18 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
     }
   }
 
+  function selectMode(next: CalibrationMode) {
+    if (status === 'listening') return
+    setMode(next)
+    if (status === 'failed') {
+      setStatus('idle')
+      setSilentMic(false)
+      setCaptureBlocked(false)
+    }
+  }
+
   async function handleMeasure() {
+    const clapMode = mode === 'clap'
     setStatus('listening')
     setCaptureBlocked(false)
     setSilentMic(false)
@@ -155,7 +169,17 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
         }
         tick()
       }
-      const ms = Math.round(await measureClapLatency(used))
+      let ms: number
+      if (clapMode) {
+        if (typeof used.runClickClapMeasure !== 'function') {
+          throw new Error('failed measurement')
+        }
+        const estimate = await used.runClickClapMeasure()
+        if (!estimate?.stable) throw new Error('failed measurement')
+        ms = Math.round(estimate.latencyMs)
+      } else {
+        ms = Math.round(await measureClapLatency(used))
+      }
       persistMs(ms)
       setKeptMs(ms)
       setStatus('saved')
@@ -171,7 +195,9 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
           return
         }
       }
-      setCaptureBlocked(used?.captureIsProcessed === true)
+      if (!clapMode) {
+        setCaptureBlocked(used?.captureIsProcessed === true)
+      }
       setStatus('failed')
     } finally {
       if (raf) cancelAnimationFrame(raf)
@@ -188,23 +214,56 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
     setStatus('saved')
   }
 
-  const buttonLabel =
-    status === 'listening' ? 'Listening…' : keptMs != null ? 'Line up again' : 'Line up'
+  const listening = status === 'listening'
+  const buttonLabel = listening
+    ? 'Listening…'
+    : mode === 'clap'
+      ? keptMs != null
+        ? 'Start again'
+        : 'Start'
+      : keptMs != null
+        ? 'Line up again'
+        : 'Line up'
   const showCheckMic = !armed && status !== 'listening'
   const showMeter = armed && typeof ioRef.current?.getLevel === 'function'
   const failCopy = silentMic
     ? 'Mic is silent. Check permission and the mic hole.'
-    : captureBlocked
-      ? 'This phone is blocking the tone. Use headphones.'
-      : 'We didn’t hear the tone. Closer to the speaker, a bit louder, then Line up again.'
+    : mode === 'clap'
+      ? 'We couldn’t lock the timing. Try again a bit closer to the beat, or switch to Tone.'
+      : captureBlocked
+        ? 'This phone is blocking the tone. Use headphones.'
+        : 'We didn’t hear the tone. Closer to the speaker, a bit louder, then Line up again.'
+  const modeSwitchClass =
+    'rounded-md border border-ink/15 px-3 py-1.5 text-sm font-medium studio-transition hover:bg-ink/5 aria-pressed:border-ink aria-pressed:bg-ink aria-pressed:text-paper disabled:opacity-50'
 
   return (
     <div className="min-h-screen bg-paper px-10 py-8 font-ui text-ink fade-in">
       <h1 className="font-display text-2xl font-semibold tracking-tight">Line up headphones</h1>
       <p className="mt-3 max-w-md text-ink/70">
-        Headphones: slip one cup so the mic hears the driver. Phone: volume up, don’t cover the
-        mic. Then tap Line up.
+        {mode === 'clap'
+          ? 'Headphones on. We’ll play a steady click for a few seconds — clap once on each click, same hand, same place. Stop when it says lined up.'
+          : 'Headphones: slip one cup so the mic hears the driver. Phone: volume up, don’t cover the mic. Then tap Line up.'}
       </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          aria-pressed={mode === 'tone'}
+          disabled={listening}
+          onClick={() => selectMode('tone')}
+          className={modeSwitchClass}
+        >
+          Tone
+        </button>
+        <button
+          type="button"
+          aria-pressed={mode === 'clap'}
+          disabled={listening}
+          onClick={() => selectMode('clap')}
+          className={modeSwitchClass}
+        >
+          Clap with the click
+        </button>
+      </div>
       {keptMs != null ? (
         <p className="mt-3 text-sm text-ink-muted">Lined up by {keptMs} ms on this device.</p>
       ) : null}
@@ -220,7 +279,7 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
         ) : null}
         <button
           type="button"
-          disabled={status === 'listening'}
+          disabled={listening}
           aria-live="polite"
           onClick={() => void handleMeasure()}
           className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red disabled:opacity-50"
@@ -235,7 +294,7 @@ export function CalibrationPage({ io }: CalibrationPageProps = {}) {
       ) : null}
       {status === 'listening' ? (
         <p role="status" aria-live="polite" className="mt-6 text-ink/70">
-          Listening…
+          {mode === 'clap' ? 'Clap with the clicks…' : 'Listening…'}
         </p>
       ) : null}
       {status === 'failed' ? (
