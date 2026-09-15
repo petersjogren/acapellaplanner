@@ -1,16 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   applyLatencyCompensation,
+  BEEP_DURATION_S,
+  BEEP_GAIN,
+  binForFreq,
   takePlaybackOffsetMs,
   computeLatencyMs,
-  detectionThreshold,
   DEVICE_PROFILE_STORAGE_KEY,
+  findToneOnset,
+  isTonePresent,
   loadDeviceProfile,
-  MAX_PEAK_THRESHOLD,
-  MIN_PEAK_THRESHOLD,
+  MAX_LATENCY_MS,
   measureClapLatency,
   saveDeviceProfile,
   storedLatencyCompMs,
+  toneSnrDb,
   type DeviceProfile,
 } from '../../src/audio/latency.ts'
 
@@ -37,41 +41,71 @@ describe('computeLatencyMs', () => {
     expect(computeLatencyMs(1000, 1080)).toBe(80)
   })
 
-  it('accepts the 0ms and 500ms bounds', () => {
+  it('accepts the 0ms and 800ms bounds', () => {
     expect(computeLatencyMs(10, 10)).toBe(0)
-    expect(computeLatencyMs(10, 510)).toBe(500)
+    expect(computeLatencyMs(10, 810)).toBe(800)
   })
 
   it('rejects a clap before the beep', () => {
     expect(() => computeLatencyMs(100, 99)).toThrow(/failed measurement/)
   })
 
-  it('rejects a clap more than 500ms after the beep', () => {
-    expect(() => computeLatencyMs(0, 501)).toThrow(/failed measurement/)
+  it('rejects a clap more than 800ms after the beep', () => {
+    expect(() => computeLatencyMs(0, 801)).toThrow(/failed measurement/)
   })
 })
 
-describe('detectionThreshold', () => {
-  it('floors at MIN_PEAK_THRESHOLD for a silent/near-silent room', () => {
-    expect(detectionThreshold(0)).toBe(MIN_PEAK_THRESHOLD)
-    expect(detectionThreshold(0.001)).toBe(MIN_PEAK_THRESHOLD)
+describe('tone detection', () => {
+  it('maps 880 Hz to the expected bin at 48 kHz / 2048', () => {
+    expect(binForFreq(880, 48000, 2048)).toBe(Math.round(880 / (48000 / 2048)))
   })
 
-  it('scales with the measured noise floor between the floor and ceiling', () => {
-    // 0.01 * 4 = 0.04, above the 0.03 floor and below the 0.2 ceiling.
-    expect(detectionThreshold(0.01)).toBeCloseTo(0.04)
+  it('reports high SNR when the tone bin is well above neighbours', () => {
+    const toneBin = 38
+    const spectrum = new Float32Array(128).fill(-70)
+    spectrum[toneBin] = -40
+    expect(toneSnrDb(spectrum, toneBin)).toBeCloseTo(30)
+    expect(isTonePresent(spectrum, toneBin)).toBe(true)
   })
 
-  it('caps at MAX_PEAK_THRESHOLD for a loud/noisy room', () => {
-    expect(detectionThreshold(1)).toBe(MAX_PEAK_THRESHOLD)
+  it('does not fire on flat noise', () => {
+    expect(isTonePresent(new Float32Array(128).fill(-60), 38)).toBe(false)
   })
 
-  it('sits comfortably below a firm clap, unlike the old fixed 0.2 threshold', () => {
-    // Headphone bleed-through commonly peaks well under -20 dBFS (~0.1); a
-    // fixed 0.2 (~-14 dBFS) threshold never caught it. A quiet room's
-    // adaptive threshold does.
-    const quietRoomBleed = 0.08
-    expect(quietRoomBleed).toBeGreaterThan(detectionThreshold(0.005))
+  it('does not fire on a loud clap (energy everywhere)', () => {
+    expect(isTonePresent(new Float32Array(128).fill(-25), 38)).toBe(false)
+  })
+
+  it('returns the first frame of a 2-frame run after playStart', () => {
+    expect(
+      findToneOnset(
+        [
+          { tMs: 1000, present: true },
+          { tMs: 1010, present: false },
+          { tMs: 1020, present: true },
+          { tMs: 1036, present: true },
+        ],
+        1010,
+      ),
+    ).toBe(1020)
+  })
+
+  it('returns null when the tone never holds for two frames', () => {
+    expect(
+      findToneOnset(
+        [
+          { tMs: 1010, present: true },
+          { tMs: 1026, present: false },
+          { tMs: 1042, present: true },
+        ],
+        1000,
+      ),
+    ).toBeNull()
+  })
+
+  it('plays a half-second probe near full scale', () => {
+    expect(BEEP_DURATION_S).toBe(0.5)
+    expect(BEEP_GAIN).toBe(0.9)
   })
 })
 
@@ -159,7 +193,7 @@ describe('device profile storage', () => {
     expect(storedLatencyCompMs()).toBe(0)
   })
 
-  it('loads profiles on the 0ms and 500ms bounds', () => {
+  it('loads profiles on the 0ms and 800ms bounds', () => {
     const { store } = mockLocalStorage()
     const base = {
       updatedAt: '2026-09-12T10:00:00.000Z',
@@ -170,9 +204,9 @@ describe('device profile storage', () => {
     expect(loadDeviceProfile()?.latencyCompMs).toBe(0)
     expect(storedLatencyCompMs()).toBe(0)
 
-    store.set(DEVICE_PROFILE_STORAGE_KEY, JSON.stringify({ ...base, latencyCompMs: 500 }))
-    expect(loadDeviceProfile()?.latencyCompMs).toBe(500)
-    expect(storedLatencyCompMs()).toBe(500)
+    store.set(DEVICE_PROFILE_STORAGE_KEY, JSON.stringify({ ...base, latencyCompMs: MAX_LATENCY_MS }))
+    expect(loadDeviceProfile()?.latencyCompMs).toBe(MAX_LATENCY_MS)
+    expect(storedLatencyCompMs()).toBe(MAX_LATENCY_MS)
   })
 })
 
@@ -190,7 +224,7 @@ describe('measureClapLatency', () => {
     await expect(
       measureClapLatency({
         playBeep: async () => 1000,
-        listenUntilPeak: async () => 1600,
+        listenUntilPeak: async () => 1900,
       }),
     ).rejects.toThrow(/failed measurement/)
   })

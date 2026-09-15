@@ -19,6 +19,7 @@ Record only choices that future work must not silently reverse.
 
 ## Audio / export
 
+- Latency lineup is one tap: 880 Hz frequency-SNR bleed-through, auto-saved. Manual ms only after a miss. Still not a clap.
 - Decode and play share one AudioContext.
 - Mix recipes are three builtins (Ghost Focus / Stack Build / Blend Check), not a user mixer. Take review: ghost / stack / solo. Review page all-keepers: with-ghost / no-ghost, one phrase or whole song.
 - Stem format: 16-bit PCM WAV, mono, decode-context sample rate (no extra resampler). Absolute pad from 0:00. Default **lanes**, keepers-only. Naming: `Bass/Bass_A.wav` vs `Bass/B_p1_t1.wav`.

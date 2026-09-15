@@ -20,9 +20,10 @@ Optional: crop sheet music onto a phrase so the booth shows only that cue.
 ## Singer quickstart
 
 1. Open **Sing**. Pick a part, or *Surprise me with what’s left*.
-2. Headphones on. Choose a mix: **Ghost Focus**, **Stack Build**, or **Blend Check**.
-3. Tap **Record** or **Space**. One pass records, then **Hear it** / **Keep it** / **Scrap & again**.
-4. **Good enough** when the line can rest. **Next** for the following phrase on the same part.
+2. Headphones on. **Line up** once (one tap) so takes sit with the ghost.
+3. Choose a mix: **Ghost Focus**, **Stack Build**, or **Blend Check**.
+4. Tap **Record** or **Space**. One pass records, then **Hear it** / **Keep it** / **Scrap & again**.
+5. **Good enough** when the line can rest. **Next** for the following phrase on the same part.
 
 You never name files, set loops, or arm anything. Phrases, breaths, doubles — that’s the whole job.
 

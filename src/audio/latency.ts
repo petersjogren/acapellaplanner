@@ -1,28 +1,17 @@
 import { getAudioContext, resumeAudioContext } from './context.ts'
-import { requestMicStream } from './record.ts'
+import { isProcessedCapture, micProcessingFlags, requestMicStream } from './record.ts'
 
 export const DEVICE_PROFILE_STORAGE_KEY = 'acapellaplanner.latency'
-export const MAX_LATENCY_MS = 500
+export const MAX_LATENCY_MS = 800
 
-/**
- * A fixed peak threshold cannot work here: a clap on the mic capsule and a
- * tone bleeding acoustically out of a headphone driver are wildly different
- * loudnesses. 0.2 (~-14 dBFS) was calibrated for the former and silently
- * never triggers for the latter, which is what "Line up headphones" actually
- * asks singers to do (see docs/workflow-singers-unlimited.md — no clapping).
- * Bleed-through commonly peaks well under -20 dBFS depending on volume and
- * mic distance, so detection instead adapts to the room: sample a brief
- * noise floor, then require a peak safely above it.
- */
-export const MIN_PEAK_THRESHOLD = 0.03 // ~-30 dBFS — realistic floor for headphone bleed
-export const MAX_PEAK_THRESHOLD = 0.2 // never demand louder than a firm clap, even in a noisy room
-export const NOISE_FLOOR_MARGIN = 4 // detection sits this many x above the measured room noise floor
-export const NOISE_SAMPLE_MS = 120 // time spent reading the room before the tone plays
-
-/** Detection threshold for a given room's measured noise-floor peak. */
-export function detectionThreshold(noiseFloorPeak: number): number {
-  return Math.min(MAX_PEAK_THRESHOLD, Math.max(MIN_PEAK_THRESHOLD, noiseFloorPeak * NOISE_FLOOR_MARGIN))
-}
+export const TONE_FREQ_HZ = 880
+export const TONE_SNR_DB = 8
+export const TONE_CONSECUTIVE_FRAMES = 2
+export const ANALYSER_FFT_SIZE = 2048
+export const BEEP_DURATION_S = 0.5
+export const BEEP_GAIN = 0.9
+export const BEEP_FADE_S = 0.012
+export const WARMUP_MS = 300
 
 export type DeviceProfile = {
   latencyCompMs: number
@@ -35,10 +24,74 @@ export type ClapListenIo = {
   listenUntilPeak: (afterTimeMs: number) => Promise<number>
 }
 
-export type BrowserClapIo = ClapListenIo & { dispose: () => void }
+export type BrowserClapIo = ClapListenIo & {
+  dispose: () => void
+  captureIsProcessed: boolean
+}
+
+export type BeepProbe = {
+  durationS: number
+  gain: number
+}
+
+export type DetectionFrame = { tMs: number; present: boolean }
+
+export function binForFreq(freqHz: number, sampleRate: number, fftSize: number): number {
+  return Math.round(freqHz / (sampleRate / fftSize))
+}
+
+/** Median dB of bins ±3..±10 around the tone bin. Empty → -Infinity. */
+export function neighborMedianDb(spectrum: Float32Array, toneBin: number): number {
+  const values: number[] = []
+  for (const delta of [-10, -9, -8, -7, -6, -5, -4, -3, 3, 4, 5, 6, 7, 8, 9, 10]) {
+    const v = spectrum[toneBin + delta]
+    if (v != null && Number.isFinite(v)) values.push(v)
+  }
+  if (values.length === 0) return Number.NEGATIVE_INFINITY
+  values.sort((a, b) => a - b)
+  const mid = Math.floor(values.length / 2)
+  return values.length % 2 === 1 ? values[mid]! : (values[mid - 1]! + values[mid]!) / 2
+}
+
+export function toneSnrDb(spectrum: Float32Array, toneBin: number): number {
+  const tone = spectrum[toneBin]
+  if (tone == null || !Number.isFinite(tone)) return Number.NEGATIVE_INFINITY
+  const noise = neighborMedianDb(spectrum, toneBin)
+  if (!Number.isFinite(noise)) return Number.NEGATIVE_INFINITY
+  return tone - noise
+}
+
+export function isTonePresent(
+  spectrum: Float32Array,
+  toneBin: number,
+  snrDb = TONE_SNR_DB,
+): boolean {
+  return toneSnrDb(spectrum, toneBin) >= snrDb
+}
+
+/** First timestamp of `consecutive` present frames at/after playStartMs. */
+export function findToneOnset(
+  frames: DetectionFrame[],
+  playStartMs: number,
+  consecutive = TONE_CONSECUTIVE_FRAMES,
+): number | null {
+  let run = 0
+  let runStart: number | null = null
+  for (const frame of frames) {
+    if (frame.tMs < playStartMs || !frame.present) {
+      run = 0
+      runStart = null
+      continue
+    }
+    if (run === 0) runStart = frame.tMs
+    run += 1
+    if (run >= consecutive) return runStart
+  }
+  return null
+}
 
 /**
- * Bleed-through delay in milliseconds. Rejects measurements outside 0–500ms —
+ * Bleed-through delay in milliseconds. Rejects measurements outside 0–800ms —
  * those are a missed bleed-through or clock glitches, not headphone latency.
  */
 export function computeLatencyMs(beepTime: number, clapTime: number): number {
@@ -109,30 +162,27 @@ export async function measureClapLatency(io: ClapListenIo): Promise<number> {
   return computeLatencyMs(beepTime, clapTime)
 }
 
-export function peakAmplitude(timeDomain: Uint8Array): number {
-  let peak = 0
-  for (const sample of timeDomain) {
-    const amp = Math.abs(sample - 128) / 128
-    if (amp > peak) peak = amp
-  }
-  return peak
-}
-
-export async function playBeepTone(ctx: AudioContext = getAudioContext()): Promise<number> {
+export async function playBeepTone(
+  ctx: AudioContext = getAudioContext(),
+  probe: BeepProbe = { durationS: BEEP_DURATION_S, gain: BEEP_GAIN },
+): Promise<number> {
   await resumeAudioContext(ctx)
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
   osc.type = 'sine'
-  osc.frequency.value = 880
+  osc.frequency.value = TONE_FREQ_HZ
+  const peak = Math.max(probe.gain, 0.0001)
+  const fade = Math.min(BEEP_FADE_S, probe.durationS / 2)
   const t = ctx.currentTime
   gain.gain.setValueAtTime(0.0001, t)
-  gain.gain.exponentialRampToValueAtTime(0.35, t + 0.008)
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.07)
+  gain.gain.exponentialRampToValueAtTime(peak, t + fade)
+  gain.gain.setValueAtTime(peak, t + probe.durationS - fade)
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + probe.durationS)
   osc.connect(gain)
   gain.connect(ctx.destination)
   const beepTime = performance.now()
   osc.start(t)
-  osc.stop(t + 0.08)
+  osc.stop(t + probe.durationS)
   osc.onended = () => {
     osc.disconnect()
     gain.disconnect()
@@ -146,43 +196,41 @@ export async function createBrowserClapIo(): Promise<BrowserClapIo> {
   const stream = await requestMicStream()
   const source = ctx.createMediaStreamSource(stream)
   const analyser = ctx.createAnalyser()
-  analyser.fftSize = 1024
+  analyser.fftSize = ANALYSER_FFT_SIZE
+  analyser.smoothingTimeConstant = 0
+  analyser.minDecibels = -90
+  analyser.maxDecibels = -20
   source.connect(analyser)
-  const data = new Uint8Array(analyser.fftSize)
-
-  // Read the room briefly before the tone plays so detection adapts to
-  // this mic/space instead of a single threshold that works for no one.
-  const noiseFloorPeak = await new Promise<number>((resolve) => {
-    const start = performance.now()
-    let peak = 0
-    const tick = () => {
-      analyser.getByteTimeDomainData(data)
-      peak = Math.max(peak, peakAmplitude(data))
-      if (performance.now() - start >= NOISE_SAMPLE_MS) {
-        resolve(peak)
-        return
-      }
-      requestAnimationFrame(tick)
-    }
-    tick()
-  })
-  const threshold = detectionThreshold(noiseFloorPeak)
+  const freq = new Float32Array(analyser.frequencyBinCount)
+  const toneBin = binForFreq(TONE_FREQ_HZ, ctx.sampleRate, analyser.fftSize)
+  const captureIsProcessed = isProcessedCapture(micProcessingFlags(stream))
 
   return {
+    captureIsProcessed,
     playBeep: () => playBeepTone(ctx),
     listenUntilPeak: (afterTimeMs) =>
       new Promise((resolve, reject) => {
         const deadline = afterTimeMs + MAX_LATENCY_MS
+        let run = 0
+        let runStart: number | null = null
         const tick = () => {
           const now = performance.now()
           if (now > deadline) {
             reject(new Error('failed measurement'))
             return
           }
-          analyser.getByteTimeDomainData(data)
-          if (now >= afterTimeMs && peakAmplitude(data) >= threshold) {
-            resolve(now)
-            return
+          analyser.getFloatFrequencyData(freq)
+          const present = now >= afterTimeMs && isTonePresent(freq, toneBin)
+          if (!present) {
+            run = 0
+            runStart = null
+          } else {
+            if (run === 0) runStart = now
+            run += 1
+            if (run >= TONE_CONSECUTIVE_FRAMES) {
+              resolve(runStart ?? now)
+              return
+            }
           }
           requestAnimationFrame(tick)
         }

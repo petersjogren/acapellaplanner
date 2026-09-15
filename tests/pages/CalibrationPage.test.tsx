@@ -27,17 +27,18 @@ describe('CalibrationPage', () => {
     vi.restoreAllMocks()
   })
 
-  it('asks the singer to bleed the tone into the mic, not clap', () => {
+  it('asks the singer to get in position, then Line up — not clap', () => {
     renderPage({
       playBeep: vi.fn(),
       listenUntilPeak: vi.fn(),
     })
 
     expect(screen.getByRole('heading', { name: 'Line up headphones' })).toBeTruthy()
-    expect(screen.getByText(/hold your microphone up to your headphone speaker/)).toBeTruthy()
+    expect(screen.getByText(/slip one cup so the mic hears the driver/)).toBeTruthy()
     expect(screen.queryByText(/^Clap with the tone/)).toBeNull()
-    const measure = screen.getByRole('button', { name: 'Play the tone' })
+    const measure = screen.getByRole('button', { name: 'Line up' })
     expect(measure.getAttribute('aria-label')).toBeNull()
+    expect(screen.queryByLabelText(/Or type it/)).toBeNull()
   })
 
   it('announces Listening while measuring', async () => {
@@ -53,7 +54,7 @@ describe('CalibrationPage', () => {
     }
 
     renderPage(io)
-    fireEvent.click(screen.getByRole('button', { name: 'Play the tone' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Line up' }))
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Listening…' })).toBeTruthy()
@@ -62,28 +63,25 @@ describe('CalibrationPage', () => {
 
     resolveListen(1040)
     await waitFor(() => {
-      expect(screen.getByText('40 ms')).toBeTruthy()
+      expect(screen.getByText(/Lined up by 40 ms/)).toBeTruthy()
     })
   })
 
-  it('shows the measured ms after a clap and Keep saves the profile', async () => {
+  it('saves the profile on a successful Line up, without Keep', async () => {
     const io: ClapListenIo = {
       playBeep: vi.fn().mockResolvedValue(2000),
       listenUntilPeak: vi.fn().mockResolvedValue(2087),
     }
 
     renderPage(io)
-    fireEvent.click(screen.getByRole('button', { name: 'Play the tone' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Line up' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Measured latency' })).toBeTruthy()
-      expect(screen.getByText('87 ms')).toBeTruthy()
+      expect(screen.getByText(/Lined up by 87 ms/)).toBeTruthy()
     })
-    expect(screen.getByText('87 ms').getAttribute('aria-label')).toBeNull()
     expect(io.playBeep).toHaveBeenCalledTimes(1)
     expect(io.listenUntilPeak).toHaveBeenCalledWith(2000)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Keep' }))
+    expect(screen.queryByRole('button', { name: 'Keep' })).toBeNull()
 
     const profile = loadDeviceProfile()
     expect(profile?.latencyCompMs).toBe(87)
@@ -92,21 +90,21 @@ describe('CalibrationPage', () => {
     expect(localStorage.getItem(DEVICE_PROFILE_STORAGE_KEY)).toBeTruthy()
   })
 
-  it('lets Try again run another measurement', async () => {
+  it('lets Line up again run another measurement', async () => {
     const io: ClapListenIo = {
       playBeep: vi.fn().mockResolvedValueOnce(1000).mockResolvedValueOnce(2000),
       listenUntilPeak: vi.fn().mockResolvedValueOnce(1040).mockResolvedValueOnce(2091),
     }
 
     renderPage(io)
-    fireEvent.click(screen.getByRole('button', { name: 'Play the tone' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Line up' }))
     await waitFor(() => {
-      expect(screen.getByText('40 ms')).toBeTruthy()
+      expect(screen.getByText(/Lined up by 40 ms/)).toBeTruthy()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Line up again' }))
     await waitFor(() => {
-      expect(screen.getByText('91 ms')).toBeTruthy()
+      expect(screen.getByText(/Lined up by 91 ms/)).toBeTruthy()
     })
     expect(io.playBeep).toHaveBeenCalledTimes(2)
   })
@@ -117,11 +115,32 @@ describe('CalibrationPage', () => {
       listenUntilPeak: vi.fn().mockResolvedValue(2000),
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Play the tone' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Line up' }))
 
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toMatch(/didn.t hear the tone/i)
     })
     expect(screen.queryByRole('button', { name: 'Keep' })).toBeNull()
+  })
+
+  it('lets the singer type a value after a missed tone', async () => {
+    renderPage({
+      playBeep: vi.fn().mockResolvedValue(1000),
+      listenUntilPeak: vi.fn().mockResolvedValue(2000),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Line up' }))
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy()
+    })
+
+    fireEvent.change(screen.getByLabelText(/Or type it/), { target: { value: '120' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Use this' }))
+
+    expect(loadDeviceProfile()?.latencyCompMs).toBe(120)
+    await waitFor(() => {
+      expect(screen.getByText(/Lined up by 120 ms/)).toBeTruthy()
+    })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

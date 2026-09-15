@@ -10,13 +10,13 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 - Prepare: ghost import, phrase mark/edit (incl. head start / crossfade tail), roster (unique short labels), sections as phrase spans (ghost-follow vs fixed-tempo + optional click), one sheet crop per phrase, completion matrix, phrase preview with mix presets.
 - Sing: part picker / surprise-me, session suggestions, one-shot record, Hear (ghost/stack/solo), Keep / Scrap, Good enough / Next (both mark `enough`), Need more takes, mix presets, sheet cue.
 - Review: rate (keeper/scratch/1–5), play take with/without ghost, all keepers on a phrase or whole song, project zip, **DAW stem zip** (lanes default, keepers-only default, size estimate).
-- Calibrate: headphone bleed-through latency → `localStorage`.
+- Calibrate: one tap **Line up**; 880 Hz SNR (not a peak); auto-save; type-ms after a miss → `localStorage`.
 - PWA app-shell offline; IDB projects survive refresh.
 - Schema v2 + migration from v1 section time ranges.
 
 ## Just landed
 
-DAW-friendly padded WAV stem export (`src/storage/wav.ts`, `dawExport.ts`, Review UI). Round-trip zip is unchanged.
+Line up headphones: 880 Hz frequency-SNR (not a clap peak), one tap, auto-save, type-ms after a miss. Alignment math unchanged.
 
 ## Not in the product yet (schema/UI leftovers)
 
