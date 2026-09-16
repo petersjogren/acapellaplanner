@@ -54,6 +54,13 @@ function percent(ms: number, durationMs: number): number {
   return Math.min(Math.max((ms / durationMs) * 100, 0), 100)
 }
 
+const PHRASE_OVERLAY_CLASS = ['bg-phrase-overlay', 'bg-phrase-overlay-alt'] as const
+
+/** Even/odd by timeline order (after `sortPhrases`), not by gap size. */
+export function phraseOverlayClass(index: number): string {
+  return PHRASE_OVERLAY_CLASS[index & 1] ?? PHRASE_OVERLAY_CLASS[0]
+}
+
 function isTooShortDrag(startMs: number, endMs: number): boolean {
   return Math.abs(endMs - startMs) < MIN_PHRASE_MS
 }
@@ -250,10 +257,11 @@ export function GhostTimeline({
       >
         <canvas ref={canvasRef} aria-hidden className="block h-24 w-full" />
         <div className="pointer-events-none absolute inset-0">
-          {ordered.map((item) => (
+          {ordered.map((item, index) => (
             <div
               key={item.id}
-              className="absolute inset-y-0 bg-gold/35"
+              data-phrase-overlay={item.id}
+              className={`absolute inset-y-0 ${phraseOverlayClass(index)}`}
               style={{
                 left: `${percent(item.startMs, durationMs)}%`,
                 width: `${percent(item.endMs - item.startMs, durationMs)}%`,

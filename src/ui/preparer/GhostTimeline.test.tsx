@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GhostTimeline, msAtTimelineX } from './GhostTimeline.tsx'
+import { GhostTimeline, msAtTimelineX, phraseOverlayClass } from './GhostTimeline.tsx'
 import type { Phrase } from '../../domain/schemas.ts'
 
 afterEach(() => {
@@ -60,6 +60,14 @@ function renderTimeline(overrides: Partial<ComponentProps<typeof GhostTimeline>>
   )
   return { onMarkPhrase, onUpdatePhrase, onRemovePhrase, onSelectPhrase }
 }
+
+describe('phraseOverlayClass', () => {
+  it('alternates gold then bronze by timeline index', () => {
+    expect(phraseOverlayClass(0)).toBe('bg-phrase-overlay')
+    expect(phraseOverlayClass(1)).toBe('bg-phrase-overlay-alt')
+    expect(phraseOverlayClass(2)).toBe('bg-phrase-overlay')
+  })
+})
 
 describe('msAtTimelineX', () => {
   const rect = { left: 0, width: 1000 }
@@ -154,6 +162,18 @@ describe('GhostTimeline', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toMatch(/overlap/i)
     })
+  })
+
+  it('tints neighbouring waveform overlays even/odd in timeline order', () => {
+    const later: Phrase = { ...phrase, id: 'phrase-2', name: 'Phrase 2', startMs: 900, endMs: 1400 }
+    const earlier: Phrase = { ...phrase, id: 'phrase-1', name: 'Phrase 1', startMs: 200, endMs: 800 }
+    renderTimeline({ phrases: [later, earlier] })
+
+    const first = document.querySelector('[data-phrase-overlay="phrase-1"]')
+    const second = document.querySelector('[data-phrase-overlay="phrase-2"]')
+    expect(first?.classList.contains('bg-phrase-overlay')).toBe(true)
+    expect(first?.classList.contains('bg-phrase-overlay-alt')).toBe(false)
+    expect(second?.classList.contains('bg-phrase-overlay-alt')).toBe(true)
   })
 
   it('commits the selected phrase name on blur', () => {

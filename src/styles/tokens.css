@@ -14,6 +14,15 @@
      the voice-part swatches (gold/slate/forest), just far lighter. */
   --phrase-tint: color-mix(in srgb, var(--gold) 8%, var(--paper));
   --phrase-line: color-mix(in srgb, var(--gold) 35%, transparent);
+  /* Waveform overlays: even/odd so neighbouring phrases don't read as one blob.
+     Same opacity; alt is gold pulled toward ink (bronze) so both still read as
+     phrase marks, not section (slate) or voice (forest). */
+  --phrase-overlay: color-mix(in srgb, var(--gold) 42%, transparent);
+  --phrase-overlay-alt: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--gold) 55%, var(--ink)) 42%,
+    transparent
+  );
   --section-tint: color-mix(in srgb, var(--slate) 7%, var(--paper));
   --section-line: color-mix(in srgb, var(--slate) 30%, transparent);
   --voice-tint: color-mix(in srgb, var(--forest) 7%, var(--paper));
@@ -66,6 +75,8 @@
   --color-ink-muted: var(--ink-muted);
   --color-phrase-tint: var(--phrase-tint);
   --color-phrase-line: var(--phrase-line);
+  --color-phrase-overlay: var(--phrase-overlay);
+  --color-phrase-overlay-alt: var(--phrase-overlay-alt);
   --color-section-tint: var(--section-tint);
   --color-section-line: var(--section-line);
   --color-voice-tint: var(--voice-tint);

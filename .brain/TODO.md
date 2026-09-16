@@ -33,7 +33,6 @@ Active product work is whatever the user asks next. This list is **code-backed**
 - Drag-drawing phrases on the waveform is awkward. Need a better mark-in method (not specified — keep the current drag until a design exists).
 - Click a phrase region on the waveform to select it (today selection is the phrase list, not the waveform itself).
 - Shift- or Option-click a phrase on the waveform to play it. Add a short explanatory hint next to the timeline.
-- Alternate tint on neighbouring phrase overlays so close/adjacent phrases are visually distinct.
 
 ## Product (from original plan, still true)
 

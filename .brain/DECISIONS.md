@@ -10,6 +10,7 @@ Record only choices that future work must not silently reverse.
 - **Singer UX:** one Record press = one pass, then Hear / Keep / Scrap. Good enough and Next both mark the cell `enough` (session planner skips it).
 - **Default stack density:** `targetTakes` default 4. Keepers (not star ratings) are what later doubles hear and what stem export prefers.
 - **Deploy is manual.** Publishing on every `main` push is explicitly unwanted.
+- **Phrase overlay tints (2026-09):** even/odd by `sortPhrases` order (gold vs bronze), not gap-based colouring and not slate/forest (those are section/voice).
 
 ## Schema
 

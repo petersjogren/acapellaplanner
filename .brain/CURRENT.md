@@ -22,6 +22,8 @@ PDF import on GitHub Pages: a tab left open across a deploy was requesting a del
 
 Phone Safari responsive pass (no web layout change): `PreparerShell`/`SingerShell`/`HomePage` collapse nav and stack content below `md:`, safe-area insets via Tailwind arbitrary values (not inline `style`, which silently zeroed padding — see LEARNINGS), display/lyric type scales down under 430px width or short landscape height. `HomePage` song-list row (title/date/Rename/Export/Delete) stacks into a bordered card on phones instead of cramming onto one line; unchanged at `sm:`+.
 
+Ghost timeline phrase overlays alternate gold / bronze (`--phrase-overlay` / `--phrase-overlay-alt`) by sorted start time so adjacent marks stay distinct. Panel `phrase-tint` is unchanged.
+
 Clap-with-click: longer train (up to 40 clicks) with early stop when the posterior is tight. MAD outlier drop, louder-peak replacement so click leak does not steal the clap, pairing capped below one beat so ~650 ms aliases cannot save.
 
 ## Not in the product yet (schema/UI leftovers)
