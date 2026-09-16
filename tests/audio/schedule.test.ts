@@ -36,6 +36,15 @@ describe('computePlayWindow', () => {
     ).toEqual({ offsetMs: 0, durationMs: 800, requestedDurationMs: 800 })
   })
 
+  it('clamps a 2000 ms head start when the phrase starts at 0 and keeps the tail', () => {
+    expect(
+      computePlayWindow(
+        spec({ startMs: 0, endMs: 3000, preRollMs: 2000, postRollMs: 2000 }),
+        10_000,
+      ),
+    ).toEqual({ offsetMs: 0, durationMs: 5000, requestedDurationMs: 5000 })
+  })
+
   it('clamps post-roll to the ghost duration', () => {
     expect(
       computePlayWindow(
@@ -110,5 +119,14 @@ describe('phraseEnterDelayMs', () => {
     )
     expect(play.offsetMs).toBe(0)
     expect(phraseEnterDelayMs(100, play.offsetMs)).toBe(100)
+  })
+
+  it('is 0 when the phrase itself starts at 0', () => {
+    const play = computePlayWindow(
+      spec({ startMs: 0, endMs: 3000, preRollMs: 2000, postRollMs: 2000 }),
+      10_000,
+    )
+    expect(play.offsetMs).toBe(0)
+    expect(phraseEnterDelayMs(0, play.offsetMs)).toBe(0)
   })
 })

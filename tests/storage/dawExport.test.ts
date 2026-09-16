@@ -162,6 +162,10 @@ describe('segmentStartMs', () => {
     expect(segmentStartMs({ startMs: 0, preRollMs: 250 })).toBe(0)
   })
 
+  it('clamps a 2000 ms head start at phrase start 0 to 0, not -2000', () => {
+    expect(segmentStartMs({ startMs: 0, preRollMs: 2000 })).toBe(0)
+  })
+
   it('places phrase 2 at 9750 (10000 - 250)', () => {
     expect(segmentStartMs({ startMs: 10000, preRollMs: 250 })).toBe(9750)
   })

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   addPhrase,
   clampPhrase,
+  DEFAULT_POST_ROLL_MS,
+  DEFAULT_PRE_ROLL_MS,
   MIN_PHRASE_MS,
   nextPhraseName,
   phrasesFromDrag,
@@ -104,6 +106,32 @@ describe('addPhrase', () => {
 
     expect(() => addPhrase(project, { startMs: 500, endMs: 1500 })).toThrow(/overlap/i)
     expect(project.phrases).toHaveLength(1)
+  })
+
+  it('defaults head start and crossfade tail to 2000 ms', () => {
+    const project = projectWithGhost()
+
+    const next = addPhrase(project, { startMs: 2000, endMs: 3000 })
+
+    expect(next.phrases[0]).toMatchObject({
+      startMs: 2000,
+      endMs: 3000,
+      preRollMs: DEFAULT_PRE_ROLL_MS,
+      postRollMs: DEFAULT_POST_ROLL_MS,
+    })
+    expect(DEFAULT_PRE_ROLL_MS).toBe(2000)
+    expect(DEFAULT_POST_ROLL_MS).toBe(2000)
+  })
+
+  it('still writes those defaults when the phrase starts at 0', () => {
+    const next = addPhrase(projectWithGhost(), { startMs: 0, endMs: 1000 })
+
+    expect(next.phrases[0]).toMatchObject({
+      startMs: 0,
+      endMs: 1000,
+      preRollMs: DEFAULT_PRE_ROLL_MS,
+      postRollMs: DEFAULT_POST_ROLL_MS,
+    })
   })
 })
 

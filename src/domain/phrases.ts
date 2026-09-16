@@ -7,6 +7,8 @@ import {
 import { retargetSectionsAfterRemovingPhrase } from './sections.ts'
 
 export const MIN_PHRASE_MS = 50
+export const DEFAULT_PRE_ROLL_MS = 2000
+export const DEFAULT_POST_ROLL_MS = 2000
 
 export type PhraseIntervalMs = {
   startMs: number
@@ -88,7 +90,8 @@ function buildPhrase(input: NewPhraseInput, existing: Phrase[], durationMs: numb
     sheetRefs: [],
     partPlan: [],
     loopDefault: { mode: 'phrase-loop', gapMs: 400 },
-    postRollMs: 0,
+    preRollMs: DEFAULT_PRE_ROLL_MS,
+    postRollMs: DEFAULT_POST_ROLL_MS,
   }
 }
 

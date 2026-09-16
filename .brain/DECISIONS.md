@@ -16,6 +16,7 @@ Record only choices that future work must not silently reverse.
 - **v2 (2026-09):** Section is `fromPhraseId`/`toPhraseId`. v1 `[startMs,endMs]` migrated by claiming phrases that overlap the old region in timeline order; empty regions dropped. `ProjectSchema` describes **only** current shape; history lives in `migrations.ts`.
 - Unversioned historical JSON is implicit v1 (`withVersionStamped`).
 - Optional field additions do not bump `schemaVersion`.
+- **New-phrase rolls (2026-09):** `addPhrase` writes `preRollMs`/`postRollMs` = 2000. Missing `preRollMs` on disk still means 0. Do not Zod-default or migrate old phrases to 2000.
 
 ## Audio / export
 

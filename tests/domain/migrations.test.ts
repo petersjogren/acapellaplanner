@@ -126,4 +126,24 @@ describe('migrateAndParseProject', () => {
     ])
     expect(migrated.sections.find((item) => item.id === 'orphan')).toBeUndefined()
   })
+
+  it('does not fill missing preRollMs with the new-phrase default', () => {
+    const migrated = migrateAndParseProject({
+      ...createEmptyProject('When I Fall'),
+      phrases: [
+        {
+          id: 'p1',
+          name: 'Phrase 1',
+          startMs: 0,
+          endMs: 1000,
+          sheetRefs: [],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          postRollMs: 0,
+        },
+      ],
+    })
+    expect(migrated.phrases[0]?.preRollMs).toBeUndefined()
+    expect(migrated.phrases[0]?.postRollMs).toBe(0)
+  })
 })

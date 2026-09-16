@@ -29,7 +29,7 @@ Pages compose domain mutations + repository I/O. Do not put Zod/schema rules in 
 
 One JSON `Project` (`CURRENT_SCHEMA_VERSION = 2`) plus blobs in IndexedDB `audioBlobs`.
 
-- **Phrases**: non-overlapping `[startMs, endMs]` on the ghost. `preRollMs` / `postRollMs` extend the *play/record window* and **may overlap** neighbouring phrases.
+- **Phrases**: non-overlapping `[startMs, endMs]` on the ghost. `preRollMs` / `postRollMs` extend the *play/record window* and **may overlap** neighbouring phrases. New phrases persist 2000/2000; missing `preRollMs` on disk still means 0.
 - **Sections**: inclusive span of phrases (`fromPhraseId`/`toPhraseId`), not their own time range. v1→v2 migration maps old `[startMs,endMs]` onto overlapping phrases. Sections must not share a phrase.
 - **Takes**: phrase + part + `takeIndex`, blob id, optional `rating` (`keeper` \| `scratch` \| 1–5), `latencyCompMs`, headphone mix snapshot.
 - **Completion**: persisted but **re-derived on every save** (`deriveCompletion`). `partPlan.status` of `enough`/`final` is the singer/preparer override.

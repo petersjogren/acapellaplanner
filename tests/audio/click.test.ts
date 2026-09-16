@@ -123,4 +123,28 @@ describe('clicksForPhrase', () => {
     ]
     expect(clicksForPhrase(p1, sections, [p1])).toEqual([1000, 2000])
   })
+
+  it('does not emit negative click times when a phrase at 0 has a 2000 ms head start', () => {
+    const p1 = phrase({
+      id: 'p1',
+      startMs: 0,
+      endMs: 2000,
+      preRollMs: 2000,
+      postRollMs: 2000,
+    })
+    const sections = [
+      section({
+        id: 'in-time',
+        timeMode: 'fixed-tempo',
+        fixedBpm: 60,
+        clickEnabled: true,
+        fromPhraseId: 'p1',
+        toPhraseId: 'p1',
+      }),
+    ]
+    const times = clicksForPhrase(p1, sections, [p1])
+    expect(times.every((time) => time >= 0)).toBe(true)
+    expect(times[0]).toBe(0)
+    expect(times).toEqual([0, 1000, 2000, 3000])
+  })
 })

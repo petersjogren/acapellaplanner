@@ -176,6 +176,20 @@ describe('sectionWindowMs', () => {
     }).sections[0]!
     expect(sectionWindowMs(section, project.phrases)).toEqual({ startMs: 0, endMs: 2100 })
   })
+
+  it('clamps a 2000 ms head start when the first phrase starts at 0', () => {
+    const project = withPhrases(1)
+    const [p1] = ids(project)
+    expect(project.phrases[0]).toMatchObject({ startMs: 0, preRollMs: 2000, postRollMs: 2000 })
+    const section = addSection(project, {
+      name: 'Intro',
+      timeMode: 'ghost-follow',
+      fromPhraseId: p1!,
+      toPhraseId: p1!,
+      clickEnabled: false,
+    }).sections[0]!
+    expect(sectionWindowMs(section, project.phrases)).toEqual({ startMs: 0, endMs: 3000 })
+  })
 })
 
 describe('updateSection / removeSection', () => {
