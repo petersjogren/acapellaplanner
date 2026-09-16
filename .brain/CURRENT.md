@@ -1,6 +1,6 @@
 # Current state
 
-As of 2026-09-15 (branch `main`).
+As of 2026-09-16 (branch `main`).
 
 Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is documented with mic/PWA caveats, not proven in CI. iPhone Safari (portrait + landscape) is responsive at the shell/page level — same layout as desktop/iPad above `md:`, not proven in CI (manual browser-emulation screenshots only).
 
@@ -15,6 +15,8 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 - Schema v2 + migration from v1 section time ranges.
 
 ## Just landed
+
+PDF import on GitHub Pages: a tab left open across a deploy was requesting a deleted `pdfjsRender-*.js` chunk (Pages 404.html → “Failed to fetch dynamically imported module”). Dev was fine. The app now reloads once on that stale-chunk miss / SW replace.
 
 Phone Safari responsive pass (no web layout change): `PreparerShell`/`SingerShell`/`HomePage` collapse nav and stack content below `md:`, safe-area insets via Tailwind arbitrary values (not inline `style`, which silently zeroed padding — see LEARNINGS), display/lyric type scales down under 430px width or short landscape height. `HomePage` song-list row (title/date/Rename/Export/Delete) stacks into a bordered card on phones instead of cramming onto one line; unchanged at `sm:`+.
 

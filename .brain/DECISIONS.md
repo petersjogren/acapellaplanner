@@ -29,3 +29,4 @@ Record only choices that future work must not silently reverse.
 ## Hosting
 
 - GitHub Pages project site. `404.html` clone of `index.html` for SPA reloads. PWA scope follows `BASE_PATH`.
+- PWA `autoUpdate` stays on (new SW takes over without a prompt). The open tab reloads once when that happens, otherwise lazy pdfjs chunks 404 after a deploy. First-visit SW claim does not reload.

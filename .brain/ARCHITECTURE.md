@@ -79,3 +79,4 @@ Two formats, do not conflate:
 `BrowserRouter` basename = `import.meta.env.BASE_URL` without trailing slash.
 GitHub Pages has no rewrite: build emits `404.html` = `index.html` (`vite/githubPagesSpaFallback.ts`).
 Workbox caches the **app shell**, not audio blobs (already in IDB).
+`autoUpdate` activates immediately; `installStaleAssetReload` in `main.tsx` reloads once on `vite:preloadError` or a replacing `controllerchange` so hashed lazy chunks (pdfjs) cannot 404 after a deploy.

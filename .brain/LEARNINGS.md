@@ -37,6 +37,8 @@ Engine `generation` must bump on `stop()` so late `onended` / timers don’t sta
 
 Project site is `/acapellaplanner/`. Router basename, PWA `start_url`/`scope`, and Workbox `navigateFallback` must all use `base`. Deep links need `404.html`. `BASE_PATH` is how a rename or a root host stays correct.
 
+`registerType: 'autoUpdate'` skipWaiting + clientsClaim + `cleanupOutdatedCaches` deletes the previous hashed assets as soon as a new SW activates. A tab that was already open still runs the old JS; `import('./pdfjsRender.ts')` then requests e.g. `pdfjsRender-BB-FQkRp.js` which GitHub Pages no longer has. Pages serves `404.html` (the SPA shell) for that URL, and the browser reports `Failed to fetch dynamically imported module`. `npm run dev` has no SW and no hashed chunks, so PDF import looks fine locally. Reload once on `vite:preloadError`, and on `controllerchange` only when a controller already existed (a first-visit SW claim also fires it). SessionStorage gates the reload so a still-missing chunk cannot loop.
+
 ## Zip
 
 Import only accepts `audio/<filename>` (no `..`, no nested dirs). Missing blobs are skipped; missing `project.json` fails. Importing a zip whose `project.id` already exists overwrites that song.
