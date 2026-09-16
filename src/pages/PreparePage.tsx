@@ -32,7 +32,7 @@ import {
 } from '../domain/roster.ts'
 import { bindSheetRefToPhrase } from '../domain/sheets.ts'
 import { renameProject, phrasesBeyondGhost, reconcileGhostDuration } from '../domain/project.ts'
-import type { Project, RegionNorm, SheetDocument } from '../domain/schemas.ts'
+import type { Phrase, Project, RegionNorm, SheetDocument } from '../domain/schemas.ts'
 import { renderPageToCanvas } from '../pdf/renderPage.ts'
 import { CompletionMatrix } from '../ui/preparer/CompletionMatrix.tsx'
 import { SectionEditor } from '../ui/preparer/SectionEditor.tsx'
@@ -101,11 +101,6 @@ export function PreparePage() {
       engineRef.current?.stop()
     }
   }, [])
-
-  useEffect(() => {
-    engineRef.current?.stop()
-    setPlaying(false)
-  }, [selectedPhraseId])
 
   useEffect(() => {
     if (project && typeof project === 'object') {
@@ -223,7 +218,15 @@ export function PreparePage() {
 
   async function handleRemovePhrase(id: string) {
     await persistProject((current) => removePhrase(current, id))
-    if (selectedPhraseId === id) setSelectedPhraseId(null)
+    if (selectedPhraseId === id) handleSelectPhrase(null)
+  }
+
+  function handleSelectPhrase(id: string | null) {
+    if (id !== selectedPhraseId) {
+      engineRef.current?.stop()
+      setPlaying(false)
+    }
+    setSelectedPhraseId(id)
   }
 
   async function handleAddPart(partial: NewVoicePartInput) {
@@ -257,24 +260,23 @@ export function PreparePage() {
 
   const selectedPhrase = loaded.phrases.find((item) => item.id === selectedPhraseId) ?? null
 
-  async function handlePlay(loop: boolean) {
-    if (!selectedPhrase) return
+  async function playPhrase(phrase: Phrase, loop: boolean) {
     setPlayError(null)
     try {
       const mix = await loadPlaybackMixForPhrase(
         loaded,
-        selectedPhrase.id,
+        phrase.id,
         mixPresetId,
         createAudioBlobLoader((id) => repo.getAudioBlob(id)),
       )
-      const clickTimesMs = clicksForPhrase(selectedPhrase, loaded.sections, loaded.phrases)
+      const clickTimesMs = clicksForPhrase(phrase, loaded.sections, loaded.phrases)
       const started = await getEngine().play(
         {
-          startMs: selectedPhrase.startMs,
-          endMs: selectedPhrase.endMs,
-          preRollMs: selectedPhrase.preRollMs ?? 0,
-          postRollMs: selectedPhrase.postRollMs,
-          gapMs: selectedPhrase.loopDefault.gapMs,
+          startMs: phrase.startMs,
+          endMs: phrase.endMs,
+          preRollMs: phrase.preRollMs ?? 0,
+          postRollMs: phrase.postRollMs,
+          gapMs: phrase.loopDefault.gapMs,
           loop,
         },
         {
@@ -288,6 +290,17 @@ export function PreparePage() {
       setPlaying(false)
       setPlayError(err instanceof Error && err.message ? err.message : 'Could not play phrase')
     }
+  }
+
+  async function handlePlay(loop: boolean) {
+    if (!selectedPhrase) return
+    await playPhrase(selectedPhrase, loop)
+  }
+
+  function handlePlayPhrase(id: string) {
+    const phrase = loaded.phrases.find((item) => item.id === id)
+    if (!phrase || !bufferRef.current) return
+    void playPhrase(phrase, false)
   }
 
   function handleStop() {
@@ -487,7 +500,8 @@ export function PreparePage() {
             onMarkPhrase={handleMarkPhrase}
             onUpdatePhrase={handleUpdatePhrase}
             onRemovePhrase={handleRemovePhrase}
-            onSelectPhrase={setSelectedPhraseId}
+            onSelectPhrase={handleSelectPhrase}
+            onPlayPhrase={handlePlayPhrase}
           />
           {selectedPhrase && buffer ? (
             <section className="mt-6" aria-label="Phrase playback">

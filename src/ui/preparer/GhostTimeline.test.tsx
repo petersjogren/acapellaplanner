@@ -1,7 +1,14 @@
 import type { ComponentProps } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GhostTimeline, msAtTimelineX, phraseOverlayClass } from './GhostTimeline.tsx'
+import {
+  GhostTimeline,
+  isTimelineClick,
+  msAtTimelineX,
+  phraseAtMs,
+  phraseOverlayClass,
+  timelineCursor,
+} from './GhostTimeline.tsx'
 import type { Phrase } from '../../domain/schemas.ts'
 
 afterEach(() => {
@@ -48,6 +55,7 @@ function renderTimeline(overrides: Partial<ComponentProps<typeof GhostTimeline>>
   const onUpdatePhrase = overrides.onUpdatePhrase ?? vi.fn()
   const onRemovePhrase = overrides.onRemovePhrase ?? vi.fn()
   const onSelectPhrase = overrides.onSelectPhrase
+  const onPlayPhrase = overrides.onPlayPhrase
   render(
     <GhostTimeline
       durationMs={overrides.durationMs ?? 10_000}
@@ -56,9 +64,10 @@ function renderTimeline(overrides: Partial<ComponentProps<typeof GhostTimeline>>
       onUpdatePhrase={onUpdatePhrase}
       onRemovePhrase={onRemovePhrase}
       onSelectPhrase={onSelectPhrase}
+      onPlayPhrase={onPlayPhrase}
     />,
   )
-  return { onMarkPhrase, onUpdatePhrase, onRemovePhrase, onSelectPhrase }
+  return { onMarkPhrase, onUpdatePhrase, onRemovePhrase, onSelectPhrase, onPlayPhrase }
 }
 
 describe('phraseOverlayClass', () => {
@@ -66,6 +75,41 @@ describe('phraseOverlayClass', () => {
     expect(phraseOverlayClass(0)).toBe('bg-phrase-overlay')
     expect(phraseOverlayClass(1)).toBe('bg-phrase-overlay-alt')
     expect(phraseOverlayClass(2)).toBe('bg-phrase-overlay')
+  })
+})
+
+describe('phraseAtMs', () => {
+  it('returns the phrase covering the time, preferring the later one on a shared boundary', () => {
+    const first = { ...phrase, id: 'a', startMs: 200, endMs: 800 }
+    const second = { ...phrase, id: 'b', startMs: 800, endMs: 1400 }
+    expect(phraseAtMs(200, [first, second])?.id).toBe('a')
+    expect(phraseAtMs(500, [first, second])?.id).toBe('a')
+    expect(phraseAtMs(800, [first, second])?.id).toBe('b')
+    expect(phraseAtMs(1400, [first, second])?.id).toBe('b')
+    expect(phraseAtMs(100, [first, second])).toBeNull()
+  })
+})
+
+describe('isTimelineClick', () => {
+  it('treats sub-threshold pointer travel as a click', () => {
+    expect(isTimelineClick({ clientX: 50, clientY: 10 }, { clientX: 54, clientY: 12 })).toBe(true)
+    expect(isTimelineClick({ clientX: 50, clientY: 10 }, { clientX: 70, clientY: 10 })).toBe(false)
+  })
+})
+
+describe('timelineCursor', () => {
+  it('keeps the mark cursor on unused space and while dragging', () => {
+    expect(timelineCursor({ hoveringPhrase: false, optionDown: false, dragging: false })).toBe(
+      'mark',
+    )
+    expect(timelineCursor({ hoveringPhrase: true, optionDown: true, dragging: true })).toBe('mark')
+  })
+
+  it('uses select on a phrase and play when Option is down', () => {
+    expect(timelineCursor({ hoveringPhrase: true, optionDown: false, dragging: false })).toBe(
+      'select',
+    )
+    expect(timelineCursor({ hoveringPhrase: true, optionDown: true, dragging: false })).toBe('play')
   })
 })
 
@@ -98,6 +142,7 @@ describe('GhostTimeline', () => {
 
     expect(screen.getByLabelText('Ghost timeline')).toBeTruthy()
     expect(screen.getByText('Mark a phrase')).toBeTruthy()
+    expect(screen.getByText('Option-click a phrase to play it.')).toBeTruthy()
     expect(screen.queryByText('Add region')).toBeNull()
     expect(screen.getByText('0:00.0')).toBeTruthy()
     expect(screen.getByText('1:23.4')).toBeTruthy()
@@ -232,5 +277,92 @@ describe('GhostTimeline', () => {
     fireEvent.change(input, { target: { value: '500' } })
 
     expect(onUpdatePhrase).toHaveBeenCalledWith('phrase-1', { postRollMs: 500 })
+  })
+
+  it('selects a phrase from a click on its waveform region', () => {
+    const onSelectPhrase = vi.fn()
+    const { onMarkPhrase } = renderTimeline({ phrases: [phrase], onSelectPhrase })
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.pointerDown(timeline, { clientX: 50, clientY: 10, pointerId: 1 })
+    fireEvent.pointerUp(timeline, { clientX: 52, clientY: 11, pointerId: 1 })
+
+    expect(onSelectPhrase).toHaveBeenCalledWith('phrase-1')
+    expect(onMarkPhrase).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Name')).toBeTruthy()
+  })
+
+  it('does not select from a click on unused waveform space', () => {
+    const onSelectPhrase = vi.fn()
+    const { onMarkPhrase } = renderTimeline({ phrases: [phrase], onSelectPhrase })
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.pointerDown(timeline, { clientX: 900, clientY: 10, pointerId: 1 })
+    fireEvent.pointerUp(timeline, { clientX: 900, clientY: 10, pointerId: 1 })
+
+    expect(onSelectPhrase).not.toHaveBeenCalled()
+    expect(onMarkPhrase).not.toHaveBeenCalled()
+  })
+
+  it('plays a phrase from an Option-click on its waveform region', () => {
+    const onSelectPhrase = vi.fn()
+    const onPlayPhrase = vi.fn()
+    const { onMarkPhrase } = renderTimeline({ phrases: [phrase], onSelectPhrase, onPlayPhrase })
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.pointerDown(timeline, { clientX: 50, clientY: 10, pointerId: 1, altKey: true })
+    fireEvent.pointerUp(timeline, { clientX: 50, clientY: 10, pointerId: 1, altKey: true })
+
+    expect(onSelectPhrase).toHaveBeenCalledWith('phrase-1')
+    expect(onPlayPhrase).toHaveBeenCalledWith('phrase-1')
+    expect(onMarkPhrase).not.toHaveBeenCalled()
+  })
+
+  it('does not play from an Option-click on unused waveform space', () => {
+    const onPlayPhrase = vi.fn()
+    renderTimeline({ phrases: [phrase], onPlayPhrase })
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.pointerDown(timeline, { clientX: 900, clientY: 10, pointerId: 1, altKey: true })
+    fireEvent.pointerUp(timeline, { clientX: 900, clientY: 10, pointerId: 1, altKey: true })
+
+    expect(onPlayPhrase).not.toHaveBeenCalled()
+  })
+
+  it('still marks a phrase when a drag starts on an existing region', () => {
+    const onSelectPhrase = vi.fn()
+    const onPlayPhrase = vi.fn()
+    const { onMarkPhrase } = renderTimeline({ phrases: [phrase], onSelectPhrase, onPlayPhrase })
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.pointerDown(timeline, { clientX: 50, clientY: 10, pointerId: 1 })
+    fireEvent.pointerMove(timeline, { clientX: 400, clientY: 10, pointerId: 1 })
+    fireEvent.pointerUp(timeline, { clientX: 400, clientY: 10, pointerId: 1 })
+
+    expect(onMarkPhrase).toHaveBeenCalledWith(500, 4000)
+    expect(onSelectPhrase).not.toHaveBeenCalled()
+    expect(onPlayPhrase).not.toHaveBeenCalled()
+  })
+
+  it('switches the timeline cursor from mark to select to play', () => {
+    renderTimeline({ phrases: [phrase] })
+    const timeline = mockTimelineRect(1000)
+
+    expect(timeline.getAttribute('data-cursor')).toBe('mark')
+    expect(timeline.classList.contains('cursor-ew-resize')).toBe(true)
+
+    fireEvent.pointerMove(timeline, { clientX: 50, clientY: 10 })
+    expect(timeline.getAttribute('data-cursor')).toBe('select')
+    expect(timeline.classList.contains('cursor-phrase-select')).toBe(true)
+
+    fireEvent.keyDown(window, { key: 'Alt', altKey: true })
+    expect(timeline.getAttribute('data-cursor')).toBe('play')
+    expect(timeline.classList.contains('cursor-phrase-play')).toBe(true)
+
+    fireEvent.keyUp(window, { key: 'Alt', altKey: false })
+    expect(timeline.getAttribute('data-cursor')).toBe('select')
+
+    fireEvent.pointerMove(timeline, { clientX: 900, clientY: 10 })
+    expect(timeline.getAttribute('data-cursor')).toBe('mark')
   })
 })

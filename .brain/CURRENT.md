@@ -24,6 +24,8 @@ Phone Safari responsive pass (no web layout change): `PreparerShell`/`SingerShel
 
 Ghost timeline phrase overlays alternate gold / bronze (`--phrase-overlay` / `--phrase-overlay-alt`) by sorted start time so adjacent marks stay distinct. Panel `phrase-tint` is unchanged.
 
+Click a phrase region on the ghost waveform to select it (same editor as the list). Option-click plays it once. Unused space keeps `cursor-ew-resize`; hovering a phrase uses a select arrow, and Option+hover uses a select+play cursor. Hint sits next to the drag copy.
+
 Clap-with-click: longer train (up to 40 clicks) with early stop when the posterior is tight. MAD outlier drop, louder-peak replacement so click leak does not steal the clap, pairing capped below one beat so ~650 ms aliases cannot save.
 
 ## Not in the product yet (schema/UI leftovers)

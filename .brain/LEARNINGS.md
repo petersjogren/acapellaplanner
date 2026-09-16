@@ -46,3 +46,7 @@ Import only accepts `audio/<filename>` (no `..`, no nested dirs). Missing blobs 
 ## Lane render
 
 Assign after decode. Fade 5 ms in/out; 10 ms minimum gap so fades don’t collide. Render **one lane at a time** (large Float32 accumulators). Additive `+=` is belt-and-braces; with correct assignment it matches overwrite.
+
+## Timeline click vs mark
+
+Do not reuse `MIN_PHRASE_MS` (50) to distinguish a waveform click from a mark-drag. On a 3-minute ghost that is a fraction of a pixel, so a real click would try to mark an overlapping phrase. Pointer travel (`TIMELINE_CLICK_PX`) is the click test; `MIN_PHRASE_MS` only rejects a committed drag that is too short in ghost time.

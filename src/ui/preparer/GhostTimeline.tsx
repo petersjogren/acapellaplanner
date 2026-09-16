@@ -16,7 +16,13 @@ export type GhostTimelineProps = {
   onUpdatePhrase: (id: string, patch: PhrasePatch) => void | Promise<void>
   onRemovePhrase: (id: string) => void | Promise<void>
   onSelectPhrase?: (id: string | null) => void
+  onPlayPhrase?: (id: string) => void
 }
+
+export type TimelineCursor = 'mark' | 'select' | 'play'
+
+/** Pointer travel below this is a click (select / Option-play), not a mark-drag. */
+export const TIMELINE_CLICK_PX = 8
 
 export function msAtTimelineX(
   clientX: number,
@@ -43,6 +49,48 @@ export function downsamplePeaks(channelData: Float32Array, bucketCount: number):
     peaks[i] = peak
   }
   return peaks
+}
+
+/**
+ * Hit-test a ghost time against phrase regions. Intervals are half-open
+ * `[startMs, endMs)` so a shared boundary belongs to the later phrase; the
+ * last phrase also claims its exact `endMs`.
+ */
+export function phraseAtMs(ms: number, phrases: Phrase[]): Phrase | null {
+  const ordered = sortPhrases(phrases)
+  for (const phrase of ordered) {
+    if (ms >= phrase.startMs && ms < phrase.endMs) return phrase
+  }
+  const last = ordered.at(-1)
+  if (last && ms === last.endMs) return last
+  return null
+}
+
+export function isTimelineClick(
+  start: { clientX: number; clientY: number },
+  end: { clientX: number; clientY: number },
+  thresholdPx = TIMELINE_CLICK_PX,
+): boolean {
+  return Math.hypot(end.clientX - start.clientX, end.clientY - start.clientY) < thresholdPx
+}
+
+export function timelineCursor({
+  hoveringPhrase,
+  optionDown,
+  dragging,
+}: {
+  hoveringPhrase: boolean
+  optionDown: boolean
+  dragging: boolean
+}): TimelineCursor {
+  if (dragging || !hoveringPhrase) return 'mark'
+  return optionDown ? 'play' : 'select'
+}
+
+const CURSOR_CLASS: Record<TimelineCursor, string> = {
+  mark: 'cursor-ew-resize',
+  select: 'cursor-phrase-select',
+  play: 'cursor-phrase-play',
 }
 
 function messageFrom(error: unknown, fallback: string): string {
@@ -139,6 +187,14 @@ function releasePointer(target: HTMLElement, pointerId: number) {
   }
 }
 
+type DragState = {
+  startMs: number
+  endMs: number
+  startX: number
+  startY: number
+  hitPhraseId: string | null
+}
+
 export function GhostTimeline({
   durationMs,
   phrases,
@@ -147,12 +203,16 @@ export function GhostTimeline({
   onUpdatePhrase,
   onRemovePhrase,
   onSelectPhrase,
+  onPlayPhrase,
 }: GhostTimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const dragRef = useRef<{ startMs: number; endMs: number } | null>(null)
+  const dragRef = useRef<DragState | null>(null)
   const [preview, setPreview] = useState<{ startMs: number; endMs: number } | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [hoverPhraseId, setHoverPhraseId] = useState<string | null>(null)
+  const [optionDown, setOptionDown] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -199,24 +259,66 @@ export function GhostTimeline({
     return () => observer.disconnect()
   }, [buffer])
 
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      setOptionDown((prev) => (prev === event.altKey ? prev : event.altKey))
+    }
+    function onBlur() {
+      setOptionDown(false)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('keyup', onKey)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKey)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [])
+
   function msFromEvent(event: ReactPointerEvent<HTMLElement>): number {
     return msAtTimelineX(event.clientX, event.currentTarget.getBoundingClientRect(), durationMs)
+  }
+
+  function syncHoverFromEvent(event: ReactPointerEvent<HTMLElement>) {
+    setOptionDown((prev) => (prev === event.altKey ? prev : event.altKey))
+    const hit = phraseAtMs(msFromEvent(event), phrases)
+    setHoverPhraseId((prev) => {
+      const next = hit?.id ?? null
+      return prev === next ? prev : next
+    })
+  }
+
+  function selectPhrase(id: string) {
+    setSelectedId(id)
+    onSelectPhrase?.(id)
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLElement>) {
     if (event.button !== 0) return
     event.preventDefault()
     const ms = msFromEvent(event)
-    dragRef.current = { startMs: ms, endMs: ms }
+    const hit = phraseAtMs(ms, phrases)
+    dragRef.current = {
+      startMs: ms,
+      endMs: ms,
+      startX: event.clientX,
+      startY: event.clientY,
+      hitPhraseId: hit?.id ?? null,
+    }
+    setDragging(true)
     setPreview(null)
+    setHoverPhraseId(hit?.id ?? null)
+    setOptionDown(event.altKey)
     capturePointer(event.currentTarget, event.pointerId)
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLElement>) {
+    syncHoverFromEvent(event)
     const drag = dragRef.current
     if (!drag) return
     const ms = msFromEvent(event)
-    dragRef.current = { startMs: drag.startMs, endMs: ms }
+    dragRef.current = { ...drag, endMs: ms }
     setPreview(previewFromRawDrag(drag.startMs, ms, durationMs))
   }
 
@@ -224,8 +326,16 @@ export function GhostTimeline({
     const drag = dragRef.current
     dragRef.current = null
     setPreview(null)
+    setDragging(false)
     releasePointer(event.currentTarget, event.pointerId)
     if (!commit || !drag) return
+    if (isTimelineClick({ clientX: drag.startX, clientY: drag.startY }, event)) {
+      if (drag.hitPhraseId) {
+        selectPhrase(drag.hitPhraseId)
+        if (event.altKey) onPlayPhrase?.(drag.hitPhraseId)
+      }
+      return
+    }
     if (isTooShortDrag(drag.startMs, drag.endMs)) return
     const marked = phrasesFromDrag(drag.startMs, drag.endMs, durationMs)
     void run(() => onMarkPhrase(marked.startMs, marked.endMs), 'Could not mark phrase')
@@ -241,19 +351,29 @@ export function GhostTimeline({
   }
 
   const ordered = sortPhrases(phrases)
+  const cursor = timelineCursor({
+    hoveringPhrase: hoverPhraseId !== null,
+    optionDown,
+    dragging,
+  })
 
   return (
     <section className="mt-8" aria-label="Phrase marking">
       <h3 className="font-medium">Mark a phrase</h3>
-      <p className="mt-1 text-sm text-ink-muted">Drag on the ghost to mark a phrase.</p>
+      <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm text-ink-muted">
+        <p>Drag on the ghost to mark a phrase.</p>
+        <p>Option-click a phrase to play it.</p>
+      </div>
       <div
         ref={trackRef}
         aria-label="Ghost timeline"
-        className="relative mt-4 cursor-ew-resize touch-none select-none overflow-hidden rounded-md border border-ink/10"
+        data-cursor={cursor}
+        className={`relative mt-4 touch-none select-none overflow-hidden rounded-md border border-ink/10 ${CURSOR_CLASS[cursor]}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={(event) => finishDrag(event, true)}
         onPointerCancel={(event) => finishDrag(event, false)}
+        onPointerLeave={() => setHoverPhraseId(null)}
       >
         <canvas ref={canvasRef} aria-hidden className="block h-24 w-full" />
         <div className="pointer-events-none absolute inset-0">

@@ -667,6 +667,68 @@ describe('PreparePage phrase playback', () => {
     })
     expect(sources).toHaveLength(0)
   })
+
+  it('selects a phrase from a waveform click', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Ghost timeline')).toBeTruthy()
+    })
+
+    const timeline = screen.getByLabelText('Ghost timeline')
+    vi.spyOn(timeline, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 1000,
+      bottom: 80,
+      width: 1000,
+      height: 80,
+      toJSON() {
+        return {}
+      },
+    })
+    fireEvent.pointerDown(timeline, { clientX: 200, clientY: 10, pointerId: 1 })
+    fireEvent.pointerUp(timeline, { clientX: 200, clientY: 10, pointerId: 1 })
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play once' })).toBeTruthy()
+    })
+  })
+
+  it('plays a phrase from an Option-click on the waveform', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Phrase 1/ })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play once' })).toBeTruthy()
+    })
+
+    const timeline = screen.getByLabelText('Ghost timeline')
+    vi.spyOn(timeline, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 1000,
+      bottom: 80,
+      width: 1000,
+      height: 80,
+      toJSON() {
+        return {}
+      },
+    })
+    fireEvent.pointerDown(timeline, { clientX: 200, clientY: 10, pointerId: 1, altKey: true })
+    fireEvent.pointerUp(timeline, { clientX: 200, clientY: 10, pointerId: 1, altKey: true })
+
+    await waitFor(() => {
+      expect(sources).toHaveLength(1)
+    })
+    expect(sources[0]?.start).toHaveBeenCalledWith(1, 0.75, 2.35)
+    expect(screen.getByText('Playing')).toBeTruthy()
+  })
 })
 
 describe('PreparePage sheet upload', () => {

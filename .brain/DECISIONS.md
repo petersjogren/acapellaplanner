@@ -11,6 +11,7 @@ Record only choices that future work must not silently reverse.
 - **Default stack density:** `targetTakes` default 4. Keepers (not star ratings) are what later doubles hear and what stem export prefers.
 - **Deploy is manual.** Publishing on every `main` push is explicitly unwanted.
 - **Phrase overlay tints (2026-09):** even/odd by `sortPhrases` order (gold vs bronze), not gap-based colouring and not slate/forest (those are section/voice).
+- **Waveform phrase click (2026-09):** click selects, Option-click plays once. Click vs mark-drag is pointer travel (`TIMELINE_CLICK_PX` 8), not `MIN_PHRASE_MS` — on a long ghost 50 ms is sub-pixel. Unused space keeps `ew-resize`.
 
 ## Schema
 
