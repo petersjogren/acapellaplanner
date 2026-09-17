@@ -508,4 +508,40 @@ describe('createPlaybackEngine', () => {
     sources[0]?.onended?.call(sources[0] as unknown as AudioBufferSourceNode, new Event('ended'))
     expect(onEnded).toHaveBeenCalledTimes(1)
   })
+
+  it('reports ghost position from the audio clock and null when stopped', async () => {
+    const engine = engineWith(buffer())
+    expect(engine.getPositionMs()).toBe(null)
+
+    await engine.play(spec({ startMs: 0, endMs: 2000, preRollMs: 0, postRollMs: 0, loop: false }))
+    expect(engine.getPositionMs()).toBe(0)
+
+    fakeCtx.currentTime = 1.5
+    expect(engine.getPositionMs()).toBe(500)
+
+    engine.stop()
+    expect(engine.getPositionMs()).toBe(null)
+  })
+
+  it('offsets position by the play window start', async () => {
+    const engine = engineWith(buffer())
+    await engine.play(
+      spec({ startMs: 1000, endMs: 3000, preRollMs: 250, postRollMs: 100, loop: false }),
+    )
+
+    fakeCtx.currentTime = 1.2
+    expect(engine.getPositionMs()).toBe(950)
+  })
+
+  it('stays null when Stop cancels during resume', async () => {
+    const engine = engineWith(buffer())
+    fakeCtx.resume = vi.fn(async () => {
+      engine.stop()
+      fakeCtx.state = 'running'
+    })
+
+    const started = await engine.play(spec())
+    expect(started).toBe(false)
+    expect(engine.getPositionMs()).toBe(null)
+  })
 })

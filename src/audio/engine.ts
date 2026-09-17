@@ -34,6 +34,7 @@ export type PlaybackEngine = {
     mix?: PlaybackMix,
   ) => Promise<boolean>
   stop: () => void
+  getPositionMs: () => number | null
 }
 
 type ScheduledLayer = {
@@ -66,6 +67,9 @@ export type PlaybackEngineOptions = {
 
 export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): PlaybackEngine {
   let generation = 0
+  let playOriginSec: number | null = null
+  let playOffsetMs = 0
+  let playSpanMs = 0
   const sources = new Set<AudioBufferSourceNode>()
   const oscillators = new Set<OscillatorNode>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
@@ -112,6 +116,7 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
 
   function stop() {
     generation += 1
+    playOriginSec = null
     clearTimers()
     for (const source of sources) {
       disconnectSource(source)
@@ -311,6 +316,11 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     await resumeAudioContext(ctx)
     if (gen !== generation) return false
 
+    const when = ctx.currentTime
+    playOriginSec = when
+    playOffsetMs = window.offsetMs
+    playSpanMs = window.durationMs
+
     const ghostOutput = ctx.createGain()
     ghostOutput.gain.value = mix
       ? dbToGain(mix.ghostGainDb ?? 0, mix.ghostMute ?? false)
@@ -353,11 +363,18 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       spec,
       listeners,
       window,
-      ctx.currentTime,
+      when,
       gen,
     )
     return true
   }
 
-  return { play, stop }
+  function getPositionMs(): number | null {
+    if (playOriginSec === null) return null
+    const elapsedMs = (getAudioContext().currentTime - playOriginSec) * 1000
+    const raw = playOffsetMs + Math.max(0, elapsedMs)
+    return Math.min(raw, playOffsetMs + playSpanMs)
+  }
+
+  return { play, stop, getPositionMs }
 }
