@@ -71,6 +71,30 @@ export function phrasesFromDrag(
   return clampPhrase(Math.min(dragStartMs, dragEndMs), Math.max(dragStartMs, dragEndMs), durationMs)
 }
 
+export function gapContainingMs(
+  phrases: PhraseIntervalMs[],
+  ms: number,
+  durationMs: number,
+): PhraseIntervalMs | null {
+  const duration = Math.max(0, durationMs)
+  const t = clampNumber(ms, 0, duration)
+  const ordered = sortPhrases(phrases)
+  for (const phrase of ordered) {
+    if (phrase.startMs <= t && t < phrase.endMs) return null
+  }
+  let startMs = 0
+  let endMs = duration
+  for (const phrase of ordered) {
+    if (phrase.endMs <= t) startMs = Math.max(startMs, phrase.endMs)
+    if (phrase.startMs > t) {
+      endMs = phrase.startMs
+      break
+    }
+  }
+  if (endMs - startMs < MIN_PHRASE_MS) return null
+  return { startMs, endMs }
+}
+
 export function nextPhraseName(existing: Array<{ name: string }>): string {
   const names = new Set(existing.map((item) => item.name))
   let n = 1

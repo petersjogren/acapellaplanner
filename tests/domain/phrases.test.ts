@@ -4,6 +4,7 @@ import {
   clampPhrase,
   DEFAULT_POST_ROLL_MS,
   DEFAULT_PRE_ROLL_MS,
+  gapContainingMs,
   MIN_PHRASE_MS,
   nextPhraseName,
   phrasesFromDrag,
@@ -68,6 +69,60 @@ describe('phrasesFromDrag', () => {
 
   it('clamps a drag that runs past the ghost duration', () => {
     expect(phrasesFromDrag(-50, 5000, 1000)).toEqual({ startMs: 0, endMs: 1000 })
+  })
+})
+
+describe('gapContainingMs', () => {
+  it('fills [0, duration] when there are no phrases', () => {
+    expect(gapContainingMs([], 4000, 10_000)).toEqual({ startMs: 0, endMs: 10_000 })
+  })
+
+  it('fills the gap between neighbouring phrases', () => {
+    expect(
+      gapContainingMs(
+        [
+          { startMs: 0, endMs: 1000 },
+          { startMs: 4000, endMs: 5000 },
+        ],
+        2500,
+        10_000,
+      ),
+    ).toEqual({ startMs: 1000, endMs: 4000 })
+  })
+
+  it('fills from 0 to the first phrase and from the last phrase to duration', () => {
+    expect(gapContainingMs([{ startMs: 2000, endMs: 3000 }], 500, 10_000)).toEqual({
+      startMs: 0,
+      endMs: 2000,
+    })
+    expect(gapContainingMs([{ startMs: 2000, endMs: 3000 }], 8000, 10_000)).toEqual({
+      startMs: 3000,
+      endMs: 10_000,
+    })
+  })
+
+  it('returns null inside a phrase (half-open) and for a too-short gap', () => {
+    expect(gapContainingMs([{ startMs: 0, endMs: 2000 }], 0, 10_000)).toBeNull()
+    expect(gapContainingMs([{ startMs: 0, endMs: 2000 }], 1999, 10_000)).toBeNull()
+    expect(gapContainingMs([{ startMs: 0, endMs: 2000 }], 2000, 10_000)).toEqual({
+      startMs: 2000,
+      endMs: 10_000,
+    })
+    expect(
+      gapContainingMs(
+        [
+          { startMs: 0, endMs: 1000 },
+          { startMs: 1020, endMs: 2000 },
+        ],
+        1010,
+        10_000,
+      ),
+    ).toBeNull()
+  })
+
+  it('clamps the probe into [0, durationMs]', () => {
+    expect(gapContainingMs([], -50, 10_000)).toEqual({ startMs: 0, endMs: 10_000 })
+    expect(gapContainingMs([], 99_000, 10_000)).toEqual({ startMs: 0, endMs: 10_000 })
   })
 })
 
