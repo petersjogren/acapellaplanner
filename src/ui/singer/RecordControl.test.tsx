@@ -100,6 +100,7 @@ function mockEngine(): {
       return true
     }),
     stop: vi.fn(),
+    getPositionMs: vi.fn(() => null),
   }
   return { engine, listeners }
 }

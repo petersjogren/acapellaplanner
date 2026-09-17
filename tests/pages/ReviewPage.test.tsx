@@ -38,6 +38,7 @@ const playback = vi.hoisted(() => {
       return true
     }),
     stop: vi.fn(),
+    getPositionMs: vi.fn(() => null),
   }
 })
 
@@ -48,6 +49,7 @@ vi.mock('../../src/audio/engine.ts', async (importOriginal) => {
     createPlaybackEngine: () => ({
       play: playback.play,
       stop: playback.stop,
+      getPositionMs: playback.getPositionMs,
     }),
   }
 })
