@@ -19,7 +19,7 @@ The booth is that room. The preparer is the producer-arranger. Audio time on the
 
 ### Ghost timeline is truth
 
-Every phrase lives as start and end on the ghost. *In time* and *Follow the ghost* are feels on a **run of phrases** — never a second clock the singer has to fight. A section is those phrases, sung that way. A click, when used, only ticks inside an in-time section. New phrases get a 2 s head start and a 2 s crossfade tail around the mark (the play/record window, not the phrase boundary). Set either to 0 in the phrase editor if you do not want it. Existing marks keep whatever they already stored.
+Every phrase lives as start and end on the ghost. *In time* and *Follow the ghost* are feels on a **run of phrases** — never a second clock the singer has to fight. A section is those phrases, sung that way. A click, when used, only ticks inside an in-time section. **Play ghost** opens at 0 so the first **New phrase** tap ends that first phrase; double-click empty space fills a gap. Phrase marks sit back to back; the 2 s head start and 2 s crossfade tail are the play/record window, not the phrase boundary — those windows still overlap because of the rolls. Set either to 0 in the phrase editor if you do not want it; existing marks keep whatever they already stored.
 
 Headphones are the score. Sheet crops and lyric text are cues. Timing comes from what you hear.
 

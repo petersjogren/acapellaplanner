@@ -28,10 +28,6 @@ Active product work is whatever the user asks next. This list is **code-backed**
 - iPad mic, Home Screen permission, and MediaRecorder mime are **manual**. Chrome is the supported recorder if Safari blocks.
 - Google Fonts missing offline; UI falls back to Georgia / Helvetica Neue.
 
-## Prepare / phrases (user, 2026-09-16)
-
-- Drag-drawing phrases on the waveform is awkward. Need a better mark-in method (not specified — keep the current drag until a design exists).
-
 ## Product (from original plan, still true)
 
 - No multi-device sync (zip is the bus).

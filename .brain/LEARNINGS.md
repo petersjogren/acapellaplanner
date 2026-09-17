@@ -49,4 +49,8 @@ Assign after decode. Fade 5 ms in/out; 10 ms minimum gap so fades don’t collid
 
 ## Timeline click vs mark
 
-Do not reuse `MIN_PHRASE_MS` (50) to distinguish a waveform click from a mark-drag. On a 3-minute ghost that is a fraction of a pixel, so a real click would try to mark an overlapping phrase. Pointer travel (`TIMELINE_CLICK_PX`) is the click test; `MIN_PHRASE_MS` only rejects a committed drag that is too short in ghost time.
+Do not reuse `MIN_PHRASE_MS` (50) to distinguish a waveform click from a mark-drag. On a 3-minute ghost that is a fraction of a pixel, so a real click would try to mark an overlapping phrase. Pointer travel (`TIMELINE_CLICK_PX`) is the click test; `MIN_PHRASE_MS` only rejects a committed drag that is too short in ghost time. Double-click unused space fills `gapContainingMs`; always `phraseAtMs` first so the last phrase's exact `endMs` still selects, not fills.
+
+## Mark-along vs select / Listen
+
+Do not call `finishMarkAlong` / stop-commit from `handleSelectPhrase` — selecting during a pass must not persist. `Listen` `playPhrase` must no-op while `markAlongPlaying` so it cannot steal the engine. Selecting currently stops Listen only.

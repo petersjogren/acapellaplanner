@@ -13,6 +13,7 @@ domain      →  nothing else
 ```
 
 `domain/` must stay pure: no React, Web Audio, IndexedDB, or DOM.
+`markAlong.ts` is pure tap/stop math; still writes through `addPhrase`.
 Pages compose domain mutations + repository I/O. Do not put Zod/schema rules in UI.
 
 | Layer | Owns |

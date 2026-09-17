@@ -1,6 +1,6 @@
 # Current state
 
-As of 2026-09-16 (branch `main`).
+As of 2026-09-17 (branch `main`).
 
 Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is documented with mic/PWA caveats, not proven in CI. iPhone Safari (portrait + landscape) is responsive at the shell/page level — same layout as desktop/iPad above `md:`, not proven in CI (manual browser-emulation screenshots only).
 
@@ -15,6 +15,8 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 - Schema v2 + migration from v1 section time ranges.
 
 ## Just landed
+
+Mark-along: Play ghost from 0 (ghost-only, once) auto-opens a phrase at 0 when that time is free; tap **New phrase** at each later line start. Stop without a tap commits `[0, now]` if the open interval is ≥ 50 ms. Drag-to-mark remains. Double-click unused space fills that gap. Click-select and Option-click-play unchanged.
 
 New phrases persist a 2000 ms head start (`preRollMs`) and 2000 ms crossfade tail (`postRollMs`). Old songs and imported zips stay at 0 / missing — no schema bump, no parse-time default. Play-window math is unchanged.
 

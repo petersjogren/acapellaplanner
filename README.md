@@ -10,7 +10,7 @@ Local-first. Desktop Chrome MVP; iPad Safari as a booth once the song is prepare
 
 1. **New song** on the home desk. **Rename** it from the list or from the top of Prepare; **Delete** on the list removes a song and its audio (one confirm step).
 2. **Import ghost track** — a lead vocal (Bonnie Herman–style: text, feel, rubato, intention). Any mono or stereo guide audio works.
-3. **Mark a phrase** on the ghost — musical sentences and breaths, not arbitrary bars. Click a marked phrase to select it; Option-click to play it. Name them; add lyrics if you have them.
+3. **Mark a phrase** on the ghost — musical sentences and breaths, not arbitrary bars. **Play ghost** opens a phrase at 0; tap **New phrase** at each later line. Or drag on the ghost, or double-click empty space to fill that gap. Click a marked phrase to select it, Option-click to play it. Name them; add lyrics if you have them.
 4. **Voice parts** — add the roster (S1, A2, …) and how many doubles you want on each.
 5. **Sections** — group a run of phrases as *Follow the ghost* (rubato, no click) or *In time* (optional click). A section is those phrases, sung that way.
 6. Open **Sing** for the booth, or **Review** later to promote keepers and export a zip or DAW stems.

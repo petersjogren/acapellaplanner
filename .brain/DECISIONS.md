@@ -12,6 +12,8 @@ Record only choices that future work must not silently reverse.
 - **Deploy is manual.** Publishing on every `main` push is explicitly unwanted.
 - **Phrase overlay tints (2026-09):** even/odd by `sortPhrases` order (gold vs bronze), not gap-based colouring and not slate/forest (those are section/voice).
 - **Waveform phrase click (2026-09):** click selects, Option-click plays once. Click vs mark-drag is pointer travel (`TIMELINE_CLICK_PX` 8), not `MIN_PHRASE_MS` — on a long ghost 50 ms is sub-pixel. Unused space keeps `ew-resize`.
+- **Waveform gap double-click (2026-09):** double-click unused space fills the gap (`gapContainingMs`). A double-click on a marked region does not create.
+- **Phrase mark-along (2026-09):** Play ghost (ghost-only, once, from 0) auto-opens at 0 when 0 is free; first tap commits `[0, tap]`. Later taps are phrase starts. Adjacent marks are `[start,end]`; `addPhrase` still writes 2000/2000 rolls. Stop without taps commits `[0, now]` if ≥ 50 ms. No tap compensation. No Continue-from-last-phrase. Drag-to-mark stays for gaps/repair. Selecting a phrase during a pass does not persist. Listen cannot steal the engine mid-pass.
 
 ## Schema
 
