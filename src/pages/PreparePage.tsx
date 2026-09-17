@@ -17,6 +17,7 @@ import { GhostTimeline } from '../ui/preparer/GhostTimeline.tsx'
 import { SheetCropper } from '../ui/preparer/SheetCropper.tsx'
 import { SheetUploader, type SheetUploadResult } from '../ui/preparer/SheetUploader.tsx'
 import { deriveCompletion } from '../domain/completion.ts'
+import { tapMarkAlong, stopMarkAlong } from '../domain/markAlong.ts'
 import { addPhrase, removePhrase, updatePhrase, type PhrasePatch } from '../domain/phrases.ts'
 import {
   addSection,
@@ -42,6 +43,12 @@ import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
 
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
+}
+
 export function PreparePage() {
   const { project, error, setProject } = useLoadedProject()
   const repo = useProjectRepository()
@@ -53,11 +60,19 @@ export function PreparePage() {
   const [sheetPageIndex, setSheetPageIndex] = useState(0)
   const [sheetPageUrl, setSheetPageUrl] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState<string | null>(null)
+  const [markAlongPlaying, setMarkAlongPlaying] = useState(false)
+  const [openStartMs, setOpenStartMs] = useState<number | null>(null)
+  const [playheadMs, setPlayheadMs] = useState<number | null>(null)
   const projectRef = useRef<Project | null>(null)
   const writeQueueRef = useRef(Promise.resolve())
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
   const sheetPageChangeGenRef = useRef(0)
+  const openStartMsRef = useRef<number | null>(null)
+  const committedIdsRef = useRef<string[]>([])
+  const markAlongPlayingRef = useRef(false)
+  const playheadRafRef = useRef<number | null>(null)
+  const onMarkAlongTapRef = useRef<() => void>(() => {})
 
   bufferRef.current = buffer
 
@@ -98,8 +113,24 @@ export function PreparePage() {
 
   useEffect(() => {
     return () => {
+      if (playheadRafRef.current != null) {
+        cancelAnimationFrame(playheadRafRef.current)
+        playheadRafRef.current = null
+      }
       engineRef.current?.stop()
     }
+  }, [])
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'n' && event.key !== 'N' && event.key !== 'Enter') return
+      if (isTextEntryTarget(event.target)) return
+      if (!markAlongPlayingRef.current) return
+      event.preventDefault()
+      onMarkAlongTapRef.current()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
   useEffect(() => {
@@ -208,6 +239,151 @@ export function PreparePage() {
     return run
   }
 
+  function cancelPlayheadLoop() {
+    if (playheadRafRef.current != null) {
+      cancelAnimationFrame(playheadRafRef.current)
+      playheadRafRef.current = null
+    }
+  }
+
+  function startPlayheadLoop() {
+    cancelPlayheadLoop()
+    const tick = () => {
+      if (!markAlongPlayingRef.current) {
+        playheadRafRef.current = null
+        return
+      }
+      setPlayheadMs(engineRef.current?.getPositionMs() ?? null)
+      playheadRafRef.current = requestAnimationFrame(tick)
+    }
+    playheadRafRef.current = requestAnimationFrame(tick)
+  }
+
+  function setMarkAlongPlayingFlag(value: boolean) {
+    markAlongPlayingRef.current = value
+    setMarkAlongPlaying(value)
+  }
+
+  function setOpenStart(value: number | null) {
+    openStartMsRef.current = value
+    setOpenStartMs(value)
+  }
+
+  function ghostDurationMs() {
+    return (bufferRef.current?.duration ?? 0) * 1000
+  }
+
+  async function persistNewPhrase(startMs: number, endMs: number): Promise<string | undefined> {
+    const beforeIds = new Set((projectRef.current?.phrases ?? []).map((item) => item.id))
+    await persistProject((current) => addPhrase(current, { startMs, endMs }))
+    return (projectRef.current?.phrases ?? []).find((item) => !beforeIds.has(item.id))?.id
+  }
+
+  async function handleNewPhrase() {
+    if (!markAlongPlayingRef.current) return
+    const tapMs = engineRef.current?.getPositionMs()
+    if (tapMs == null) return
+    const result = tapMarkAlong(
+      projectRef.current?.phrases ?? [],
+      openStartMsRef.current,
+      tapMs,
+      ghostDurationMs(),
+    )
+    if (result.kind === 'ignore') return
+    if (result.kind === 'open') {
+      setOpenStart(result.startMs)
+      return
+    }
+    setOpenStart(result.nextOpenMs)
+    const addedId = await persistNewPhrase(result.startMs, result.endMs)
+    if (addedId) {
+      committedIdsRef.current = [...committedIdsRef.current, addedId]
+    }
+  }
+
+  onMarkAlongTapRef.current = () => {
+    void handleNewPhrase()
+  }
+
+  async function finishMarkAlong() {
+    cancelPlayheadLoop()
+    const nowMs = engineRef.current?.getPositionMs() ?? 0
+    const result = stopMarkAlong(
+      projectRef.current?.phrases ?? [],
+      openStartMsRef.current,
+      nowMs,
+      ghostDurationMs(),
+    )
+    setOpenStart(null)
+    engineRef.current?.stop()
+    setPlaying(false)
+    setMarkAlongPlayingFlag(false)
+    setPlayheadMs(null)
+    if (result.kind === 'commit') {
+      const addedId = await persistNewPhrase(result.startMs, result.endMs)
+      if (addedId) {
+        committedIdsRef.current = [...committedIdsRef.current, addedId]
+      }
+    }
+  }
+
+  async function handlePlayGhost() {
+    const buf = bufferRef.current
+    if (!buf || markAlongPlayingRef.current) return
+    committedIdsRef.current = []
+    setOpenStart(null)
+    setPlayError(null)
+    try {
+      const started = await getEngine().play(
+        {
+          startMs: 0,
+          endMs: buf.duration * 1000,
+          preRollMs: 0,
+          postRollMs: 0,
+          gapMs: 0,
+          loop: false,
+        },
+        {
+          onEnded: () => {
+            void finishMarkAlong()
+          },
+        },
+        { ghostGainDb: 0, ghostMute: false },
+      )
+      setPlaying(false)
+      setMarkAlongPlayingFlag(started)
+      if (started) {
+        const opened = tapMarkAlong(
+          projectRef.current?.phrases ?? [],
+          null,
+          0,
+          buf.duration * 1000,
+        )
+        if (opened.kind === 'open') setOpenStart(opened.startMs)
+        startPlayheadLoop()
+      } else {
+        cancelPlayheadLoop()
+        setPlayheadMs(null)
+      }
+    } catch (err: unknown) {
+      setMarkAlongPlayingFlag(false)
+      setPlayError(err instanceof Error && err.message ? err.message : 'Could not play ghost')
+    }
+  }
+
+  async function handleUndoLastTap() {
+    const ids = committedIdsRef.current
+    if (ids.length > 0) {
+      const last = ids[ids.length - 1]!
+      const phrase = projectRef.current?.phrases.find((item) => item.id === last)
+      committedIdsRef.current = ids.slice(0, -1)
+      setOpenStart(phrase?.startMs ?? null)
+      await persistProject((current) => removePhrase(current, last))
+      return
+    }
+    setOpenStart(null)
+  }
+
   async function handleMarkPhrase(startMs: number, endMs: number) {
     await persistProject((current) => addPhrase(current, { startMs, endMs }))
   }
@@ -222,7 +398,7 @@ export function PreparePage() {
   }
 
   function handleSelectPhrase(id: string | null) {
-    if (id !== selectedPhraseId) {
+    if (id !== selectedPhraseId && !markAlongPlayingRef.current) {
       engineRef.current?.stop()
       setPlaying(false)
     }
@@ -261,6 +437,7 @@ export function PreparePage() {
   const selectedPhrase = loaded.phrases.find((item) => item.id === selectedPhraseId) ?? null
 
   async function playPhrase(phrase: Phrase, loop: boolean) {
+    if (markAlongPlayingRef.current) return
     setPlayError(null)
     try {
       const mix = await loadPlaybackMixForPhrase(
@@ -304,8 +481,7 @@ export function PreparePage() {
   }
 
   function handleStop() {
-    engineRef.current?.stop()
-    setPlaying(false)
+    void finishMarkAlong()
   }
 
   async function handleSheetUploaded({ blob, filename }: SheetUploadResult) {
@@ -493,6 +669,45 @@ export function PreparePage() {
           <p className="mt-2">{ghostMeta.filename}</p>
           <p className="mt-1 text-ink-muted">{formatDuration(ghostMeta.durationMs)}</p>
           <GhostImporter label="Replace ghost track" onImported={handleImported} />
+          {buffer ? (
+            <section className="mt-6" aria-label="Mark along">
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red"
+                  disabled={markAlongPlaying}
+                  onClick={() => void handlePlayGhost()}
+                >
+                  Play ghost
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red"
+                  disabled={!markAlongPlaying}
+                  onClick={() => void handleNewPhrase()}
+                >
+                  New phrase
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:bg-ink/5"
+                  onClick={() => void handleUndoLastTap()}
+                >
+                  Undo last tap
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:bg-ink/5"
+                  onClick={handleStop}
+                >
+                  Stop
+                </button>
+              </div>
+              <p className="mt-2 text-sm text-ink-muted">
+                Play the ghost from the start. A phrase opens at 0. Tap New phrase each time a later line begins.
+              </p>
+            </section>
+          ) : null}
           <GhostTimeline
             durationMs={ghostMeta.durationMs}
             phrases={loaded.phrases}
@@ -502,6 +717,12 @@ export function PreparePage() {
             onRemovePhrase={handleRemovePhrase}
             onSelectPhrase={handleSelectPhrase}
             onPlayPhrase={handlePlayPhrase}
+            playheadMs={playheadMs}
+            openPreview={
+              openStartMs != null
+                ? { startMs: openStartMs, endMs: Math.max(openStartMs, playheadMs ?? openStartMs) }
+                : null
+            }
           />
           {selectedPhrase && buffer ? (
             <section className="mt-6" aria-label="Phrase playback">

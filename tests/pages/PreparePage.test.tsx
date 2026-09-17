@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from '../../src/app/routes.tsx'
@@ -498,6 +498,7 @@ describe('PreparePage phrase playback', () => {
   let projectId: string
   let sources: Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }>
   let resumeImpl: (ctx: { state: AudioContextState }) => Promise<void>
+  let fakeCtx: { currentTime: number }
 
   beforeEach(async () => {
     sources = []
@@ -512,6 +513,9 @@ describe('PreparePage phrase playback', () => {
       close = vi.fn(async () => {
         this.state = 'closed'
       })
+      constructor() {
+        fakeCtx = this
+      }
       createGain() {
         return { connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } }
       }
@@ -598,6 +602,21 @@ describe('PreparePage phrase playback', () => {
     )
   }
 
+  async function clearPhrases() {
+    const existing = await repo.getProject(projectId)
+    await repo.saveProject({ ...existing!, phrases: [] })
+  }
+
+  async function startMarkAlong() {
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play ghost' })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Play ghost' }))
+    await waitFor(() => {
+      expect(sources).toHaveLength(1)
+    })
+  }
+
   it('hides playback controls until a phrase is selected', async () => {
     renderPrepare()
     await waitFor(() => {
@@ -605,7 +624,7 @@ describe('PreparePage phrase playback', () => {
     })
     expect(screen.queryByRole('button', { name: 'Play once' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Loop' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+    expect(screen.queryByLabelText('Phrase playback')).toBeNull()
   })
 
   it('plays the selected phrase once, loops with gap, and stops without throwing', async () => {
@@ -632,8 +651,8 @@ describe('PreparePage phrase playback', () => {
       expect(sources.length).toBeGreaterThanOrEqual(2)
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    fireEvent.click(within(screen.getByLabelText('Phrase playback')).getByRole('button', { name: 'Stop' }))
+    fireEvent.click(within(screen.getByLabelText('Phrase playback')).getByRole('button', { name: 'Stop' }))
     expect(screen.queryByText('Playing')).toBeNull()
   })
 
@@ -659,7 +678,7 @@ describe('PreparePage phrase playback', () => {
     await waitFor(() => {
       expect(resolveResume).toBeTypeOf('function')
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    fireEvent.click(within(screen.getByLabelText('Phrase playback')).getByRole('button', { name: 'Stop' }))
     resolveResume?.()
 
     await waitFor(() => {
@@ -728,6 +747,237 @@ describe('PreparePage phrase playback', () => {
     })
     expect(sources[0]?.start).toHaveBeenCalledWith(1, 0.75, 2.35)
     expect(screen.getByText('Playing')).toBeTruthy()
+  })
+
+  it('shows Play ghost without selecting a phrase once the ghost buffer exists', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play ghost' })).toBeTruthy()
+    })
+    expect(screen.getByLabelText('Mark along')).toBeTruthy()
+    expect(screen.getByText('Play the ghost from the start. A phrase opens at 0. Tap New phrase each time a later line begins.')).toBeTruthy()
+    expect(screen.queryByLabelText('Phrase playback')).toBeNull()
+    expect((screen.getByRole('button', { name: 'New phrase' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+  })
+
+  it('Play ghost starts the source at offset 0 covering the buffer and enables New phrase', async () => {
+    renderPrepare()
+    await startMarkAlong()
+    expect(sources[0]?.start).toHaveBeenCalledWith(1, 0, 10)
+    expect((screen.getByRole('button', { name: 'New phrase' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    expect((screen.getByRole('button', { name: 'Play ghost' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+  })
+
+  it('Play ghost opens a phrase at 0 without persisting until New phrase or Stop', async () => {
+    await clearPhrases()
+    renderPrepare()
+    await startMarkAlong()
+
+    expect(screen.getByTestId('mark-along-preview')).toBeTruthy()
+    expect((await repo.getProject(projectId))?.phrases).toHaveLength(0)
+  })
+
+  it('first New phrase tap after Play ghost commits a phrase starting at 0', async () => {
+    await clearPhrases()
+    renderPrepare()
+    await startMarkAlong()
+
+    fakeCtx.currentTime = 1 + 2
+    fireEvent.click(screen.getByRole('button', { name: 'New phrase' }))
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases).toHaveLength(1)
+    })
+    const loaded = await repo.getProject(projectId)
+    expect(loaded?.phrases[0]).toMatchObject({
+      startMs: 0,
+      endMs: 2000,
+      preRollMs: 2000,
+      postRollMs: 2000,
+    })
+  })
+
+  it('Stop without a tap commits the auto-opened phrase from 0', async () => {
+    await clearPhrases()
+    renderPrepare()
+    await startMarkAlong()
+
+    fakeCtx.currentTime = 1 + 2.1
+    fireEvent.click(within(screen.getByLabelText('Mark along')).getByRole('button', { name: 'Stop' }))
+
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases).toHaveLength(1)
+    })
+    expect((await repo.getProject(projectId))?.phrases[0]).toMatchObject({
+      startMs: 0,
+      endMs: 2100,
+    })
+  })
+
+  it('tap then Stop commits the first phrase from 0 and the remainder', async () => {
+    await clearPhrases()
+    renderPrepare()
+    await startMarkAlong()
+
+    fakeCtx.currentTime = 1 + 2
+    fireEvent.click(screen.getByRole('button', { name: 'New phrase' }))
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases).toHaveLength(1)
+    })
+    fakeCtx.currentTime = 1 + 2.1
+    fireEvent.click(within(screen.getByLabelText('Mark along')).getByRole('button', { name: 'Stop' }))
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases).toHaveLength(2)
+    })
+    const loaded = await repo.getProject(projectId)
+    const ordered = [...(loaded?.phrases ?? [])].sort((a, b) => a.startMs - b.startMs)
+    expect(ordered[0]).toMatchObject({ startMs: 0, endMs: 2000 })
+    expect(ordered[1]).toMatchObject({ startMs: 2000, endMs: 2100 })
+  })
+
+  it('New phrase tap into an existing phrase commits up to that phrase start', async () => {
+    renderPrepare()
+    await startMarkAlong()
+
+    fakeCtx.currentTime = 1 + 2
+    fireEvent.click(screen.getByRole('button', { name: 'New phrase' }))
+    await waitFor(async () => {
+      const loaded = await repo.getProject(projectId)
+      expect(loaded?.phrases).toHaveLength(2)
+    })
+    const loaded = await repo.getProject(projectId)
+    const added = loaded?.phrases.find((item) => item.id !== 'phrase-1')
+    expect(added).toMatchObject({ startMs: 0, endMs: 1000 })
+  })
+
+  it('does not auto-open at 0 when a phrase already covers 0', async () => {
+    const existing = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...existing!,
+      phrases: existing!.phrases.map((item) =>
+        item.id === 'phrase-1' ? { ...item, startMs: 0, endMs: 3000 } : item,
+      ),
+    })
+    renderPrepare()
+    await startMarkAlong()
+    expect(screen.queryByTestId('mark-along-preview')).toBeNull()
+
+    fakeCtx.currentTime = 1 + 1
+    fireEvent.click(screen.getByRole('button', { name: 'New phrase' }))
+    expect((await repo.getProject(projectId))?.phrases).toHaveLength(1)
+  })
+
+  it('Undo last tap removes the committed phrase and restores the open start', async () => {
+    await clearPhrases()
+    renderPrepare()
+    await startMarkAlong()
+
+    fakeCtx.currentTime = 1 + 2
+    fireEvent.click(screen.getByRole('button', { name: 'New phrase' }))
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases).toHaveLength(1)
+    })
+    expect((await repo.getProject(projectId))?.phrases[0]).toMatchObject({
+      startMs: 0,
+      endMs: 2000,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo last tap' }))
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases).toHaveLength(0)
+    })
+
+    fakeCtx.currentTime = 1 + 8
+    fireEvent.click(screen.getByRole('button', { name: 'New phrase' }))
+    await waitFor(async () => {
+      const loaded = await repo.getProject(projectId)
+      expect(loaded?.phrases).toHaveLength(1)
+    })
+    const loaded = await repo.getProject(projectId)
+    expect(loaded?.phrases[0]).toMatchObject({ startMs: 0, endMs: 8000 })
+  })
+
+  it('N while playing acts like New phrase; N in a phrase name input does not', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Phrase 1/ })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    await waitFor(() => {
+      expect(screen.getByLabelText('Name')).toBeTruthy()
+    })
+    await startMarkAlong()
+
+    fakeCtx.currentTime = 1
+    fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'N' })
+    expect((await repo.getProject(projectId))?.phrases).toHaveLength(1)
+
+    fakeCtx.currentTime = 1
+    fireEvent.keyDown(document.body, { key: 'N' })
+    fakeCtx.currentTime = 2
+    fireEvent.keyDown(document.body, { key: 'N' })
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases).toHaveLength(2)
+    })
+    const loaded = await repo.getProject(projectId)
+    const added = loaded?.phrases.find((item) => item.id !== 'phrase-1')
+    expect(added).toMatchObject({ startMs: 0, endMs: 1000 })
+  })
+
+  it('selecting Phrase 1 during mark-along after New phrase does not surprise-commit', async () => {
+    renderPrepare()
+    await startMarkAlong()
+
+    fakeCtx.currentTime = 1 + 2
+    fireEvent.click(screen.getByRole('button', { name: 'New phrase' }))
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases.length).toBeGreaterThan(1)
+    })
+    const afterTap = (await repo.getProject(projectId))?.phrases.length
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    expect((await repo.getProject(projectId))?.phrases).toHaveLength(afterTap ?? 0)
+  })
+
+  it('Undo last tap after Stop-commit removes the phrase', async () => {
+    await clearPhrases()
+    renderPrepare()
+    await startMarkAlong()
+
+    fakeCtx.currentTime = 1 + 2
+    fireEvent.click(screen.getByRole('button', { name: 'New phrase' }))
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases).toHaveLength(1)
+    })
+    fakeCtx.currentTime = 1 + 2.1
+    fireEvent.click(within(screen.getByLabelText('Mark along')).getByRole('button', { name: 'Stop' }))
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases).toHaveLength(2)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo last tap' }))
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.phrases).toHaveLength(1)
+    })
+    expect((await repo.getProject(projectId))?.phrases[0]).toMatchObject({
+      startMs: 0,
+      endMs: 2000,
+    })
+  })
+
+  it('Play once during mark-along does not start a phrase window source', async () => {
+    renderPrepare()
+    await startMarkAlong()
+
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play once' }))
+
+    expect(sources[0]?.start).toHaveBeenCalledWith(1, 0, 10)
+    expect(sources).toHaveLength(1)
   })
 })
 

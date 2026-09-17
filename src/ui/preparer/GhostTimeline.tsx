@@ -1,7 +1,14 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { formatDuration } from '../../audio/decode.ts'
 import {
   MIN_PHRASE_MS,
+  gapContainingMs,
   phrasesFromDrag,
   sortPhrases,
   type PhrasePatch,
@@ -17,6 +24,8 @@ export type GhostTimelineProps = {
   onRemovePhrase: (id: string) => void | Promise<void>
   onSelectPhrase?: (id: string | null) => void
   onPlayPhrase?: (id: string) => void
+  playheadMs?: number | null
+  openPreview?: { startMs: number; endMs: number } | null
 }
 
 export type TimelineCursor = 'mark' | 'select' | 'play'
@@ -204,6 +213,8 @@ export function GhostTimeline({
   onRemovePhrase,
   onSelectPhrase,
   onPlayPhrase,
+  playheadMs = null,
+  openPreview = null,
 }: GhostTimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -341,6 +352,14 @@ export function GhostTimeline({
     void run(() => onMarkPhrase(marked.startMs, marked.endMs), 'Could not mark phrase')
   }
 
+  function handleDoubleClick(event: ReactMouseEvent<HTMLElement>) {
+    const ms = msAtTimelineX(event.clientX, event.currentTarget.getBoundingClientRect(), durationMs)
+    if (phraseAtMs(ms, phrases)) return
+    const gap = gapContainingMs(phrases, ms, durationMs)
+    if (!gap) return
+    void run(() => onMarkPhrase(gap.startMs, gap.endMs), 'Could not mark phrase')
+  }
+
   async function run(action: () => void | Promise<void>, fallback: string) {
     try {
       await action()
@@ -364,6 +383,10 @@ export function GhostTimeline({
         <p>Drag on the ghost to mark a phrase.</p>
         <p>Option-click a phrase to play it.</p>
       </div>
+      <p className="mt-1 text-sm text-ink-muted">
+        Or play the ghost — a phrase opens at 0. Tap New phrase at each later start.
+      </p>
+      <p className="mt-1 text-sm text-ink-muted">Double-click empty space to fill that gap.</p>
       <div
         ref={trackRef}
         aria-label="Ghost timeline"
@@ -374,6 +397,7 @@ export function GhostTimeline({
         onPointerUp={(event) => finishDrag(event, true)}
         onPointerCancel={(event) => finishDrag(event, false)}
         onPointerLeave={() => setHoverPhraseId(null)}
+        onDoubleClick={handleDoubleClick}
       >
         <canvas ref={canvasRef} aria-hidden className="block h-24 w-full" />
         <div className="pointer-events-none absolute inset-0">
@@ -395,6 +419,23 @@ export function GhostTimeline({
                 left: `${percent(preview.startMs, durationMs)}%`,
                 width: `${percent(preview.endMs - preview.startMs, durationMs)}%`,
               }}
+            />
+          ) : null}
+          {openPreview ? (
+            <div
+              data-testid="mark-along-preview"
+              className="absolute inset-y-0 bg-ink/25"
+              style={{
+                left: `${percent(openPreview.startMs, durationMs)}%`,
+                width: `${percent(openPreview.endMs - openPreview.startMs, durationMs)}%`,
+              }}
+            />
+          ) : null}
+          {playheadMs != null && Number.isFinite(playheadMs) ? (
+            <div
+              data-testid="ghost-playhead"
+              className="absolute inset-y-0 w-px bg-ink"
+              style={{ left: `${percent(playheadMs, durationMs)}%` }}
             />
           ) : null}
         </div>

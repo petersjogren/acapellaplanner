@@ -58,13 +58,14 @@ function renderTimeline(overrides: Partial<ComponentProps<typeof GhostTimeline>>
   const onPlayPhrase = overrides.onPlayPhrase
   render(
     <GhostTimeline
-      durationMs={overrides.durationMs ?? 10_000}
-      phrases={overrides.phrases ?? []}
+      durationMs={10_000}
+      phrases={[]}
       onMarkPhrase={onMarkPhrase}
       onUpdatePhrase={onUpdatePhrase}
       onRemovePhrase={onRemovePhrase}
       onSelectPhrase={onSelectPhrase}
       onPlayPhrase={onPlayPhrase}
+      {...overrides}
     />,
   )
   return { onMarkPhrase, onUpdatePhrase, onRemovePhrase, onSelectPhrase, onPlayPhrase }
@@ -146,6 +147,27 @@ describe('GhostTimeline', () => {
     expect(screen.queryByText('Add region')).toBeNull()
     expect(screen.getByText('0:00.0')).toBeTruthy()
     expect(screen.getByText('1:23.4')).toBeTruthy()
+  })
+
+  it('renders a playhead at the given ghost time', () => {
+    renderTimeline({ durationMs: 10_000, playheadMs: 2500 })
+
+    expect(screen.getByTestId('ghost-playhead').style.left).toBe('25%')
+  })
+
+  it('renders an open mark-along preview', () => {
+    renderTimeline({ durationMs: 10_000, openPreview: { startMs: 1000, endMs: 4000 } })
+
+    const preview = screen.getByTestId('mark-along-preview')
+    expect(preview.style.left).toBe('10%')
+    expect(preview.style.width).toBe('30%')
+  })
+
+  it('omits playhead and open preview when unset', () => {
+    renderTimeline()
+
+    expect(screen.queryByTestId('ghost-playhead')).toBeNull()
+    expect(screen.queryByTestId('mark-along-preview')).toBeNull()
   })
 
   it('creates a phrase from a pointer drag mapped across the ghost duration', () => {
@@ -301,6 +323,36 @@ describe('GhostTimeline', () => {
     fireEvent.pointerUp(timeline, { clientX: 900, clientY: 10, pointerId: 1 })
 
     expect(onSelectPhrase).not.toHaveBeenCalled()
+    expect(onMarkPhrase).not.toHaveBeenCalled()
+  })
+
+  it('creates a phrase filling the gap on double-click of unused space', () => {
+    const existing = { ...phrase, startMs: 2000, endMs: 3000 }
+    const { onMarkPhrase } = renderTimeline({ phrases: [existing] })
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.dblClick(timeline, { clientX: 500, clientY: 10 })
+
+    expect(onMarkPhrase).toHaveBeenCalledTimes(1)
+    expect(onMarkPhrase).toHaveBeenCalledWith(3000, 10_000)
+  })
+
+  it('fills [0, duration] on double-click when no phrases exist', () => {
+    const { onMarkPhrase } = renderTimeline()
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.dblClick(timeline, { clientX: 400, clientY: 10 })
+
+    expect(onMarkPhrase).toHaveBeenCalledWith(0, 10_000)
+  })
+
+  it('does not create from a double-click on an existing phrase', () => {
+    const onSelectPhrase = vi.fn()
+    const { onMarkPhrase } = renderTimeline({ phrases: [phrase], onSelectPhrase })
+
+    const timeline = mockTimelineRect(1000)
+    fireEvent.dblClick(timeline, { clientX: 50, clientY: 10 })
+
     expect(onMarkPhrase).not.toHaveBeenCalled()
   })
 
