@@ -36,5 +36,6 @@ Active product work is whatever the user asks next. This list is **code-backed**
 - No auto phrase-split by silence.
 - No Tauri / desktop wrapper.
 - UI English only.
+- Sheet crops are static per-phrase images; no scroll-through for phrases spanning multiple crops. Idea: when a phrase is bound to several sheet crops, soft-scroll (smooth animated pan, not a hard cut) through them in sync with elapsed time in the phrase — first crop centered at phrase start, last crop centered by phrase end — so the singer always sees the notes for what they're singing right now, even on long/many-note phrases.
 
 When closing an item, delete it here and note the decision in `DECISIONS.md` if behaviour changed.
