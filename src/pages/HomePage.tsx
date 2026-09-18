@@ -1,7 +1,7 @@
 import { useEffect, useId, useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
-import { renameProject } from '../domain/project.ts'
+import { forkProjectForImport, renameProject, uniqueImportedTitle } from '../domain/project.ts'
 import { createEmptyProject, type Project } from '../domain/schemas.ts'
 import {
   collectProjectBlobIds,
@@ -118,12 +118,17 @@ export function HomePage() {
     setImporting(true)
     setError(null)
     try {
-      const { project, blobs } = await importProjectZip(file)
-      const allowed = new Set(collectProjectBlobIds(project))
+      const { project: incoming, blobs } = await importProjectZip(file)
+      const existingTitles = (projects ?? []).map((item) => item.title)
+      const title = uniqueImportedTitle(incoming.title, existingTitles)
+      const { project, blobIdMap } = forkProjectForImport(incoming, { title })
+      const allowed = new Set(collectProjectBlobIds(incoming))
       for (const item of blobs) {
         if (!allowed.has(item.id)) continue
+        const id = blobIdMap.get(item.id)
+        if (!id) continue
         await repo.putAudioBlob({
-          id: item.id,
+          id,
           projectId: project.id,
           kind: item.kind,
           mimeType: item.mimeType,

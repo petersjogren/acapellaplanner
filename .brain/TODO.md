@@ -31,7 +31,7 @@ Active product work is whatever the user asks next. This list is **code-backed**
 
 ## Product (from original plan, still true)
 
-- No multi-device sync (zip is the bus).
+- No multi-device sync (zip is the bus). Zip import forks a new project (own id, own blobs) instead of overwriting — safe for one-preparer/many-singers fan-out, but there is still no way to merge N singers' returned projects' takes back into one project; combining them today means DAW stem export from each and mixing externally.
 - No tonal guide layer under the ghost.
 - No auto phrase-split by silence.
 - No Tauri / desktop wrapper.

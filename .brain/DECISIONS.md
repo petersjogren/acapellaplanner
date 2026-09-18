@@ -6,6 +6,7 @@ Record only choices that future work must not silently reverse.
 
 - **Booth + planner, not a DAW.** Finish in a real DAW via stems. No auto-tune, no clip nudging.
 - **Local-first, single device.** Zip is backup and the inter-device bus. No server copy of songs.
+- **Zip import always forks a new project (2026-09).** Never `put`-overwrites an existing project by id, even when the zip's embedded id matches one already on the device. `forkProjectForImport` (`domain/project.ts`) gives every import a fresh project id, fresh blob ids for everything it references, and a title from `uniqueImportedTitle` (`"$title (imported)"`, then `(imported 2)`, ...). This is how SATB fan-out/fan-in works: Preparer sends one zip to N singers, each sings and returns their own zip, and importing all N lands as N separate projects side by side — never silently discarding an earlier singer's takes. Reclaiming a project's "slot" (freeing its title/id) still requires an explicit delete first; import itself never deletes or replaces. Combining N singers' takes into one project is still manual (no merge tool) — see TODO.
 - **Ghost timeline is truth.** Sections are feels on a run of phrases (`ghost-follow` vs `fixed-tempo`), never a second clock.
 - **Singer UX:** one Record press = one pass, then Hear / Keep / Scrap. Good enough and Next both mark the cell `enough` (session planner skips it).
 - **Default stack density:** `targetTakes` default 4. Keepers (not star ratings) are what later doubles hear and what stem export prefers.

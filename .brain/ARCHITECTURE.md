@@ -48,7 +48,7 @@ Writes on Prepare / Sing / Review are serialized with `writeQueueRef` and always
 
 `deleteProject` removes the row **and** that project’s blobs. Other mutations that drop take/guide references do **not** always delete blobs (see TODO).
 
-Zip import **keeps original ids** and `put`s over any existing project with the same id.
+Zip import always **forks a new project**: fresh project id, fresh blob ids for every asset referenced, title suffixed via `uniqueImportedTitle` (`domain/project.ts`, `forkProjectForImport`). It never `put`s over an existing project row, even one sharing the zip's embedded id — that would silently discard that project's own takes. Reclaiming an id/title slot requires an explicit `deleteProject` first.
 
 ## Audio engine
 

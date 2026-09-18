@@ -108,7 +108,7 @@ describe('HomePage', () => {
     expect(screen.getByRole('button', { name: 'New song' })).toBeTruthy()
   })
 
-  it('imports a project zip into the list with its audio blob', async () => {
+  it('imports a project zip as a new project, not overwriting the original', async () => {
     const source = await repo.saveProject({
       ...createEmptyProject('Imported song'),
       ghostTrackId: 'blob-tiny',
@@ -124,27 +124,68 @@ describe('HomePage', () => {
       blob: audio,
     })
     const zip = await exportProjectZip(source, async () => audio)
-    await repo.deleteProject(source.id)
 
     renderHome()
     await waitFor(() => {
-      expect(screen.getByText('No songs yet')).toBeTruthy()
+      expect(screen.getByText('Imported song')).toBeTruthy()
     })
 
     const file = new File([zip], 'song.acapella.zip', { type: 'application/zip' })
     fireEvent.change(screen.getByLabelText('Import zip'), { target: { files: [file] } })
 
     await waitFor(() => {
-      expect(screen.getByText('Imported song')).toBeTruthy()
+      expect(screen.getByText('Imported song (imported)')).toBeTruthy()
     })
+    // Original project untouched.
+    expect(screen.getByText('Imported song')).toBeTruthy()
+
     const listed = await repo.listProjects()
-    expect(listed).toHaveLength(1)
-    expect(listed[0]?.title).toBe('Imported song')
-    expect(listed[0]?.ghostTrackId).toBe('blob-tiny')
-    const loadedBlob = await repo.getAudioBlob('blob-tiny')
-    expect(loadedBlob?.kind).toBe('ghost')
-    expect(loadedBlob?.mimeType).toBe('audio/webm')
-    expect(loadedBlob?.byteSize).toBe(11)
+    expect(listed).toHaveLength(2)
+    const original = listed.find((item) => item.id === source.id)
+    const forked = listed.find((item) => item.id !== source.id)
+    expect(original?.title).toBe('Imported song')
+    expect(original?.ghostTrackId).toBe('blob-tiny')
+    expect(forked?.title).toBe('Imported song (imported)')
+    expect(forked?.id).not.toBe(source.id)
+    expect(forked?.ghostTrackId).toBeTruthy()
+    expect(forked?.ghostTrackId).not.toBe('blob-tiny')
+
+    // Both projects keep their own, independent blob.
+    expect(await repo.getAudioBlob('blob-tiny')).toBeTruthy()
+    const forkedBlob = await repo.getAudioBlob(forked!.ghostTrackId!)
+    expect(forkedBlob?.kind).toBe('ghost')
+    expect(forkedBlob?.mimeType).toBe('audio/webm')
+    expect(forkedBlob?.byteSize).toBe(11)
+    expect(forkedBlob?.projectId).toBe(forked!.id)
+  })
+
+  it('numbers repeated imports of the same song apart', async () => {
+    const source = await repo.saveProject(createEmptyProject('Alto part'))
+    const zip = await exportProjectZip(source, async () => undefined)
+
+    renderHome()
+    await waitFor(() => {
+      expect(screen.getByText('Alto part')).toBeTruthy()
+    })
+
+    const file1 = new File([zip], 'song.acapella.zip', { type: 'application/zip' })
+    fireEvent.change(screen.getByLabelText('Import zip'), { target: { files: [file1] } })
+    await waitFor(() => {
+      expect(screen.getByText('Alto part (imported)')).toBeTruthy()
+    })
+
+    const file2 = new File([zip], 'song.acapella.zip', { type: 'application/zip' })
+    fireEvent.change(screen.getByLabelText('Import zip'), { target: { files: [file2] } })
+    await waitFor(() => {
+      expect(screen.getByText('Alto part (imported 2)')).toBeTruthy()
+    })
+
+    const listed = await repo.listProjects()
+    expect(listed.map((item) => item.title).sort()).toEqual(
+      ['Alto part', 'Alto part (imported)', 'Alto part (imported 2)'].sort(),
+    )
+    // Three distinct project ids, none reused from the source or each other.
+    expect(new Set(listed.map((item) => item.id)).size).toBe(3)
   })
 
   it('does not save when project.json is invalid JSON', async () => {
@@ -331,9 +372,13 @@ describe('HomePage', () => {
     fireEvent.change(screen.getByLabelText('Import zip'), { target: { files: [file] } })
 
     await waitFor(() => {
-      expect(screen.getByText('Imported song')).toBeTruthy()
+      expect(screen.getByText('Imported song (imported)')).toBeTruthy()
     })
-    expect(await repo.getAudioBlob('blob-tiny')).toBeTruthy()
+    const listed = await repo.listProjects()
+    expect(listed).toHaveLength(1)
+    const forkedGhostId = listed[0]?.ghostTrackId
+    expect(forkedGhostId).toBeTruthy()
+    expect(await repo.getAudioBlob(forkedGhostId!)).toBeTruthy()
     expect(await repo.getAudioBlob('extra-not-referenced')).toBeUndefined()
     expect(await repo.getAudioBlob('slip')).toBeUndefined()
     expect(await repo.getAudioBlob('evil')).toBeUndefined()
