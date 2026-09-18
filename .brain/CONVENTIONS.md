@@ -48,6 +48,7 @@ Never fire overlapping `saveProject` from click handlers without the queue. Afte
 - One concern per commit (existing history is `feat(area):` / `fix(area):`).
 - User-facing behaviour changes belong in `README.md` when they affect preparer/singer workflow or export.
 - Do not bundle demo audio.
+- `npm run lint` (oxlint) is **not** run in CI on push/PR — the only workflow is `deploy.yml`, manual (`workflow_dispatch`) only, which lints+tests right before a Pages deploy. Run `npm run lint` yourself after any code change; don't rely on CI to catch it.
 
 ## What “done” means for audio features
 

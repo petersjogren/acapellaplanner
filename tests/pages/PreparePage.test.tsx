@@ -505,32 +505,42 @@ describe('PreparePage phrase playback', () => {
     resumeImpl = async (ctx) => {
       ctx.state = 'running'
     }
-    class FakeAudioContext {
-      state: AudioContextState = 'suspended'
-      currentTime = 1
-      destination = {}
-      resume = vi.fn(async () => resumeImpl(this))
-      close = vi.fn(async () => {
-        this.state = 'closed'
-      })
-      constructor() {
-        fakeCtx = this
+    function FakeAudioContext(this: unknown) {
+      const ctx = {
+        state: 'suspended' as AudioContextState,
+        currentTime: 1,
+        destination: {},
+        resume: vi.fn(async () => {
+          await resumeImpl(ctx)
+        }),
+        close: vi.fn(async () => {
+          ctx.state = 'closed'
+        }),
+        createGain() {
+          return { connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } }
+        },
+        createBufferSource() {
+          const source: {
+            buffer: AudioBuffer | null
+            connect: ReturnType<typeof vi.fn>
+            disconnect: ReturnType<typeof vi.fn>
+            start: ReturnType<typeof vi.fn>
+            stop: ReturnType<typeof vi.fn>
+            onended: (() => void) | null
+          } = {
+            buffer: null,
+            connect: vi.fn(),
+            disconnect: vi.fn(),
+            start: vi.fn(),
+            stop: vi.fn(),
+            onended: null,
+          }
+          sources.push(source)
+          return source
+        },
       }
-      createGain() {
-        return { connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } }
-      }
-      createBufferSource() {
-        const source = {
-          buffer: null as AudioBuffer | null,
-          connect: vi.fn(),
-          disconnect: vi.fn(),
-          start: vi.fn(),
-          stop: vi.fn(),
-          onended: null as (() => void) | null,
-        }
-        sources.push(source)
-        return source
-      }
+      fakeCtx = ctx
+      return ctx
     }
     vi.stubGlobal('AudioContext', FakeAudioContext)
 

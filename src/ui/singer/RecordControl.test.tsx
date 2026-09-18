@@ -434,7 +434,7 @@ describe('RecordControl', () => {
     await waitFor(() => {
       expect(repo.saveProject).toHaveBeenCalledTimes(1)
     })
-    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]![0]
     rerender(saved)
     expect(onProjectChange).toHaveBeenCalledWith(saved)
 
@@ -483,7 +483,7 @@ describe('RecordControl', () => {
     listeners.current?.onPassComplete?.()
     listeners.current?.onEnded?.()
     await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
-    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]![0]
     rerender(saved)
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'With ghost' })).toBeTruthy())
@@ -536,7 +536,7 @@ describe('RecordControl', () => {
     listeners.current?.onPassComplete?.()
     listeners.current?.onEnded?.()
     await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
-    rerender(vi.mocked(repo.saveProject).mock.calls[0]?.[0]!)
+    rerender(vi.mocked(repo.saveProject).mock.calls[0]![0])
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Take alone' })).toBeTruthy())
     vi.mocked(engine.play).mockClear()
@@ -563,7 +563,7 @@ describe('RecordControl', () => {
     listeners.current?.onPassComplete?.()
     listeners.current?.onEnded?.()
     await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
-    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]![0]
     rerender(saved)
 
     // Only the take under review exists: nothing to stack against.
@@ -602,7 +602,7 @@ describe('RecordControl', () => {
     listeners.current?.onPassComplete?.()
     listeners.current?.onEnded?.()
     await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
-    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]![0]
     rerender(saved)
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Keep it' })).toBeTruthy())
@@ -629,7 +629,7 @@ describe('RecordControl', () => {
     listeners.current?.onPassComplete?.()
     listeners.current?.onEnded?.()
     await waitFor(() => expect(repo.saveProject).toHaveBeenCalledTimes(1))
-    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]!
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]![0]
     const blobId = saved.takes[0]!.audioBlobId
     rerender(saved)
 

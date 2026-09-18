@@ -92,7 +92,7 @@ describe('encodeWavPadded', () => {
   })
 
   it('trims leading latency compensation from the take', () => {
-    const junk = new Array(48).fill(0.9)
+    const junk = Array.from({ length: 48 }, () => 0.9)
     const bytes = encodeWavPadded(bufferOf([...junk, 0.1]), 0, 1)
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     expect(dv.getUint32(40, true)).toBe(2)
