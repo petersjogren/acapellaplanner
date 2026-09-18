@@ -122,6 +122,16 @@ body {
   transition-duration: var(--fade-duration);
 }
 
+/* Sheet cue soft-scroll (multi-crop pan/zoom, see SheetCue.tsx): transform
+   only triggers compositing, not layout, so the browser can interpolate it
+   smoothly frame to frame. Kept as a class (not inline transition) so
+   prefers-reduced-motion can zero it out below like every other motion. */
+.sheet-cue-pan {
+  transition-property: transform, aspect-ratio;
+  transition-duration: 100ms;
+  transition-timing-function: linear;
+}
+
 @keyframes studio-fade {
   from {
     opacity: 0;
@@ -159,7 +169,8 @@ body {
 
   .fade-in,
   .record-lamp,
-  .studio-transition {
+  .studio-transition,
+  .sheet-cue-pan {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

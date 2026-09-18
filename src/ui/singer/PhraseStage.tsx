@@ -6,7 +6,9 @@ export type PhraseStageProps = {
   phraseIndex: number
   phraseCount: number
   partColor: string
-  sheetPageUrl?: string | null
+  sheetPageUrls?: Array<string | null | undefined>
+  /** Ghost ms elapsed since the phrase started; drives multi-crop soft-scroll. */
+  sheetElapsedMs?: number | null
 }
 
 export function PhraseStage({
@@ -14,7 +16,8 @@ export function PhraseStage({
   phraseIndex,
   phraseCount,
   partColor,
-  sheetPageUrl = null,
+  sheetPageUrls = [],
+  sheetElapsedMs = null,
 }: PhraseStageProps) {
   const lyric = phrase.lyricText?.trim() || phrase.name
 
@@ -32,7 +35,7 @@ export function PhraseStage({
       {phrase.notesForSinger ? (
         <p className="max-w-md text-ink/70">{phrase.notesForSinger}</p>
       ) : null}
-      <SheetCue phrase={phrase} pageImageUrl={sheetPageUrl} />
+      <SheetCue phrase={phrase} pageImageUrls={sheetPageUrls} elapsedMs={sheetElapsedMs} />
     </section>
   )
 }

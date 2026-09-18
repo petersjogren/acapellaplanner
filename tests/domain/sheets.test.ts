@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { bindSheetRefToPhrase, MIN_REGION_NORM, regionFromDrag, sheetPageBlobId } from '../../src/domain/sheets.ts'
+import {
+  addSheetRefToPhrase,
+  bindSheetRefToPhrase,
+  MIN_REGION_NORM,
+  regionFromDrag,
+  removeSheetRefFromPhrase,
+  sheetPageBlobId,
+  sheetPageBlobIdsForPhrase,
+  sheetScrollFrame,
+} from '../../src/domain/sheets.ts'
 import { createEmptyProject, type Phrase, type Project, type SheetRef } from '../../src/domain/schemas.ts'
 
 function phrase(overrides: Partial<Phrase> & { id: string }): Phrase {
@@ -148,5 +157,135 @@ describe('sheetPageBlobId', () => {
   it('returns undefined without sheet refs', () => {
     const item = phrase({ id: 'p1' })
     expect(sheetPageBlobId(projectWithPhrase(item), item)).toBeUndefined()
+  })
+})
+
+describe('addSheetRefToPhrase / removeSheetRefFromPhrase', () => {
+  const refA: SheetRef = {
+    id: 'ref-a',
+    sheetDocId: 'doc-1',
+    pageIndex: 0,
+    regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 },
+  }
+  const refB: SheetRef = {
+    id: 'ref-b',
+    sheetDocId: 'doc-1',
+    pageIndex: 0,
+    regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+  }
+
+  it('appends crops in order instead of replacing', () => {
+    const project = projectWithPhrase(phrase({ id: 'p1', sheetRefs: [refA] }))
+    const next = addSheetRefToPhrase(project, 'p1', refB)
+    expect(next.phrases[0]?.sheetRefs).toEqual([refA, refB])
+  })
+
+  it('throws when the phrase is missing', () => {
+    const project = createEmptyProject()
+    expect(() => addSheetRefToPhrase(project, 'missing', refA)).toThrow(/not found/)
+  })
+
+  it('removes one crop, leaving the others in order', () => {
+    const project = projectWithPhrase(phrase({ id: 'p1', sheetRefs: [refA, refB] }))
+    const next = removeSheetRefFromPhrase(project, 'p1', 'ref-a')
+    expect(next.phrases[0]?.sheetRefs).toEqual([refB])
+  })
+})
+
+describe('sheetPageBlobIdsForPhrase', () => {
+  it('resolves an image id per crop, in order', () => {
+    const item = phrase({
+      id: 'p1',
+      sheetRefs: [
+        { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0 },
+        { id: 'ref-2', sheetDocId: 'doc-1', pageIndex: 1 },
+      ],
+    })
+    const project = projectWithPhrase(item, {
+      sheetDocs: [
+        {
+          id: 'doc-1',
+          name: 'lead.pdf',
+          source: 'pdf',
+          pages: [
+            { pageIndex: 0, imageBlobId: 'img-0' },
+            { pageIndex: 1, imageBlobId: 'img-1' },
+          ],
+        },
+      ],
+    })
+    expect(sheetPageBlobIdsForPhrase(project, item)).toEqual(['img-0', 'img-1'])
+  })
+
+  it('returns an empty array without sheet refs', () => {
+    const item = phrase({ id: 'p1' })
+    expect(sheetPageBlobIdsForPhrase(projectWithPhrase(item), item)).toEqual([])
+  })
+})
+
+describe('sheetScrollFrame', () => {
+  const refA: SheetRef = {
+    id: 'ref-a',
+    sheetDocId: 'doc-1',
+    pageIndex: 0,
+    regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 },
+  }
+  const refB: SheetRef = {
+    id: 'ref-b',
+    sheetDocId: 'doc-1',
+    pageIndex: 0,
+    regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+  }
+  const refC: SheetRef = {
+    id: 'ref-c',
+    sheetDocId: 'doc-2',
+    pageIndex: 0,
+    regionNorm: { x: 0, y: 0, w: 1, h: 1 },
+  }
+
+  it('returns null with no crops', () => {
+    expect(sheetScrollFrame([], [], 0, 1000)).toBeNull()
+  })
+
+  it('returns one slide at progress 0 regardless of elapsed time', () => {
+    const frame = sheetScrollFrame([refA], ['img-a'], 5000, 1000)
+    expect(frame).toEqual({
+      slides: [{ id: 'ref-a', region: refA.regionNorm, imageKey: 'img-a' }],
+      progress: 0,
+    })
+  })
+
+  it('lists every crop as a slide, in order, regardless of source image', () => {
+    const frame = sheetScrollFrame([refA, refC], ['img-a', 'img-c'], 0, 1000)
+    expect(frame?.slides).toEqual([
+      { id: 'ref-a', region: refA.regionNorm, imageKey: 'img-a' },
+      { id: 'ref-c', region: refC.regionNorm, imageKey: 'img-c' },
+    ])
+  })
+
+  it('progress is 0 at elapsed 0 and 1 at durationMs regardless of slide count', () => {
+    const start = sheetScrollFrame([refA, refB], ['img-a', 'img-a'], 0, 1000)
+    expect(start?.progress).toBe(0)
+    const end = sheetScrollFrame([refA, refB], ['img-a', 'img-a'], 1000, 1000)
+    expect(end?.progress).toBe(1)
+  })
+
+  it('progress is continuous mid-phrase, same image or not', () => {
+    const sameImage = sheetScrollFrame([refA, refB], ['img-a', 'img-a'], 500, 1000)
+    expect(sameImage?.progress).toBe(0.5)
+    const differentImage = sheetScrollFrame([refA, refC], ['img-a', 'img-c'], 500, 1000)
+    expect(differentImage?.progress).toBe(0.5)
+  })
+
+  it('clamps elapsed time outside the phrase span', () => {
+    const before = sheetScrollFrame([refA, refB], ['img-a', 'img-a'], -500, 1000)
+    expect(before?.progress).toBe(0)
+    const after = sheetScrollFrame([refA, refB], ['img-a', 'img-a'], 5000, 1000)
+    expect(after?.progress).toBe(1)
+  })
+
+  it('progress is a plain elapsed/duration ratio regardless of how many crops are bound', () => {
+    const oneThird = sheetScrollFrame([refA, refB, refC], ['img-a', 'img-a', 'img-c'], 1000, 3000)
+    expect(oneThird?.progress).toBeCloseTo(1 / 3, 10)
   })
 })

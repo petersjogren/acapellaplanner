@@ -9,7 +9,15 @@ export type SheetCropperProps = {
   phrases: Phrase[]
   selectedPhraseId?: string | null
   onPageChange: (pageIndex: number) => void | Promise<void>
+  /** Replaces the phrase's whole crop sequence with just this one region. */
   onBind: (phraseId: string, region: RegionNorm) => void | Promise<void>
+  /**
+   * Appends this region as the next crop in the phrase's sequence, for a
+   * phrase whose notes span more than one crop — the booth soft-scrolls
+   * through them in order as the phrase plays.
+   */
+  onAddCrop?: (phraseId: string, region: RegionNorm) => void | Promise<void>
+  onRemoveCrop?: (phraseId: string, refId: string) => void | Promise<void>
 }
 
 function messageFrom(error: unknown, fallback: string): string {
@@ -50,6 +58,8 @@ export function SheetCropper({
   selectedPhraseId = null,
   onPageChange,
   onBind,
+  onAddCrop,
+  onRemoveCrop,
 }: SheetCropperProps) {
   const dragRef = useRef<{ x: number; y: number } | null>(null)
   const [preview, setPreview] = useState<RegionNorm | null>(null)
@@ -107,15 +117,38 @@ export function SheetCropper({
     if (!phraseId || !region) return
     try {
       await onBind(phraseId, region)
+      setRegion(null)
       setError(null)
     } catch (err: unknown) {
       setError(messageFrom(err, 'Could not bind sheet crop'))
     }
   }
 
+  async function handleAddCrop() {
+    if (!phraseId || !region || !onAddCrop) return
+    try {
+      await onAddCrop(phraseId, region)
+      setRegion(null)
+      setError(null)
+    } catch (err: unknown) {
+      setError(messageFrom(err, 'Could not add sheet crop'))
+    }
+  }
+
+  async function handleRemoveCrop(refId: string) {
+    if (!phraseId || !onRemoveCrop) return
+    try {
+      await onRemoveCrop(phraseId, refId)
+      setError(null)
+    } catch (err: unknown) {
+      setError(messageFrom(err, 'Could not remove sheet crop'))
+    }
+  }
+
   const overlay = preview ?? region
   const canPrev = pageIndex > 0
   const canNext = pageIndex + 1 < pageCount
+  const boundRefs = phrases.find((item) => item.id === phraseId)?.sheetRefs ?? []
 
   return (
     <section className="mt-6 max-w-3xl" aria-label="Sheet crop">
@@ -189,8 +222,44 @@ export function SheetCropper({
           >
             Bind crop
           </button>
+          {onAddCrop ? (
+            <button
+              type="button"
+              disabled={!phraseId || !region}
+              onClick={() => void handleAddCrop()}
+              title="For a phrase whose notes span more than one crop — the booth soft-scrolls through them in order."
+              className="rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:border-ink/50 disabled:opacity-50"
+            >
+              Add as next crop
+            </button>
+          ) : null}
         </div>
       )}
+      {phraseId && boundRefs.length > 0 ? (
+        <ol className="mt-4 flex flex-wrap gap-2 text-sm" aria-label="Bound crops">
+          {boundRefs.map((ref, index) => (
+            <li
+              key={ref.id}
+              className="flex items-center gap-2 rounded-md border border-ink/15 bg-paper px-3 py-1.5"
+            >
+              <span>
+                Crop {index + 1}
+                {ref.pageIndex !== pageIndex ? ` (page ${ref.pageIndex + 1})` : ''}
+              </span>
+              {onRemoveCrop ? (
+                <button
+                  type="button"
+                  onClick={() => void handleRemoveCrop(ref.id)}
+                  aria-label={`Remove crop ${index + 1}`}
+                  className="text-ink-muted hover:text-record-red"
+                >
+                  ✕
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
       {error ? (
         <p role="alert" className="mt-3 text-record-red">
           {error}

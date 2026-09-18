@@ -6,7 +6,7 @@ import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
 import { GHOST_FOCUS_PRESET_ID } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import { markEnough, reopenEnough, suggestNext } from '../domain/sessionPlan.ts'
-import { sheetPageBlobId } from '../domain/sheets.ts'
+import { sheetPageBlobIdsForPhrase } from '../domain/sheets.ts'
 import type { Phrase, Project, VoicePart } from '../domain/schemas.ts'
 import { SingerShell } from '../ui/shell/SingerShell.tsx'
 import { PartPicker } from '../ui/singer/PartPicker.tsx'
@@ -49,12 +49,14 @@ export function SingPage() {
   const [phraseId, setPhraseId] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
-  const [sheetPageUrl, setSheetPageUrl] = useState<string | null>(null)
+  const [sheetPageUrls, setSheetPageUrls] = useState<Array<string | null>>([])
+  const [sheetElapsedMs, setSheetElapsedMs] = useState<number | null>(null)
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
   const projectRef = useRef<Project | null>(null)
   const writeQueueRef = useRef(Promise.resolve())
   const recordControlRef = useRef<RecordControlHandle>(null)
+  const sheetElapsedRafRef = useRef<number | null>(null)
 
   bufferRef.current = buffer
 
@@ -62,8 +64,9 @@ export function SingPage() {
   const boothPhrase = liveProject && phraseId
     ? liveProject.phrases.find((item) => item.id === phraseId)
     : undefined
-  const sheetImageBlobId =
-    liveProject && boothPhrase ? sheetPageBlobId(liveProject, boothPhrase) : undefined
+  const sheetImageBlobIds =
+    liveProject && boothPhrase ? sheetPageBlobIdsForPhrase(liveProject, boothPhrase) : []
+  const sheetBlobIdsKey = sheetImageBlobIds.join('|')
 
   useEffect(() => {
     if (project && typeof project === 'object') {
@@ -81,29 +84,61 @@ export function SingPage() {
 
   useEffect(() => {
     let cancelled = false
-    let url: string | undefined
-    setSheetPageUrl(null)
-    if (!sheetImageBlobId) return
-    void repo
-      .getAudioBlob(sheetImageBlobId)
-      .then((record) => {
-        if (!record) return
-        const next = URL.createObjectURL(record.blob)
-        if (cancelled) {
-          URL.revokeObjectURL(next)
-          return
-        }
-        url = next
-        setSheetPageUrl(next)
+    const createdUrls: string[] = []
+    setSheetPageUrls([])
+    if (sheetImageBlobIds.length === 0) return
+    // Dedupe: two crops on the same page share one imageBlobId. Calling
+    // createObjectURL once per *index* would mint a distinct URL string per
+    // call even for the same Blob, so sheetScrollFrame's same-image check
+    // (imageKeys compared by ===) would wrongly see "different images" and
+    // hard-cut between crops that are actually the same page — killing the
+    // smooth pan for the common side-by-side-crops-on-one-page case.
+    const uniqueIds = Array.from(new Set(sheetImageBlobIds.filter((id): id is string => Boolean(id))))
+    void Promise.all(uniqueIds.map((id) => repo.getAudioBlob(id)))
+      .then((records) => {
+        const urlById = new Map<string, string>()
+        records.forEach((record, index) => {
+          if (!record) return
+          const next = URL.createObjectURL(record.blob)
+          createdUrls.push(next)
+          urlById.set(uniqueIds[index]!, next)
+        })
+        const urls = sheetImageBlobIds.map((id) => (id ? (urlById.get(id) ?? null) : null))
+        if (!cancelled) setSheetPageUrls(urls)
       })
       .catch(() => {
-        if (!cancelled) setSheetPageUrl(null)
+        if (!cancelled) setSheetPageUrls([])
       })
     return () => {
       cancelled = true
-      if (url) URL.revokeObjectURL(url)
+      for (const url of createdUrls) URL.revokeObjectURL(url)
     }
-  }, [sheetImageBlobId, repo])
+    // sheetBlobIdsKey is the stable identity for sheetImageBlobIds' contents.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetBlobIdsKey, repo])
+
+  // Only a phrase bound to several crops needs to know elapsed time, to pan
+  // between them — one crop (or none) is a static image regardless of where
+  // playback is. Skip the rAF churn for the common single-crop case.
+  useEffect(() => {
+    if (!boothPhrase || boothPhrase.sheetRefs.length < 2) {
+      setSheetElapsedMs(null)
+      return
+    }
+    let cancelled = false
+    function tick() {
+      if (cancelled) return
+      const posMs = engineRef.current?.getPositionMs() ?? null
+      setSheetElapsedMs(posMs == null ? null : Math.max(0, posMs - boothPhrase!.startMs))
+      sheetElapsedRafRef.current = requestAnimationFrame(tick)
+    }
+    sheetElapsedRafRef.current = requestAnimationFrame(tick)
+    return () => {
+      cancelled = true
+      if (sheetElapsedRafRef.current != null) cancelAnimationFrame(sheetElapsedRafRef.current)
+      sheetElapsedRafRef.current = null
+    }
+  }, [boothPhrase])
 
   useEffect(() => {
     return () => {
@@ -272,7 +307,8 @@ export function SingPage() {
             phraseIndex={phraseIndex}
             phraseCount={phrases.length}
             partColor={part.color}
-            sheetPageUrl={sheetPageUrl}
+            sheetPageUrls={sheetPageUrls}
+            sheetElapsedMs={sheetElapsedMs}
           />
           <div className="mt-8">
             <ProgressRibbon

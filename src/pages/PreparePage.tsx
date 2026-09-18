@@ -31,7 +31,7 @@ import {
   type NewVoicePartInput,
   type VoicePartPatch,
 } from '../domain/roster.ts'
-import { bindSheetRefToPhrase } from '../domain/sheets.ts'
+import { addSheetRefToPhrase, bindSheetRefToPhrase, removeSheetRefFromPhrase } from '../domain/sheets.ts'
 import { renameProject, phrasesBeyondGhost, reconcileGhostDuration } from '../domain/project.ts'
 import type { Phrase, Project, RegionNorm, SheetDocument } from '../domain/schemas.ts'
 import { renderPageToCanvas } from '../pdf/renderPage.ts'
@@ -595,6 +595,23 @@ export function PreparePage() {
     )
   }
 
+  async function handleAddCrop(phraseId: string, region: RegionNorm) {
+    const doc = (projectRef.current ?? loaded).sheetDocs.at(-1)
+    if (!doc) return
+    await persistProject((current) =>
+      addSheetRefToPhrase(current, phraseId, {
+        id: crypto.randomUUID(),
+        sheetDocId: doc.id,
+        pageIndex: sheetPageIndex,
+        regionNorm: region,
+      }),
+    )
+  }
+
+  async function handleRemoveCrop(phraseId: string, refId: string) {
+    await persistProject((current) => removeSheetRefFromPhrase(current, phraseId, refId))
+  }
+
   const ghostMeta = loaded.settings.ghostMeta
   const activeSheet = loaded.sheetDocs.at(-1) ?? null
   const hasGhost = Boolean(loaded.ghostTrackId && ghostMeta)
@@ -792,6 +809,8 @@ export function PreparePage() {
             selectedPhraseId={selectedPhraseId}
             onPageChange={handleSheetPageChange}
             onBind={handleBindCrop}
+            onAddCrop={handleAddCrop}
+            onRemoveCrop={handleRemoveCrop}
           />
         ) : null}
       </section>

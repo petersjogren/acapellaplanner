@@ -26,7 +26,7 @@ const playback = vi.hoisted(() => {
       return true
     }),
     stop: vi.fn(),
-    getPositionMs: vi.fn(() => null),
+    getPositionMs: vi.fn((): number | null => null),
   }
 })
 
@@ -576,5 +576,167 @@ describe('SingPage booth flow', () => {
     })
     expect(screen.getByText('when I fall in love')).toBeTruthy()
     expect(screen.getByLabelText('Sheet crop').querySelector('img')).toBeTruthy()
+  })
+
+  it('shows a multi-crop phrase soft-scrolling horizontally as elapsed time advances', async () => {
+    const imageBlobIdA = crypto.randomUUID()
+    const imageBlobIdB = crypto.randomUUID()
+    for (const id of [imageBlobIdA, imageBlobIdB]) {
+      await repo.putAudioBlob({
+        id,
+        projectId,
+        kind: 'sheet',
+        mimeType: 'image/png',
+        byteSize: 4,
+        createdAt: new Date().toISOString(),
+        blob: new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' }),
+      })
+    }
+    const current = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...current!,
+      sheetDocs: [
+        {
+          id: 'doc-1',
+          name: 'lead.pdf',
+          source: 'pdf',
+          pages: [{ pageIndex: 0, imageBlobId: imageBlobIdA }],
+        },
+        {
+          id: 'doc-2',
+          name: 'lead-2.pdf',
+          source: 'pdf',
+          pages: [{ pageIndex: 0, imageBlobId: imageBlobIdB }],
+        },
+      ],
+      phrases: current!.phrases.map((item) =>
+        item.id === 'p1'
+          ? {
+              ...item,
+              startMs: 0,
+              endMs: 1000,
+              // Different sheetDocId per crop — the common "next crop is on
+              // another page" case. The scroll must stay smooth here too,
+              // not just when both crops share one page image.
+              sheetRefs: [
+                {
+                  id: 'ref-1',
+                  sheetDocId: 'doc-1',
+                  pageIndex: 0,
+                  regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 },
+                },
+                {
+                  id: 'ref-2',
+                  sheetDocId: 'doc-2',
+                  pageIndex: 0,
+                  regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+                },
+              ],
+            }
+          : item,
+      ),
+    })
+
+    playback.getPositionMs.mockReturnValue(0)
+    renderSing()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /S1/ })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /S1/ }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sheet crop')).toBeTruthy()
+    })
+    // Both crops render as their own slide with their own resolved image —
+    // a hard proof the two blobs weren't merged/lost by the URL lookup.
+    await waitFor(() => {
+      const slides = screen.getByLabelText('Sheet crop').querySelectorAll('[data-sheet-slide]')
+      expect(slides).toHaveLength(2)
+    })
+
+    const trackTranslateX = () => {
+      const track = screen
+        .getByLabelText('Sheet crop')
+        .querySelector('[data-sheet-cue-track]') as HTMLElement
+      const match = /translateX\((-?[\d.]+)px\)/.exec(track.style.transform)
+      return match ? Number(match[1]) : NaN
+    }
+    let atStart = NaN
+    await waitFor(() => {
+      atStart = trackTranslateX()
+      expect(Number.isFinite(atStart)).toBe(true)
+    })
+
+    playback.getPositionMs.mockReturnValue(1000)
+    await waitFor(() => {
+      expect(trackTranslateX()).toBeLessThan(atStart)
+    })
+  })
+
+  it('resolves two crops on the same page to the same image URL', async () => {
+    // Regression: SingPage used to call createObjectURL once per crop
+    // *index*, minting a distinct URL even for the same underlying Blob.
+    // Two crops sharing one page then looked like two different images to
+    // the booth, which broke the intended smooth scroll for that case.
+    const imageBlobId = crypto.randomUUID()
+    await repo.putAudioBlob({
+      id: imageBlobId,
+      projectId,
+      kind: 'sheet',
+      mimeType: 'image/png',
+      byteSize: 4,
+      createdAt: new Date().toISOString(),
+      blob: new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' }),
+    })
+    const current = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...current!,
+      sheetDocs: [
+        {
+          id: 'doc-1',
+          name: 'lead.pdf',
+          source: 'pdf',
+          pages: [{ pageIndex: 0, imageBlobId }],
+        },
+      ],
+      phrases: current!.phrases.map((item) =>
+        item.id === 'p1'
+          ? {
+              ...item,
+              startMs: 0,
+              endMs: 1000,
+              sheetRefs: [
+                {
+                  id: 'ref-1',
+                  sheetDocId: 'doc-1',
+                  pageIndex: 0,
+                  regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 },
+                },
+                {
+                  id: 'ref-2',
+                  sheetDocId: 'doc-1',
+                  pageIndex: 0,
+                  regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+                },
+              ],
+            }
+          : item,
+      ),
+    })
+
+    renderSing()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /S1/ })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /S1/ }))
+
+    let slideSrcs: (string | null)[] = []
+    await waitFor(() => {
+      const slides = screen.getByLabelText('Sheet crop').querySelectorAll('[data-sheet-slide]')
+      expect(slides).toHaveLength(2)
+      slideSrcs = Array.from(slides).map((slide) => slide.querySelector('img')?.getAttribute('src') ?? null)
+    })
+    expect(slideSrcs[0]).toBeTruthy()
+    expect(slideSrcs[0]).toBe(slideSrcs[1])
   })
 })

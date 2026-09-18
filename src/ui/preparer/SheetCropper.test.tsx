@@ -108,4 +108,61 @@ describe('SheetCropper', () => {
     )
     expect((screen.getByRole('button', { name: 'Next page' }) as HTMLButtonElement).disabled).toBe(true)
   })
+
+  it('appends a crop via "Add as next crop" without touching existing ones', async () => {
+    const onAddCrop = vi.fn()
+    render(
+      <SheetCropper
+        pageImageUrl={PAGE}
+        pageIndex={0}
+        pageCount={1}
+        phrases={[phraseOne]}
+        onPageChange={() => undefined}
+        onBind={() => undefined}
+        onAddCrop={onAddCrop}
+      />,
+    )
+
+    const page = mockPageRect()
+    fireEvent.pointerDown(page, { clientX: 20, clientY: 10, pointerId: 1 })
+    fireEvent.pointerMove(page, { clientX: 120, clientY: 60, pointerId: 1 })
+    fireEvent.pointerUp(page, { clientX: 120, clientY: 60, pointerId: 1 })
+    fireEvent.click(screen.getByRole('button', { name: 'Add as next crop' }))
+
+    await waitFor(() => {
+      expect(onAddCrop).toHaveBeenCalledWith('p1', { x: 0.1, y: 0.1, w: 0.5, h: 0.5 })
+    })
+  })
+
+  it('shows bound crops for the selected phrase and can remove one', async () => {
+    const onRemoveCrop = vi.fn()
+    const bound = {
+      ...phraseOne,
+      sheetRefs: [
+        { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 } },
+        { id: 'ref-2', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 } },
+      ],
+    }
+    render(
+      <SheetCropper
+        pageImageUrl={PAGE}
+        pageIndex={0}
+        pageCount={1}
+        phrases={[bound]}
+        selectedPhraseId="p1"
+        onPageChange={() => undefined}
+        onBind={() => undefined}
+        onRemoveCrop={onRemoveCrop}
+      />,
+    )
+
+    const list = screen.getByLabelText('Bound crops')
+    expect(list.textContent).toContain('Crop 1')
+    expect(list.textContent).toContain('Crop 2')
+
+    fireEvent.click(screen.getByLabelText('Remove crop 1'))
+    await waitFor(() => {
+      expect(onRemoveCrop).toHaveBeenCalledWith('p1', 'ref-1')
+    })
+  })
 })
