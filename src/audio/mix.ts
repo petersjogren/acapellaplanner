@@ -1,5 +1,6 @@
 import { decodeAudioFile } from './decode.ts'
 import { takePlaybackOffsetMs } from './latency.ts'
+import { phraseTimelineStartMs } from '../domain/phrases.ts'
 import type { HeadphoneMixSnapshot, MixPreset, Project, Take } from '../domain/schemas.ts'
 
 export const GHOST_LAYER_REF = 'ghost'
@@ -255,10 +256,18 @@ export async function loadAllKeepersMixForSong(
   for (const take of allKeepers) {
     const buffer = buffers.get(take.id)
     if (!buffer) continue
+    // Prefer the record-time snapshot so an edited or deleted phrase cannot
+    // move, or orphan-drop, a take that has already been sung — see
+    // Take.timelineStartMs. Only a take with neither a snapshot nor a live
+    // phrase (both true only for pre-snapshot data whose phrase is gone)
+    // falls back to 0.
     const phrase = phrasesById.get(take.phraseId)
-    // Matches computePlayWindow's offsetMs: the play window (and so the
-    // take's recording) started at the phrase's head start, not startMs.
-    const startDelayMs = phrase ? Math.max(0, phrase.startMs - (phrase.preRollMs ?? 0)) : 0
+    const startDelayMs =
+      take.timelineStartMs !== undefined
+        ? take.timelineStartMs
+        : phrase
+          ? phraseTimelineStartMs(phrase)
+          : 0
     extra.push({
       buffer,
       gainDb: keeperLayer?.gainDb ?? 0,

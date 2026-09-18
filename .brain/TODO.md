@@ -16,6 +16,7 @@ Active product work is whatever the user asks next. This list is **code-backed**
 - `removePart` drops takes from JSON but does not `deleteAudioBlob`.
 - Replacing a ghost writes a new blob and does not delete the old one.
 - Scrap in RecordControl **does** delete the take blob. Review has no scrap/delete-take UI (uncertain whether that’s intentional).
+- `removePhrase` still leaves orphaned takes' blobs in place (by design now — see Engine / mix; those takes stay playable via `Take.timelineStartMs`), but there is no UI affordance telling the singer/preparer which takes are orphaned, nor a way to clean up their blobs if the user actually wants them gone.
 
 ## Engine / mix
 

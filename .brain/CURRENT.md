@@ -16,6 +16,8 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 
 ## Just landed
 
+Take timing survives phrase edits/deletes: `Take.timelineStartMs` snapshots `phraseTimelineStartMs(phrase)` at record time. Whole-song "All phrases" playback on Review (`loadAllKeepersMixForSong`) and DAW stem export (`planSegments`) both now prefer that snapshot over recomputing from the take's `phraseId`, so moving a phrase on Prepare (or deleting it outright) after singing no longer relocates or silently drops the already-recorded take. Old takes without the field fall back to a live phrase lookup as before. See `.brain/LEARNINGS.md` "Take timing survives phrase edits".
+
 iOS Safari audio-session unlock: on the first user gesture anywhere in the app, a silent looping `<audio>` element is started (`unlockIOSAudioSession` in `src/audio/context.ts`, invoked from `App.tsx`). This flips iOS Safari's audio session from "ambient" (muted by the hardware Ring/Silent switch) to "media" (unaffected), so `AudioContext` playback is audible everywhere, not just on pages that happen to call `getUserMedia()` first. Fixes Prepare's `Play ghost` mark-along being silent on iPhone Safari while Sing's Record (which calls `getUserMedia`) worked. Not proven in CI (jsdom has no real audio session); manual iPhone Safari verification recommended.
 
 Mark-along: Play ghost from 0 (ghost-only, once) auto-opens a phrase at 0 when that time is free; tap **New phrase** at each later line start. Stop without a tap commits `[0, now]` if the open interval is ≥ 50 ms. Drag-to-mark remains. Double-click unused space fills that gap. Click-select and Option-click-play unchanged.

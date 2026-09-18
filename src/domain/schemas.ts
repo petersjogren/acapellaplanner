@@ -217,6 +217,17 @@ export const TakeSchema = z.object({
   latencyCompMs: z.number().optional(),
   peakDb: z.number(),
   clipFlag: z.boolean().optional(),
+  /**
+   * Snapshot of the phrase's play-window start (ghost ms) at record time —
+   * `phraseTimelineStartMs(phrase)` when this take was made. Whole-song
+   * playback ("All phrases" on Review) and DAW stem export read this
+   * instead of recomputing from the take's `phraseId` so that editing or
+   * deleting the phrase afterwards cannot move, or orphan-drop, audio
+   * that has already been sung. Optional: missing on takes recorded before
+   * this field existed, which fall back to the live phrase lookup (or 0 if
+   * that phrase is also gone).
+   */
+  timelineStartMs: z.number().nonnegative().optional(),
 })
 
 export const CompletionCellSchema = z.object({

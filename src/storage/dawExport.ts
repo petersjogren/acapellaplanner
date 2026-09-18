@@ -1,6 +1,7 @@
 import { strToU8, zipSync } from 'fflate'
 import { takePlaybackOffsetMs } from '../audio/latency.ts'
-import type { Phrase, Project } from '../domain/schemas.ts'
+import { phraseTimelineStartMs } from '../domain/phrases.ts'
+import type { Phrase, Project, Take } from '../domain/schemas.ts'
 import { encodeWavPadded, floatToPcm16, msToSamples, WAV_HEADER_BYTES, wavFromPcm16 } from './wav.ts'
 
 /** Filesystem-safe path segment. Strips accents so Swedish part names survive. */
@@ -57,7 +58,22 @@ export type DawExportOptions = {
 }
 
 export function segmentStartMs(phrase: Pick<Phrase, 'startMs' | 'preRollMs'>): number {
-  return Math.max(0, phrase.startMs - (phrase.preRollMs ?? 0))
+  return phraseTimelineStartMs(phrase)
+}
+
+/**
+ * A take's position on the export timeline. Prefers the record-time
+ * snapshot (`take.timelineStartMs`) so an edited or deleted phrase cannot
+ * move, or orphan-drop, audio that has already been sung — see
+ * `Take.timelineStartMs` in domain/schemas.ts. Falls back to the live
+ * phrase for takes recorded before that field existed.
+ */
+export function takeTimelineStartMs(
+  take: Pick<Take, 'timelineStartMs'>,
+  phrase: Pick<Phrase, 'startMs' | 'preRollMs'> | undefined,
+): number {
+  if (take.timelineStartMs !== undefined) return take.timelineStartMs
+  return phrase ? phraseTimelineStartMs(phrase) : 0
 }
 
 export function planSegments(project: Project, options: DawExportOptions): PlannedSegment[] {
@@ -71,7 +87,10 @@ export function planSegments(project: Project, options: DawExportOptions): Plann
     if (options.keepersOnly && take.rating !== 'keeper') continue
     const phrase = phrasesById.get(take.phraseId)
     const part = partsById.get(take.voicePartId)
-    if (!phrase || !part) continue
+    // A take with a timeline snapshot survives its phrase being edited or
+    // deleted; only a take with neither a live phrase nor a snapshot (or a
+    // missing part) is truly unrecoverable and gets skipped.
+    if ((!phrase && take.timelineStartMs === undefined) || !part) continue
     const trimLeadingMs = takePlaybackOffsetMs(take.latencyCompMs)
     segments.push({
       takeId: take.id,
@@ -79,10 +98,10 @@ export function planSegments(project: Project, options: DawExportOptions): Plann
       voicePartId: part.id,
       partName: part.name,
       shortLabel: part.shortLabel,
-      phraseIndex: phraseIndex.get(phrase.id) ?? 1,
-      phraseName: phrase.name,
+      phraseIndex: phrase ? phraseIndex.get(phrase.id) ?? 1 : 1,
+      phraseName: phrase?.name ?? 'Deleted phrase',
       takeIndex: take.takeIndex,
-      timelineStartMs: segmentStartMs(phrase),
+      timelineStartMs: takeTimelineStartMs(take, phrase),
       trimLeadingMs,
       durationMs: Math.max(0, take.durationMs - trimLeadingMs),
     })

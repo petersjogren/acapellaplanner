@@ -218,6 +218,35 @@ describe('loadAllKeepersMixForSong', () => {
     expect(withOffset).toBeTruthy()
     expect(withOffset?.startDelayMs).toBe(0)
   })
+
+  it('keeps a take at its recorded position when the phrase is later moved', async () => {
+    const project = projectWithTwoPhrasesOfKeepers()
+    // k2 was recorded when p2 sat at 5000 - 500 preRoll = 4500.
+    project.takes[1]!.timelineStartMs = 4500
+    // Preparer now drags p2 much later.
+    project.phrases[1] = { ...project.phrases[1]!, startMs: 20000 }
+    const mix = await loadAllKeepersMixForSong(
+      project,
+      STACK_BUILD_PRESET_ID,
+      async () => bufferFor(),
+    )
+    const delays = (mix.extra ?? []).map((layer) => layer.startDelayMs ?? 0).sort((a, b) => a - b)
+    expect(delays).toEqual([0, 4500])
+  })
+
+  it('keeps a take at its recorded position when its phrase is deleted', async () => {
+    const project = projectWithTwoPhrasesOfKeepers()
+    project.takes[1]!.timelineStartMs = 4500
+    project.phrases = [project.phrases[0]!] // delete p2 outright
+    const mix = await loadAllKeepersMixForSong(
+      project,
+      STACK_BUILD_PRESET_ID,
+      async () => bufferFor(),
+    )
+    const delays = (mix.extra ?? []).map((layer) => layer.startDelayMs ?? 0).sort((a, b) => a - b)
+    // Without a snapshot this would fall back to 0 and stack on top of p1.
+    expect(delays).toEqual([0, 4500])
+  })
 })
 
 describe('dbToGain', () => {

@@ -234,6 +234,41 @@ describe('planSegments', () => {
     expect(planSegments(orphanProject, { keepersOnly: false })).toEqual([])
   })
 
+  it('keeps a take at its recorded position when the phrase is moved', () => {
+    const moved = {
+      ...project,
+      phrases: [
+        phrases[0]!,
+        { ...phrases[1]!, startMs: 60000, endMs: 65000 }, // dragged much later
+      ],
+      takes: [
+        {
+          ...sampleTake({ id: 'snapshot-p2', phraseId: 'p2', takeIndex: 3, audioBlobId: 'blob-3', rating: 'keeper' as const }),
+          timelineStartMs: 9750, // recorded when p2 was still at 10000 - 250
+        },
+      ],
+    }
+    const segments = planSegments(moved, { keepersOnly: true })
+    expect(segments).toHaveLength(1)
+    expect(segments[0]?.timelineStartMs).toBe(9750)
+  })
+
+  it('keeps a snapshotted take even after its phrase is deleted, with a placeholder name', () => {
+    const deleted = {
+      ...project,
+      phrases: [phrases[0]!], // p2 is gone
+      takes: [
+        {
+          ...sampleTake({ id: 'snapshot-p2', phraseId: 'p2', takeIndex: 3, audioBlobId: 'blob-3', rating: 'keeper' as const }),
+          timelineStartMs: 9750,
+        },
+      ],
+    }
+    const segments = planSegments(deleted, { keepersOnly: true })
+    expect(segments).toHaveLength(1)
+    expect(segments[0]).toMatchObject({ timelineStartMs: 9750, phraseName: 'Deleted phrase' })
+  })
+
   it('sorts results by timelineStartMs, then phraseIndex, then takeIndex', () => {
     const ids = planSegments(project, { keepersOnly: false }).map((segment) => segment.takeId)
     expect(ids).toEqual(['take-p1', 'take-unrated', 'take-p2', 'take-late'])

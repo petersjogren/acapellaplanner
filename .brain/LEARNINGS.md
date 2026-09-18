@@ -8,6 +8,8 @@ Play window start is `max(0, phrase.startMs - preRollMs)`, end is `endMs + postR
 
 Using `phrase.startMs` as stem origin places every file late by its pre-roll. Skipping the latency trim places every file late by the device profile.
 
+The same "play window start" formula is `phraseTimelineStartMs` in `domain/phrases.ts`, used by three call sites: the record-time snapshot (`Take.timelineStartMs`, written in `RecordControl.persistTake`), `dawExport.segmentStartMs`, and the all-keepers mix's per-take `startDelayMs`. Editing a phrase's `startMs`/`preRollMs`, or deleting it outright, after a take has been recorded against it must not silently move or drop that take from whole-song playback or export — see the snapshot note above and the take-vs-phrase-edit entry below.
+
 ## Ghost duration is a snapshot
 
 `settings.ghostMeta.durationMs` is taken at import. Prepare reconciles it to the decoded buffer when they disagree by >100 ms. Trust the buffer for timeline, clamp, and play window. A truncated ghost must **not** shorten `requestedDurationMs` (recording/listen-back).
@@ -55,3 +57,7 @@ Do not reuse `MIN_PHRASE_MS` (50) to distinguish a waveform click from a mark-dr
 ## Mark-along vs select / Listen
 
 Do not call `finishMarkAlong` / stop-commit from `handleSelectPhrase` — selecting during a pass must not persist. `Listen` `playPhrase` must no-op while `markAlongPlaying` so it cannot steal the engine. Selecting currently stops Listen only.
+
+## Take timing survives phrase edits
+
+A take only stores `phraseId`; before `Take.timelineStartMs` existed, whole-song "All phrases" playback (`loadAllKeepersMixForSong`) and DAW export (`planSegments`) both recomputed a take's timeline position by looking up its *current* phrase. Editing the phrase's `startMs`/`preRollMs` after singing silently moved the already-recorded take; deleting the phrase orphaned it, and the all-keepers mix's `phrase ? ... : 0` fallback then stacked the orphan at position 0 instead of skipping or preserving it (export already skipped orphans, but would have mis-positioned an edited one the same way). Fix: snapshot `phraseTimelineStartMs(phrase)` into `Take.timelineStartMs` at record time (`RecordControl.persistTake`); every consumer prefers that snapshot over recomputing from the live phrase, and only falls back to a live lookup (or 0) for takes recorded before the field existed. Any new whole-song or export code path that positions a take on the timeline must read `take.timelineStartMs` first — recomputing from `phraseId` regresses this bug.

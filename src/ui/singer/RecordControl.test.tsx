@@ -294,6 +294,8 @@ describe('RecordControl', () => {
         clipFlag: false,
         latencyCompMs: 0,
         notes: 'S1_p1_t1',
+        // p1 is startMs: 1000, preRollMs: 250 (see samplePhrase above).
+        timelineStartMs: 750,
       }),
     )
     expect(saved?.takes[0]?.headphoneMixSnapshot).toEqual({

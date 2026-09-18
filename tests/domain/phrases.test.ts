@@ -7,6 +7,7 @@ import {
   gapContainingMs,
   MIN_PHRASE_MS,
   nextPhraseName,
+  phraseTimelineStartMs,
   phrasesFromDrag,
   removePhrase,
   sortPhrases,
@@ -42,6 +43,20 @@ describe('sortPhrases', () => {
 
     expect(sortPhrases(input).map((item) => item.id)).toEqual(['a', 'b'])
     expect(input.map((item) => item.id)).toEqual(['b', 'a'])
+  })
+})
+
+describe('phraseTimelineStartMs', () => {
+  it('is startMs minus preRollMs', () => {
+    expect(phraseTimelineStartMs({ startMs: 1000, preRollMs: 250 })).toBe(750)
+  })
+
+  it('clamps at 0 instead of going negative', () => {
+    expect(phraseTimelineStartMs({ startMs: 1000, preRollMs: 2000 })).toBe(0)
+  })
+
+  it('treats a missing preRollMs as 0', () => {
+    expect(phraseTimelineStartMs({ startMs: 1000 })).toBe(1000)
   })
 })
 

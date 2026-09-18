@@ -28,6 +28,7 @@ import {
   type StartedRecording,
 } from '../../audio/record.ts'
 import { deriveCompletion } from '../../domain/completion.ts'
+import { phraseTimelineStartMs } from '../../domain/phrases.ts'
 import { markInProgress } from '../../domain/sessionPlan.ts'
 import { rateTake, removeTake } from '../../domain/takes.ts'
 import type { Phrase, Project, Take, VoicePart } from '../../domain/schemas.ts'
@@ -166,6 +167,10 @@ export function RecordControl({
       latencyCompMs: storedLatencyCompMs(),
       peakDb: 0,
       clipFlag: false,
+      // Snapshot now, while the phrase is still the one that was sung — see
+      // Take.timelineStartMs. Editing/deleting the phrase later must not
+      // move or orphan-drop this take from whole-song playback / export.
+      timelineStartMs: phraseTimelineStartMs(phrase),
     }
     const next: Project = {
       ...current,

@@ -43,6 +43,18 @@ export function sortPhrases<T extends { startMs: number }>(phrases: T[]): T[] {
   return [...phrases].sort((a, b) => a.startMs - b.startMs)
 }
 
+/**
+ * Where a phrase's play window starts on the ghost timeline: the phrase's
+ * own start minus its head start, clamped to 0. Same formula as
+ * `computePlayWindow`'s `offsetMs` (audio/schedule.ts) — kept here, in pure
+ * domain code, so every consumer shares one formula: the take-time snapshot
+ * (`Take.timelineStartMs`), DAW export's `segmentStartMs`, and the
+ * all-keepers mix's per-take `startDelayMs`.
+ */
+export function phraseTimelineStartMs(phrase: Pick<Phrase, 'startMs' | 'preRollMs'>): number {
+  return Math.max(0, phrase.startMs - (phrase.preRollMs ?? 0))
+}
+
 export function clampPhrase(startMs: number, endMs: number, durationMs: number): PhraseIntervalMs {
   const duration = Math.max(0, durationMs)
   const minLen = Math.min(MIN_PHRASE_MS, duration)
