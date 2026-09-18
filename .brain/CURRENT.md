@@ -16,6 +16,8 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 
 ## Just landed
 
+iOS Safari audio-session unlock: on the first user gesture anywhere in the app, a silent looping `<audio>` element is started (`unlockIOSAudioSession` in `src/audio/context.ts`, invoked from `App.tsx`). This flips iOS Safari's audio session from "ambient" (muted by the hardware Ring/Silent switch) to "media" (unaffected), so `AudioContext` playback is audible everywhere, not just on pages that happen to call `getUserMedia()` first. Fixes Prepare's `Play ghost` mark-along being silent on iPhone Safari while Sing's Record (which calls `getUserMedia`) worked. Not proven in CI (jsdom has no real audio session); manual iPhone Safari verification recommended.
+
 Mark-along: Play ghost from 0 (ghost-only, once) auto-opens a phrase at 0 when that time is free; tap **New phrase** at each later line start. Stop without a tap commits `[0, now]` if the open interval is ≥ 50 ms. Drag-to-mark remains. Double-click unused space fills that gap. Click-select and Option-click-play unchanged.
 
 New phrases persist a 2000 ms head start (`preRollMs`) and 2000 ms crossfade tail (`postRollMs`). Old songs and imported zips stay at 0 / missing — no schema bump, no parse-time default. Play-window math is unchanged.
