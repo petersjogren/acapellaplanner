@@ -71,5 +71,9 @@ describe('PreparerShell', () => {
     expect(screen.getByRole('link', { name: 'Line up headphones' }).getAttribute('href')).toBe(
       '/calibrate',
     )
+    expect(screen.getByRole('link', { name: 'Why this workflow' }).getAttribute('href')).toBe(
+      '/workflow',
+    )
+    expect(screen.getByRole('link', { name: 'Home' }).getAttribute('href')).toBe('/')
   })
 })
