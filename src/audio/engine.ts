@@ -70,6 +70,8 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
   let playOriginSec: number | null = null
   let playOffsetMs = 0
   let playSpanMs = 0
+  /** 0 when not looping; otherwise pass span + gap, for wrapping getPositionMs. */
+  let playLoopPeriodMs = 0
   const sources = new Set<AudioBufferSourceNode>()
   const oscillators = new Set<OscillatorNode>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
@@ -117,6 +119,7 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
   function stop() {
     generation += 1
     playOriginSec = null
+    playLoopPeriodMs = 0
     clearTimers()
     for (const source of sources) {
       disconnectSource(source)
@@ -320,6 +323,9 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
     playOriginSec = when
     playOffsetMs = window.offsetMs
     playSpanMs = window.durationMs
+    playLoopPeriodMs = spec.loop
+      ? (window.requestedDurationMs ?? window.durationMs) + spec.gapMs
+      : 0
 
     const ghostOutput = ctx.createGain()
     ghostOutput.gain.value = mix
@@ -371,9 +377,15 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
 
   function getPositionMs(): number | null {
     if (playOriginSec === null) return null
-    const elapsedMs = (getAudioContext().currentTime - playOriginSec) * 1000
-    const raw = playOffsetMs + Math.max(0, elapsedMs)
-    return Math.min(raw, playOffsetMs + playSpanMs)
+    let elapsedMs = Math.max(0, (getAudioContext().currentTime - playOriginSec) * 1000)
+    if (playLoopPeriodMs > 0) {
+      elapsedMs = elapsedMs % playLoopPeriodMs
+      // Freeze at the end of the pass during the gap, then wrap.
+      elapsedMs = Math.min(elapsedMs, playSpanMs)
+    } else {
+      elapsedMs = Math.min(elapsedMs, playSpanMs)
+    }
+    return playOffsetMs + elapsedMs
   }
 
   return { play, stop, getPositionMs }

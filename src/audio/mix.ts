@@ -287,6 +287,55 @@ export async function loadAllKeepersMixForSong(
 }
 
 /**
+ * Rebase whole-song keeper layers so playback can start at `playStartMs`
+ * instead of ghost 0. A take that begins after the new origin keeps a
+ * relative `startDelayMs`; a take already in progress has that elapsed
+ * time added to `offsetMs` (skip into the buffer). Layers that would only
+ * start at or after `playDurationMs` are dropped.
+ *
+ * Play-along jumps and pause/resume use this. Phrase-loop mixes from
+ * `loadPlaybackMixForPhrase` have no `startDelayMs` — do not run those
+ * through here (it would treat delay 0 as "started at 0" and skip
+ * `playStartMs` into every take).
+ */
+export function rebaseMixToPlayStart(
+  mix: PlaybackMix,
+  playStartMs: number,
+  playDurationMs?: number,
+): PlaybackMix {
+  const extra: MixPlaybackLayer[] = []
+  for (const layer of mix.extra ?? []) {
+    const originalDelay = layer.startDelayMs ?? 0
+    const originalOffset = layer.offsetMs ?? 0
+    const relativeDelay = originalDelay - playStartMs
+    const next: MixPlaybackLayer =
+      relativeDelay >= 0
+        ? { ...layer, startDelayMs: relativeDelay }
+        : { ...layer, startDelayMs: 0, offsetMs: originalOffset - relativeDelay }
+    if (playDurationMs !== undefined && (next.startDelayMs ?? 0) >= playDurationMs) continue
+    extra.push(next)
+  }
+  return { ...mix, extra }
+}
+
+/**
+ * Skip further into every extra layer's buffer. Play-along phrase loop
+ * starts at `phrase.startMs` (no pre-roll), so keeper takes recorded
+ * against the full play window need `preRollMs` added here or their
+ * head-start audio would sound at the sung downbeat.
+ */
+export function shiftMixLayerOffsetMs(mix: PlaybackMix, extraOffsetMs: number): PlaybackMix {
+  if (!extraOffsetMs) return mix
+  return {
+    ...mix,
+    extra: (mix.extra ?? []).map((layer) => ({
+      ...layer,
+      offsetMs: (layer.offsetMs ?? 0) + extraOffsetMs,
+    })),
+  }
+}
+
+/**
  * How a just-recorded take is auditioned:
  * - `ghost` — the take against the ghost, for checking time and vowels
  * - `stack` — the take inside the keepers already on this phrase, for blend

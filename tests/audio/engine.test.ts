@@ -533,6 +533,20 @@ describe('createPlaybackEngine', () => {
     expect(engine.getPositionMs()).toBe(950)
   })
 
+  it('wraps position across loop passes and freezes during the gap', async () => {
+    const engine = engineWith(buffer())
+    await engine.play(
+      spec({ startMs: 0, endMs: 2000, preRollMs: 0, postRollMs: 0, gapMs: 400, loop: true }),
+    )
+
+    // origin is currentTime=1. Span 2000 + gap 400 = period 2400.
+    fakeCtx.currentTime = 3.2 // elapsed 2200, in the gap
+    expect(engine.getPositionMs()).toBe(2000)
+
+    fakeCtx.currentTime = 3.5 // elapsed 2500 → 100 into the next pass
+    expect(engine.getPositionMs()).toBe(100)
+  })
+
   it('stays null when Stop cancels during resume', async () => {
     const engine = engineWith(buffer())
     fakeCtx.resume = vi.fn(async () => {

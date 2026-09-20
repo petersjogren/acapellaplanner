@@ -11,7 +11,9 @@ import {
   mixPresetById,
   mixPresetDescription,
   playbackMixFromResolved,
+  rebaseMixToPlayStart,
   resolveMix,
+  shiftMixLayerOffsetMs,
   stackKeepersForReview,
 } from '../../src/audio/mix.ts'
 import type { MixPreset, Project, Take } from '../../src/domain/schemas.ts'
@@ -246,6 +248,59 @@ describe('loadAllKeepersMixForSong', () => {
     const delays = (mix.extra ?? []).map((layer) => layer.startDelayMs ?? 0).sort((a, b) => a - b)
     // Without a snapshot this would fall back to 0 and stack on top of p1.
     expect(delays).toEqual([0, 4500])
+  })
+})
+
+describe('rebaseMixToPlayStart', () => {
+  const ghost = { duration: 2 } as AudioBuffer
+  const early = { duration: 4 } as AudioBuffer
+  const late = { duration: 4 } as AudioBuffer
+
+  it('shifts later takes earlier and skips into takes already in progress', () => {
+    const mix = rebaseMixToPlayStart(
+      {
+        extra: [
+          { buffer: early, gainDb: 0, offsetMs: 87, startDelayMs: 0 },
+          { buffer: late, gainDb: 0, offsetMs: 0, startDelayMs: 4500 },
+        ],
+      },
+      1000,
+    )
+    expect(mix.extra).toEqual([
+      expect.objectContaining({ buffer: early, offsetMs: 1087, startDelayMs: 0 }),
+      expect.objectContaining({ buffer: late, offsetMs: 0, startDelayMs: 3500 }),
+    ])
+  })
+
+  it('drops takes that would only start after the new window', () => {
+    const mix = rebaseMixToPlayStart(
+      {
+        extra: [
+          { buffer: ghost, gainDb: 0, startDelayMs: 0 },
+          { buffer: late, gainDb: 0, startDelayMs: 5000 },
+        ],
+      },
+      1000,
+      2000,
+    )
+    expect(mix.extra).toHaveLength(1)
+    expect(mix.extra?.[0]?.buffer).toBe(ghost)
+  })
+})
+
+describe('shiftMixLayerOffsetMs', () => {
+  it('adds the extra skip onto every layer offset', () => {
+    const mix = shiftMixLayerOffsetMs(
+      { extra: [{ gainDb: 0, offsetMs: 87 }, { gainDb: 0 }] },
+      2000,
+    )
+    expect(mix.extra?.[0]?.offsetMs).toBe(2087)
+    expect(mix.extra?.[1]?.offsetMs).toBe(2000)
+  })
+
+  it('is a no-op at 0', () => {
+    const original = { extra: [{ gainDb: 0, offsetMs: 10 }] }
+    expect(shiftMixLayerOffsetMs(original, 0)).toBe(original)
   })
 })
 
