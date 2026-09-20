@@ -31,24 +31,27 @@ export type SheetCueProps = {
 export const SHEET_CUE_SLIDE_HEIGHT_PX = 220
 
 /**
- * Absolutely fills its slide box and translates/scales so exactly the
- * slide's own crop rectangle is visible. This never distorts *provided*
- * the box itself is already sized to the crop's own aspect ratio (see the
- * per-slide width math in `SheetCue`) — scaling a correctly-cropped image
- * to fill a box of the *wrong* aspect is exactly what stretches a crop.
+ * Sizes the full page image so this slide's crop rectangle exactly fills
+ * the slide box. Layout properties, not a CSS transform: the crop is
+ * static, and iPad Safari double-paints a transformed `<img>` that lives
+ * inside a translating filmstrip — a half-intensity ghost of the page that
+ * drifts apart from the scrolling crop. Tailwind preflight's
+ * `img { max-width: 100% }` would clamp a width > 100% back to the slide,
+ * so that must be overridden. This never distorts *provided* the box
+ * itself is already sized to the crop's own aspect ratio (see the
+ * per-slide width math in `SheetCue`).
  */
 function regionStyle(region: SheetSlide['region']): CSSProperties {
   const w = region.w <= 0 ? 1 : region.w
   const h = region.h <= 0 ? 1 : region.h
-  const tx = (-region.x / w) * 100
-  const ty = (-region.y / h) * 100
   return {
     position: 'absolute',
-    inset: 0,
-    width: '100%',
-    height: '100%',
-    transformOrigin: '0 0',
-    transform: `translate(${tx}%, ${ty}%) scale(${1 / w}, ${1 / h})`,
+    width: `${(1 / w) * 100}%`,
+    height: `${(1 / h) * 100}%`,
+    left: `${(-region.x / w) * 100}%`,
+    top: `${(-region.y / h) * 100}%`,
+    maxWidth: 'none',
+    maxHeight: 'none',
   }
 }
 
@@ -128,7 +131,7 @@ export function SheetCue({ phrase, pageImageUrls = [], elapsedMs = null }: Sheet
         ref={setFigureEl}
         data-sheet-cue=""
         aria-label="Sheet crop"
-        className="relative mt-2 max-w-xl overflow-hidden rounded-md border border-ink/10 bg-paper-shadow"
+        className="relative mt-2 max-w-xl overflow-hidden contain-paint rounded-md border border-ink/10 bg-paper-shadow"
         style={{ aspectRatio: `${aspectOf(only)}` }}
       >
         <img
@@ -157,18 +160,22 @@ export function SheetCue({ phrase, pageImageUrls = [], elapsedMs = null }: Sheet
   const maxScrollPx = Math.max(0, totalWidthPx - viewportWidthPx)
   const scrollLeftPx = progress * maxScrollPx
   const translateXPx = -scrollLeftPx
+  // No CSS transition on this translateX: Play/Sing sample elapsed every
+  // rAF frame. A 100ms transition on top of that left Safari compositor
+  // ghosts of the strip (the same "drifting half-intensity sheet" as the
+  // nested img transform). The transform itself is already compositor-only.
 
   return (
     <figure
       ref={setFigureEl}
       data-sheet-cue=""
       aria-label="Sheet crop"
-      className="relative mt-2 max-w-xl overflow-hidden rounded-md border border-ink/10 bg-paper-shadow"
+      className="relative mt-2 max-w-xl overflow-hidden contain-paint rounded-md border border-ink/10 bg-paper-shadow"
       style={{ height: SHEET_CUE_SLIDE_HEIGHT_PX }}
     >
       <div
         data-sheet-cue-track=""
-        className="sheet-cue-pan flex h-full"
+        className="flex h-full"
         style={{ width: totalWidthPx, transform: `translateX(${translateXPx}px)` }}
       >
         {slides.map((slide, index) => (

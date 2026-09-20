@@ -92,6 +92,44 @@ describe('SheetCue', () => {
     const img = figure.querySelector('img')
     expect(img).toBeTruthy()
     expect(img?.getAttribute('src')).toBe(PAGE)
+    // Crop via layout, not transform — iPad Safari double-paints a
+    // transformed <img> inside a translating ancestor.
+    // region {x:0.1,y:0.2,w:0.5,h:0.25} → page is 200% × 400% of the box,
+    // shifted so (0.1, 0.2) sits at the box origin.
+    expect(img?.style.width).toBe('200%')
+    expect(img?.style.height).toBe('400%')
+    expect(img?.style.left).toBe('-20%')
+    expect(img?.style.top).toBe('-80%')
+    expect(img?.style.maxWidth).toBe('none')
+    expect(img?.style.maxHeight).toBe('none')
+    expect(img?.style.transform).toBe('')
+  })
+
+  it('does not transform filmstrip imgs — only the track translates', () => {
+    render(
+      <SheetCue
+        phrase={phrase({
+          startMs: 0,
+          endMs: 4000,
+          sheetRefs: [
+            { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 } },
+            { id: 'ref-2', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 } },
+          ],
+        })}
+        pageImageUrls={[PAGE, PAGE]}
+        elapsedMs={1000}
+      />,
+    )
+    const figure = screen.getByLabelText('Sheet crop')
+    const imgs = figure.querySelectorAll('img')
+    expect(imgs).toHaveLength(2)
+    imgs.forEach((img) => {
+      expect(img.style.transform).toBe('')
+    })
+    const track = figure.querySelector('[data-sheet-cue-track]') as HTMLElement
+    expect(track.style.transform).toMatch(/translateX\(-/)
+    expect(track.style.transition).toBe('')
+    expect(track.className).not.toMatch(/sheet-cue-pan/)
   })
 
   it('sets an aspect-ratio style from the region before the image loads (single crop)', () => {
