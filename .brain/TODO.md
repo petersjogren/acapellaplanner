@@ -31,6 +31,7 @@ Active product work is whatever the user asks next. This list is **code-backed**
 
 ## Product (from original plan, still true)
 
+- **Parking lot — multi-phrase Record (do not implement unless asked).** A singer may want one Record press to cover more than one phrase (e.g. two adjacent lines without stopping). Booth stays one-shot per phrase today. Do not silently stretch the play-window across phrases; if we ever do this it needs design (which `phraseId` the take belongs to, Hear/Keep/Scrap, sheet cue, session planner). Keep in mind, not a committed feature.
 - **Play sheet crops jump at phrase boundaries.** v1 reuses `SheetCue` per phrase (`phraseForPlayhead` swaps the active phrase). Crossing a boundary remounts a new crop/filmstrip — a hard cut, not a continuous scroll. Adjacent phrases that share a line of music (or a multi-crop sequence that should feel like one strip across the song) will snap. A whole-song filmstrip vs page+highlight-box vs smarter crossfade needs design, not a quick patch. Do not “fix” this by concatenating `sheetRefs` until that design exists.
 - No multi-device sync (zip is the bus). Zip import forks a new project (own id, own blobs) instead of overwriting — safe for one-preparer/many-singers fan-out, but there is still no way to merge N singers' returned projects' takes back into one project; combining them today means DAW stem export from each and mixing externally.
 - No tonal guide layer under the ghost.
