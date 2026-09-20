@@ -36,7 +36,7 @@ describe('routes', () => {
     )
   }
 
-  it('registers home, prepare, sing, and review routes', async () => {
+  it('registers home, prepare, sing, play, and review routes', async () => {
     renderAt('/')
     expect(screen.getByRole('heading', { name: 'Acapella Planner' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'New song' })).toBeTruthy()
@@ -55,6 +55,9 @@ describe('routes', () => {
     expect(screen.getByRole('link', { name: /Review/ }).getAttribute('href')).toBe(
       `/project/${projectId}/review`,
     )
+    expect(screen.getByRole('link', { name: /Play/ }).getAttribute('href')).toBe(
+      `/project/${projectId}/play`,
+    )
     cleanup()
 
     renderAt(`/project/${projectId}/sing`)
@@ -65,6 +68,13 @@ describe('routes', () => {
       `/project/${projectId}/prepare`,
     )
     expect(screen.getByRole('link', { name: 'Home' }).getAttribute('href')).toBe('/')
+    cleanup()
+
+    renderAt(`/project/${projectId}/play`)
+    await waitFor(() => {
+      expect(screen.getByText('Follow the sheet.')).toBeTruthy()
+    })
+    expect(screen.getByRole('link', { name: 'Play' }).getAttribute('aria-current')).toBe('page')
     cleanup()
 
     renderAt(`/project/${projectId}/review`)

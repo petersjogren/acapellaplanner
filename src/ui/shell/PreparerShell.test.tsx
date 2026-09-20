@@ -13,7 +13,7 @@ function renderShell(ui: ReactElement) {
 }
 
 describe('PreparerShell', () => {
-  it('renders Prepare, Sing, and Review navigation', () => {
+  it('renders Prepare, Sing, Play, and Review navigation', () => {
     renderShell(
       <PreparerShell>
         <p>Score desk</p>
@@ -24,6 +24,7 @@ describe('PreparerShell', () => {
     expect(nav).toBeTruthy()
     expect(screen.getByRole('link', { name: /Prepare/ })).toBeTruthy()
     expect(screen.getByRole('link', { name: /Sing/ })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Play/ })).toBeTruthy()
     expect(screen.getByRole('link', { name: /Review/ })).toBeTruthy()
   })
 
@@ -64,6 +65,9 @@ describe('PreparerShell', () => {
     )
     expect(screen.getByRole('link', { name: /Sing/ }).getAttribute('href')).toBe(
       '/project/song-1/sing',
+    )
+    expect(screen.getByRole('link', { name: /Play/ }).getAttribute('href')).toBe(
+      '/project/song-1/play',
     )
     expect(screen.getByRole('link', { name: /Review/ }).getAttribute('href')).toBe(
       '/project/song-1/review',

@@ -46,6 +46,10 @@ Three recipes, no mixer:
 
 Switch anytime. The booth remembers what you heard on each take.
 
+### Play (follow the sheet)
+
+**Play** is not the booth. The ghost runs top to bottom (or loops one phrase / one section) while the sheet hops with the playhead. Same three headphone recipes. Tap a phrase to jump. Nothing records.
+
 ### What the singer never does
 
 - Set loop points or scrub to find a phrase

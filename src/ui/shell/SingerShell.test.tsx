@@ -60,6 +60,34 @@ describe('SingerShell', () => {
     expect(screen.getByText('The booth is quiet')).toBeTruthy()
   })
 
+  it('links to Sing and Play when a project is loaded', () => {
+    renderShell(
+      <SingerShell songTitle="When I Fall in Love" projectId="song-1" current="play">
+        <p>Follow the sheet</p>
+      </SingerShell>,
+    )
+
+    expect(screen.getByRole('link', { name: 'Sing' }).getAttribute('href')).toBe(
+      '/project/song-1/sing',
+    )
+    expect(screen.getByRole('link', { name: 'Play' }).getAttribute('href')).toBe(
+      '/project/song-1/play',
+    )
+    expect(screen.getByRole('link', { name: 'Play' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('link', { name: 'Sing' }).getAttribute('aria-current')).toBeNull()
+  })
+
+  it('does not link Sing or Play without a project', () => {
+    renderShell(
+      <SingerShell songTitle="When I Fall in Love">
+        <p>Booth</p>
+      </SingerShell>,
+    )
+
+    expect(screen.queryByRole('link', { name: 'Sing' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Play' })).toBeNull()
+  })
+
   it('links back home', () => {
     renderShell(
       <SingerShell songTitle="When I Fall in Love">

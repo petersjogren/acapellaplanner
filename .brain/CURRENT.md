@@ -1,6 +1,6 @@
 # Current state
 
-As of 2026-09-17 (branch `main`).
+As of 2026-09-20 (branch `main`).
 
 Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is documented with mic/PWA caveats, not proven in CI. iPhone Safari (portrait + landscape) is responsive at the shell/page level — same layout as desktop/iPad above `md:`, not proven in CI (manual browser-emulation screenshots only).
 
@@ -9,12 +9,15 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 - Home: create / rename / delete songs; import/export `.acapella.zip`.
 - Prepare: ghost import, phrase mark/edit (incl. head start / crossfade tail), roster (unique short labels), sections as phrase spans (ghost-follow vs fixed-tempo + optional click), one or more sheet crops per phrase (soft-scrolled in the booth when a phrase has several), completion matrix, phrase preview with mix presets.
 - Sing: part picker / surprise-me, session suggestions, one-shot record, Hear (ghost/stack/solo), Keep / Scrap, Good enough / Next (both mark `enough`), Need more takes, mix presets, sheet cue.
+- Play: whole-song follow-along (`/project/:id/play`) with sheet hopping, mix presets, tap-a-phrase jump, Pause on once-through, Practice loop of a phrase or section. No recording.
 - Review: rate (keeper/scratch/1–5), play take with/without ghost, all keepers on a phrase or whole song, project zip, **DAW stem zip** (lanes default, keepers-only default, size estimate).
 - Calibrate: mic meter + **Check mic**; default **Line up** (880 Hz SNR); alternate **Clap with the click** (sequential Normal–Normal, MAD outliers, min 16 clicks, pair cap 400 ms); both auto-save the same `localStorage` profile; type-ms after a miss.
 - PWA app-shell offline; IDB projects survive refresh.
 - Schema v2 + migration from v1 section time ranges.
 
 ## Just landed
+
+Play along (`/project/:id/play`): singers follow the sheet through the whole song without recording. `PlayPage` uses `SingerShell` (Sing | Play tabs); `PreparerShell` also links it. Audio reuses the three mix presets; whole-song keepers go through `loadAllKeepersMixForSong` then `rebaseMixToPlayStart` so a jump/pause mid-song does not leave takes sitting at absolute ghost 0. Phrase-loop uses `loadPlaybackMixForPhrase` plus `shiftMixLayerOffsetMs(preRollMs)` because Play windows are phrase boundaries, not the recording play-window. Practice is a radio on the same page (Once through / Loop this phrase / Loop this section) — `playAlongWindow` in `domain/playAlong.ts`. Sheet hopping reuses `SheetCue` unchanged; `phraseForPlayhead` holds the previous phrase in gaps so the cue does not flash blank. Engine `getPositionMs` wraps across loop passes (freezes during the gap). No schema bump. **Open design:** crops *jump* at phrase boundaries (hard cut to the next phrase’s `SheetCue`); a continuous strip / page-turn needs thinking, see TODO.
 
 Multi-crop sheet cue with a real hard-left-to-hard-right filmstrip scroll, aspect-correct per-slide sizing, and never-stretched crops: a phrase can now bind **several** sheet crops (`SheetCropper`'s new "Add as next crop" button appends via `addSheetRefToPhrase`, alongside a removable list of bound crops; "Bind crop" still *replaces* the whole sequence via `bindSheetRefToPhrase` for the one-crop case). The booth (`SheetCue.tsx`) lays every crop out as a slide in a horizontal track, each sized to its **own** true crop aspect ratio at a shared fixed height (`SHEET_CUE_SLIDE_HEIGHT_PX`, 220px) instead of an equal-width share of the track, so e.g. a 4cm×4cm crop next to a 16cm×4cm crop renders 1x vs 4x wide and neither is squeezed or stretched to match the other. `sheetScrollFrame` (`domain/sheets.ts`) returns `{ slides, progress }` where `progress` is a plain 0–1 ratio of elapsed/duration; the UI maps that straight onto scroll position — 0 is scrolled hard left (the whole strip's own left edge flush with the viewport's left edge, so every part of the first crop is visible from the very start), 1 is scrolled hard right (the strip's own right edge flush with the viewport's right edge, so the phrase never ends with trailing empty space on the right, and the last crop stays fully on screen), with the scroll range clamped to `max(0, totalWidth - viewportWidth)` so a strip that already fits the viewport just never scrolls. The viewport width is measured with a **callback ref** (`useState`, not `useRef` + an empty-deps `useEffect`) because `SingPage` resolves crop image URLs asynchronously and the real `<figure>` often only mounts several renders after `SheetCue`'s first paint — a ref that only measures once, at the component's very first commit, would stay stuck at width 0 forever and scroll the *entire* strip (last crop included) off past the left edge instead of stopping with it in view. `SingPage` dedupes `URL.createObjectURL` calls by blob id (an earlier version minted a distinct URL per crop *index*, so two crops sharing one page looked like two different images and broke the scroll for that — the most common — case) and only runs the rAF elapsed-time loop when the phrase has 2+ crops. The scroll renders via CSS `transform: translateX()` on the track (compositor-only, no layout reflow) with a `.sheet-cue-pan` transition class in `tokens.css` that plugs into the existing `prefers-reduced-motion` handling.
 
@@ -40,4 +43,4 @@ Clap-with-click: longer train (up to 40 clicks) with early stop when the posteri
 
 ## Not in the product yet (schema/UI leftovers)
 
-See `TODO.md`. Mix presets, tonal guides, MusicXML, OPFS, phrase-loop in the booth, and multi-device sync are **not** implemented even where the schema has a hook.
+See `TODO.md`. Mix presets, tonal guides, MusicXML, OPFS, phrase-loop in the booth (Play loops; the booth still does not), and multi-device sync are **not** implemented even where the schema has a hook.

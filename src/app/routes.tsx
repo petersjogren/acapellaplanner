@@ -7,6 +7,7 @@ import type { ProjectRepository } from '../storage/projectRepository.ts'
 import { CalibrationPage } from '../pages/CalibrationPage.tsx'
 import { HomePage } from '../pages/HomePage.tsx'
 import { NotFound } from '../pages/NotFound.tsx'
+import { PlayPage } from '../pages/PlayPage.tsx'
 import { PreparePage } from '../pages/PreparePage.tsx'
 import { ReviewPage } from '../pages/ReviewPage.tsx'
 import { SingPage } from '../pages/SingPage.tsx'
@@ -18,6 +19,7 @@ export const APP_ROUTES = [
   { path: '/workflow', Component: WorkflowPage },
   { path: '/project/:id/prepare', Component: PreparePage },
   { path: '/project/:id/sing', Component: SingPage },
+  { path: '/project/:id/play', Component: PlayPage },
   { path: '/project/:id/review', Component: ReviewPage },
 ] as const
 

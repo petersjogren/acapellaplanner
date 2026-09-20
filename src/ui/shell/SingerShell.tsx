@@ -6,6 +6,7 @@ export type SingerShellProps = {
   songTitle?: string
   partLabel?: string
   projectId?: string
+  current?: 'sing' | 'play'
 }
 
 export function SingerShell({
@@ -13,6 +14,7 @@ export function SingerShell({
   songTitle = 'Untitled song',
   partLabel,
   projectId,
+  current,
 }: SingerShellProps) {
   return (
     <div className="flex min-h-dvh flex-col bg-paper font-ui text-ink fade-in pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
@@ -33,6 +35,24 @@ export function SingerShell({
               You are singing:{' '}
               <span className="font-medium text-ink">{partLabel}</span>
             </p>
+          ) : null}
+          {projectId ? (
+            <>
+              <Link
+                to={`/project/${projectId}/sing`}
+                aria-current={current === 'sing' ? 'page' : undefined}
+                className="text-sm text-ink-muted underline-offset-4 hover:underline"
+              >
+                Sing
+              </Link>
+              <Link
+                to={`/project/${projectId}/play`}
+                aria-current={current === 'play' ? 'page' : undefined}
+                className="text-sm text-ink-muted underline-offset-4 hover:underline"
+              >
+                Play
+              </Link>
+            </>
           ) : null}
           <Link
             to="/workflow"

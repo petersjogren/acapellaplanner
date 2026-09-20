@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 const NAV = [
   { id: 'prepare', label: 'Prepare', hint: 'Score desk' },
   { id: 'sing', label: 'Sing', hint: 'Booth' },
+  { id: 'play', label: 'Play', hint: 'Follow along' },
   { id: 'review', label: 'Review', hint: 'Keepers' },
 ] as const
 
