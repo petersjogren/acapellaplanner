@@ -18,16 +18,35 @@ export type SheetCueProps = {
 }
 
 /**
- * Every filmstrip slide renders at this exact pixel height — not a rem/CSS
- * value — so the width math below (`SHEET_CUE_SLIDE_HEIGHT_PX * ownAspect`)
- * is guaranteed to match what the browser actually paints, regardless of
- * root font-size or zoom. If those two ever drifted apart, a slide's box
- * would stop being exactly its crop's own aspect ratio and the image
- * inside it would distort to fill the mismatch — the one thing this
- * component must never do. Each crop keeps its own true proportions; only
- * the fixed *height* is shared, exactly like a real contact-sheet filmstrip.
+ * Fallback film height when the figure has not been measured yet (jsdom,
+ * first paint). Live booths size slides from the measured figure height so
+ * the strip fills leftover viewport. Width math must use that same height
+ * (`heightPx * ownAspect`) or the crop distorts.
  */
 export const SHEET_CUE_SLIDE_HEIGHT_PX = 220
+
+/**
+ * Fit one crop into the film viewport without stretching. Uses the
+ * measured height as the budget; if that would overflow the measured
+ * width, scale down so a tall/square crop never becomes window-tall.
+ * Unmeasured width (0, jsdom) does not clamp.
+ */
+export function containCropBox(
+  aspect: number,
+  viewportWidthPx: number,
+  viewportHeightPx: number,
+  fallbackHeightPx: number = SHEET_CUE_SLIDE_HEIGHT_PX,
+): { width: number; height: number } {
+  const safeAspect = aspect > 0 ? aspect : 1
+  const heightBudget = viewportHeightPx > 0 ? viewportHeightPx : fallbackHeightPx
+  let height = heightBudget
+  let width = height * safeAspect
+  if (viewportWidthPx > 0 && width > viewportWidthPx) {
+    width = viewportWidthPx
+    height = width / safeAspect
+  }
+  return { width, height }
+}
 
 /**
  * Sizes the full page image so this slide's crop rectangle exactly fills
@@ -54,6 +73,9 @@ function regionStyle(region: SheetSlide['region']): CSSProperties {
   }
 }
 
+const FILM_FRAME_CLASS =
+  'absolute inset-0 overflow-hidden contain-paint rounded-md border border-ink/10 bg-paper-shadow'
+
 export function SheetCue({
   crops,
   pageImageUrls = [],
@@ -67,10 +89,10 @@ export function SheetCue({
   // slides sharing one page image share one cached size.
   const [naturalSizes, setNaturalSizes] = useState<Record<string, { w: number; h: number }>>({})
   // Measured so scroll position can be computed against the strip's real
-  // width vs the viewport's real width. Only matters for the multi-slide
-  // filmstrip; harmless (and cheap) to keep measuring in the single-crop
-  // case too rather than call this hook conditionally.
-  const [viewportWidthPx, setViewportWidthPx] = useState(0)
+  // width vs the viewport's real width, and so slide height matches the
+  // painted figure (booth dock layout). Only width matters for scroll
+  // range; height matters for never-stretch width math.
+  const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 })
   // A *callback* ref (state, not useRef) on purpose: the caller (SingPage)
   // resolves crop image URLs asynchronously, so this component often
   // renders `null` first and only mounts a real <figure> once those
@@ -87,12 +109,19 @@ export function SheetCue({
 
   useEffect(() => {
     if (!figureEl) return
-    const update = () => setViewportWidthPx(figureEl.clientWidth)
+    let cancelled = false
+    const update = () => {
+      if (cancelled) return
+      setViewportSize({ w: figureEl.clientWidth, h: figureEl.clientHeight })
+    }
     update()
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(update)
     observer.observe(figureEl)
-    return () => observer.disconnect()
+    return () => {
+      cancelled = true
+      observer.disconnect()
+    }
   }, [figureEl])
 
   const frame = sheetScrollFrame(crops, pageImageUrls, progressProp ?? 0)
@@ -100,6 +129,9 @@ export function SheetCue({
 
   const { slides, progress } = frame
   if (!slides.some((slide) => slide.imageKey)) return null
+
+  const viewportWidthPx = viewportSize.w
+  const slideHeightPx = viewportSize.h > 0 ? viewportSize.h : SHEET_CUE_SLIDE_HEIGHT_PX
 
   function aspectOf(slide: SheetSlide): number {
     const region = slide.region
@@ -128,49 +160,55 @@ export function SheetCue({
   if (slides.length === 1) {
     const only = slides[0]!
     if (!only.imageKey) return null
-    // Single crop: no filmstrip needed, just hug the box to the crop's own
-    // aspect ratio exactly (same never-stretch guarantee, simpler layout).
+    const box = containCropBox(aspectOf(only) || 1, viewportWidthPx, viewportSize.h)
+    // Single crop: contain the box in the full-width film viewport so a
+    // square crop never becomes window-tall. Same never-stretch guarantee
+    // as the filmstrip — the box is the crop's own aspect.
     return (
       <figure
         ref={setFigureEl}
         data-sheet-cue=""
         aria-label="Sheet crop"
-        className={`relative mt-2 max-w-xl overflow-hidden contain-paint rounded-md border border-ink/10 bg-paper-shadow${
-          onPickPosition ? ' cursor-pointer' : ''
-        }`}
-        style={{ aspectRatio: `${aspectOf(only)}` }}
+        className={`${FILM_FRAME_CLASS} flex items-center${onPickPosition ? ' cursor-pointer' : ''}`}
         onClick={
           onPickPosition
             ? (event) => {
-                const rect = event.currentTarget.getBoundingClientRect()
+                const boxEl = event.currentTarget.querySelector('[data-sheet-crop-box]')
+                const rect = (boxEl ?? event.currentTarget).getBoundingClientRect()
                 if (!(rect.width > 0)) return
                 onPickPosition(Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)))
               }
             : undefined
         }
       >
-        <img
-          src={only.imageKey}
-          alt=""
-          draggable={false}
-          style={regionStyle(only.region)}
-          onLoad={handleLoad(only)}
-        />
+        <div
+          data-sheet-crop-box=""
+          className="relative shrink-0 overflow-hidden"
+          style={{ width: box.width, height: box.height }}
+        >
+          <img
+            src={only.imageKey}
+            alt=""
+            draggable={false}
+            style={regionStyle(only.region)}
+            onLoad={handleLoad(only)}
+          />
+        </div>
       </figure>
     )
   }
 
   // Multi-crop filmstrip: each slide keeps its own true crop aspect ratio —
   // never squeezed into an equal-width share of the track — by sizing its
-  // width to SHEET_CUE_SLIDE_HEIGHT_PX * its own aspect, then laying every
-  // slide out side by side. `progress` (0–1) maps directly onto scroll
-  // position: 0 is scrolled hard left (first slide's left edge flush with
-  // the viewport's left edge — every part of it visible from elapsed 0),
-  // 1 is scrolled hard right (last slide's right edge flush with the
-  // viewport's right edge). `maxScrollPx` is clamped to >= 0 so a strip
-  // narrower than the viewport (few/small crops) just never scrolls,
-  // rather than reserving empty space past either edge.
-  const widths = slides.map((slide) => SHEET_CUE_SLIDE_HEIGHT_PX * (aspectOf(slide) || 1))
+  // width to slideHeightPx * its own aspect, then laying every slide out
+  // side by side. `progress` (0–1) maps directly onto scroll position: 0
+  // is scrolled hard left (first slide's left edge flush with the
+  // viewport's left edge — every part of it visible from elapsed 0), 1 is
+  // scrolled hard right (last slide's right edge flush with the viewport's
+  // right edge). `maxScrollPx` is clamped to >= 0 so a strip narrower than
+  // the viewport (few/small crops) just never scrolls, rather than
+  // reserving empty space past either edge.
+  const widths = slides.map((slide) => slideHeightPx * (aspectOf(slide) || 1))
   const totalWidthPx = widths.reduce((sum, width) => sum + width, 0)
   const maxScrollPx = Math.max(0, totalWidthPx - viewportWidthPx)
   const scrollLeftPx = center
@@ -187,10 +225,7 @@ export function SheetCue({
       ref={setFigureEl}
       data-sheet-cue=""
       aria-label="Sheet crop"
-      className={`relative mt-2 max-w-xl overflow-hidden contain-paint rounded-md border border-ink/10 bg-paper-shadow${
-        onPickPosition ? ' cursor-pointer' : ''
-      }`}
-      style={{ height: SHEET_CUE_SLIDE_HEIGHT_PX }}
+      className={`${FILM_FRAME_CLASS}${onPickPosition ? ' cursor-pointer' : ''}`}
       onClick={
         onPickPosition
           ? (event) => {

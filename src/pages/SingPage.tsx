@@ -9,6 +9,7 @@ import { markEnough, reopenEnough, suggestNext } from '../domain/sessionPlan.ts'
 import { filmScrollProgress, sheetPageBlobIdsForCrops } from '../domain/sheets.ts'
 import type { Phrase, Project, VoicePart } from '../domain/schemas.ts'
 import { SingerShell } from '../ui/shell/SingerShell.tsx'
+import { BoothLayout } from '../ui/singer/BoothLayout.tsx'
 import { PartPicker } from '../ui/singer/PartPicker.tsx'
 import { PhraseStage } from '../ui/singer/PhraseStage.tsx'
 import { ProgressRibbon } from '../ui/singer/ProgressRibbon.tsx'
@@ -290,14 +291,69 @@ export function SingPage() {
   return (
     <SingerShell songTitle={loaded.title} partLabel={part?.name} projectId={loaded.id} current="sing">
       {!ready ? (
-        <>
+        <div className="pb-8 md:pb-12">
           <p className="font-display text-lyric leading-snug">The booth is quiet.</p>
           <p className="mt-3 max-w-md text-ink/70">{EMPTY_BOOTH}</p>
-        </>
+        </div>
       ) : !voicePartId ? (
-        <PartPicker parts={parts} onPick={handlePick} onSurprise={handleSurprise} />
+        <div className="pb-8 md:pb-12">
+          <PartPicker parts={parts} onPick={handlePick} onSurprise={handleSurprise} />
+        </div>
       ) : part && phrase ? (
-        <>
+        <BoothLayout
+          dock={
+            <>
+              <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+                <RecordControl
+                  key={`${phrase.id}:${part.id}`}
+                  ref={recordControlRef}
+                  phrase={phrase}
+                  voicePart={part}
+                  project={loaded}
+                  onProjectChange={handleProjectChange}
+                  engine={getEngine()}
+                  mixPresetId={mixPresetId}
+                />
+                <MixPresetSelect compact value={mixPresetId} onChange={setMixPresetId} />
+                <ProgressRibbon
+                  takeCount={takeCount}
+                  targetTakes={targetTakes}
+                  sungPhrases={sungPhrases}
+                  phraseCount={phrases.length}
+                  partName={part.name}
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-4">
+                <button
+                  type="button"
+                  onClick={handleGoodEnough}
+                  className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50"
+                >
+                  Good enough
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  className="text-sm text-ink-muted underline-offset-4 hover:underline"
+                >
+                  Next
+                </button>
+                <button
+                  type="button"
+                  onClick={handleChooseAnother}
+                  className="text-sm text-ink-muted underline-offset-4 hover:underline"
+                >
+                  Sing another part
+                </button>
+              </div>
+              {saveError ? (
+                <p role="alert" className="mt-3 text-record-red">
+                  {saveError}
+                </p>
+              ) : null}
+            </>
+          }
+        >
           <PhraseStage
             phrase={phrase}
             phraseIndex={phraseIndex}
@@ -308,59 +364,9 @@ export function SingPage() {
             sheetProgress={sheetProgress}
             sheetCenter={(loaded.filmPins?.length ?? 0) > 0}
           />
-          <div className="mt-8">
-            <ProgressRibbon
-              takeCount={takeCount}
-              targetTakes={targetTakes}
-              sungPhrases={sungPhrases}
-              phraseCount={phrases.length}
-              partName={part.name}
-            />
-          </div>
-          <div className="mt-8">
-            <MixPresetSelect value={mixPresetId} onChange={setMixPresetId} />
-          </div>
-          <RecordControl
-            key={`${phrase.id}:${part.id}`}
-            ref={recordControlRef}
-            phrase={phrase}
-            voicePart={part}
-            project={loaded}
-            onProjectChange={handleProjectChange}
-            engine={getEngine()}
-            mixPresetId={mixPresetId}
-          />
-          <div className="mt-8 flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              onClick={handleGoodEnough}
-              className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50"
-            >
-              Good enough
-            </button>
-            <button
-              type="button"
-              onClick={handleNext}
-              className="text-sm text-ink-muted underline-offset-4 hover:underline"
-            >
-              Next
-            </button>
-            <button
-              type="button"
-              onClick={handleChooseAnother}
-              className="text-sm text-ink-muted underline-offset-4 hover:underline"
-            >
-              Sing another part
-            </button>
-          </div>
-          {saveError ? (
-            <p role="alert" className="mt-4 text-record-red">
-              {saveError}
-            </p>
-          ) : null}
-        </>
+        </BoothLayout>
       ) : (
-        <>
+        <div className="pb-8 md:pb-12">
           <p className="font-display text-lyric leading-snug">
             {part ? `That’s a wrap for ${part.name}.` : 'Every line has a home.'}
           </p>
@@ -387,7 +393,7 @@ export function SingPage() {
               Sing another part
             </button>
           </div>
-        </>
+        </div>
       )}
     </SingerShell>
   )

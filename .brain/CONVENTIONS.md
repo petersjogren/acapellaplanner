@@ -17,7 +17,7 @@
 
 ## UI
 
-- Preparer chrome: `PreparerShell` (Prepare / Sing / Play / Review). Singer: `SingerShell` — large lyric type, almost no chrome. Play uses SingerShell (follow-along, no Record).
+- Preparer chrome: `PreparerShell` (Prepare / Sing / Play / Review). Singer: `SingerShell` — large lyric type, almost no chrome. Play uses SingerShell (follow-along, no Record). Sing/Play booth is `BoothLayout` (film fills leftover height; dock stays on screen).
 - Copy is singer language (“Good enough”, “Hear it”, “Line up headphones”), not DAW jargon.
 - Studio palette lives in `src/styles/tokens.css` (`paper` / `ink` / `record-red` / gold-slate-forest tints). Prefer tokens over new hex. Honour `prefers-reduced-motion`.
 - Do not add a mixer. Mix changes go through the three builtin presets (and take-review modes).

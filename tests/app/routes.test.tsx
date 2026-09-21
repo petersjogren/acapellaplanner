@@ -72,7 +72,7 @@ describe('routes', () => {
 
     renderAt(`/project/${projectId}/play`)
     await waitFor(() => {
-      expect(screen.getByText('Follow the sheet.')).toBeTruthy()
+      expect(screen.getByText(/Import a ghost on Prepare/)).toBeTruthy()
     })
     expect(screen.getByRole('link', { name: 'Play' }).getAttribute('aria-current')).toBe('page')
     cleanup()

@@ -17,8 +17,8 @@ export function SingerShell({
   current,
 }: SingerShellProps) {
   return (
-    <div className="flex min-h-dvh flex-col bg-paper font-ui text-ink fade-in pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
-      <header className="flex flex-col gap-3 py-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:py-5 md:flex-row md:items-baseline md:justify-between md:gap-6 md:pl-[max(2rem,env(safe-area-inset-left))] md:pr-[max(2rem,env(safe-area-inset-right))]">
+    <div className="flex h-dvh min-h-dvh flex-col bg-paper font-ui text-ink fade-in pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+      <header className="flex shrink-0 flex-col gap-3 py-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:py-5 md:flex-row md:items-baseline md:justify-between md:gap-6 md:pl-[max(2rem,env(safe-area-inset-left))] md:pr-[max(2rem,env(safe-area-inset-right))]">
         {projectId ? (
           <Link
             to={`/project/${projectId}/prepare`}
@@ -74,7 +74,7 @@ export function SingerShell({
           </Link>
         </div>
       </header>
-      <main className="flex flex-1 flex-col pb-8 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pb-8 md:pb-12 md:pl-[max(2rem,env(safe-area-inset-left))] md:pr-[max(2rem,env(safe-area-inset-right))]">{children}</main>
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:pl-[max(2rem,env(safe-area-inset-left))] md:pr-[max(2rem,env(safe-area-inset-right))]">{children}</main>
     </div>
   )
 }

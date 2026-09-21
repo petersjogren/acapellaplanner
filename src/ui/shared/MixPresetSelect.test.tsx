@@ -34,6 +34,12 @@ describe('MixPresetSelect', () => {
     expect(screen.getByText(/ghost muted/i)).toBeTruthy()
   })
 
+  it('hides the mix description in compact dock chrome', () => {
+    render(<MixPresetSelect compact value={GHOST_FOCUS_PRESET_ID} onChange={vi.fn()} />)
+    expect(screen.getByRole('combobox', { name: 'Headphones' })).toBeTruthy()
+    expect(screen.queryByText(/ghost full, stack silent/i)).toBeNull()
+  })
+
   it('notifies when the selected preset changes', () => {
     const onChange = vi.fn()
     render(<MixPresetSelect value={GHOST_FOCUS_PRESET_ID} onChange={onChange} />)

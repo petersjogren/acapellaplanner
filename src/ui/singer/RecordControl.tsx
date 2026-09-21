@@ -463,7 +463,7 @@ export function RecordControl({
   }, [engine])
 
   return (
-    <section className="mt-10 flex flex-col items-start gap-4" aria-label="Record">
+    <section className="flex flex-col items-start gap-3" aria-label="Record">
       <p className="text-sm text-ink-muted" aria-label="Takes">
         {takeCount} / {targetTakes}
       </p>

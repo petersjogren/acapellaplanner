@@ -25,6 +25,7 @@ describe('SingerShell', () => {
     expect(screen.getByRole('heading', { name: 'When I Fall in Love' })).toBeTruthy()
     expect(screen.getByText(/You are singing/)).toBeTruthy()
     expect(screen.getByText('Alto 2')).toBeTruthy()
+    expect(banner.parentElement?.className).toMatch(/\bh-dvh\b/)
   })
 
   it('links the song title back to Prepare when a project is loaded', () => {

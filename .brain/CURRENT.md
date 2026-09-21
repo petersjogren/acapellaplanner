@@ -8,14 +8,16 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 
 - Home: create / rename / delete songs; import/export `.acapella.zip`.
 - Prepare: ghost import, phrase mark/edit (incl. head start / crossfade tail), roster (unique short labels), sections as phrase spans (ghost-follow vs fixed-tempo + optional click), **score film** (ordered sheet crops for the whole song), completion matrix, phrase preview with mix presets.
-- Sing: part picker / surprise-me, session suggestions, one-shot record, Hear (ghost/stack/solo), Keep / Scrap, Good enough / Next (both mark `enough`), Need more takes, mix presets, sheet cue that follows the song film.
-- Play: whole-song follow-along (`/project/:id/play`) with a continuous score-film camera, mix presets, tap-a-phrase jump, Pause on once-through, Practice loop of a phrase or section. Click the visible film to pin that moment to the centre of the viewport; **Clear all** drops the pins. No recording.
+- Sing: part picker / surprise-me, session suggestions, one-shot record, Hear (ghost/stack/solo), Keep / Scrap, Good enough / Next (both mark `enough`), Need more takes, mix presets, **dock booth** (full-width film + Record always on screen).
+- Play: whole-song follow-along (`/project/:id/play`) with the same dock booth, mix presets, tap-a-phrase jump (horizontal chips), Pause on once-through, Practice loop of a phrase or section. Click the visible film to pin that moment to the centre of the viewport; **Clear all** drops the pins. No recording.
 - Review: rate (keeper/scratch/1–5), play take with/without ghost, all keepers on a phrase or whole song, project zip, **DAW stem zip** (lanes default, keepers-only default, size estimate).
 - Calibrate: mic meter + **Check mic**; default **Line up** (880 Hz SNR); alternate **Clap with the click** (sequential Normal–Normal, MAD outliers, min 16 clicks, pair cap 400 ms); both auto-save the same `localStorage` profile; type-ms after a miss.
 - PWA app-shell offline; IDB projects survive refresh.
 - Schema v3 + migration from v2 per-phrase `sheetRefs` into `sheetCrops`. v1 section spans still migrate through.
 
 ## Just landed
+
+Sing/Play **dock booth**: film is leftover viewport, full width of main (shell margins). Record / Play / Good enough live in a sticky dock (`BoothLayout`, shared). `SheetCue` fills that slot — slide height is the measured figure (`SHEET_CUE_SLIDE_HEIGHT_PX` 220 only if unmeasured); single crop contains so a square never becomes window-tall. Camera math, crop layout, and iPad no-nested-`<img>`-transform unchanged.
 
 Song-level sheet film (schema v3): crops live on `project.sheetCrops`. Play click-to-pin (`project.filmPins`: ghost ms ↔ film `u`) warps `filmScrollProgress` piecewise-linear in ghost time; no pins = uniform occupied-time camera, edge-flush. With pins, the camera centres the interpolated `u`. Prepare is crop-only. Play and Sing share one `SheetCue`. Lyric still hops with `phraseForPlayhead`; the strip does not remount. iPad rules unchanged. Old songs flatten `sheetRefs` in timeline order and collapse consecutive identical rectangles.
 

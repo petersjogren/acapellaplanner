@@ -150,7 +150,7 @@ describe('PlayPage', () => {
     renderPlay()
 
     await waitFor(() => {
-      expect(screen.getByText('Follow the sheet.')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy()
     })
     expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy()

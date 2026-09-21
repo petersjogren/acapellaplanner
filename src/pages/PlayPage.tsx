@@ -22,6 +22,7 @@ import type { Phrase, Project } from '../domain/schemas.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import { MixPresetSelect } from '../ui/shared/MixPresetSelect.tsx'
 import { SingerShell } from '../ui/shell/SingerShell.tsx'
+import { BoothLayout } from '../ui/singer/BoothLayout.tsx'
 import { PhraseStage } from '../ui/singer/PhraseStage.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
@@ -383,22 +384,120 @@ export function PlayPage() {
 
   return (
     <SingerShell songTitle={loaded.title} projectId={loaded.id} current="play">
-      <p className="font-display text-lyric leading-snug">Follow the sheet.</p>
-      <p className="mt-3 max-w-md text-ink/70">
-        Play the whole song, or loop a phrase to practise. Nothing records here.
-      </p>
-      {!ghostTrackId ? (
-        <p className="mt-6 max-w-md text-ink/70">
-          Import a ghost on Prepare before you can follow the song.
-        </p>
-      ) : phrases.length === 0 ? (
-        <p className="mt-6 max-w-md text-ink/70">
-          Mark phrases on Prepare so the sheet can follow along.
-        </p>
-      ) : null}
-
       {displayPhrase ? (
-        <div className="mt-8">
+        <BoothLayout
+          dock={
+            <>
+              <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+                {playing && showPause ? (
+                  <button
+                    type="button"
+                    onClick={handlePause}
+                    className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50"
+                  >
+                    Pause
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handlePlay}
+                    disabled={!canPlay || playing}
+                    className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50 disabled:opacity-50"
+                  >
+                    Play
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  disabled={!playing && pausedAtMs == null && (playheadMs == null || playheadMs === 0)}
+                  className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50 disabled:opacity-50"
+                >
+                  Stop
+                </button>
+                <fieldset>
+                  <legend className="text-sm text-ink-muted">Practice</legend>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                    {(
+                      [
+                        ['off', 'Once through'],
+                        ['phrase', 'Loop this phrase'],
+                        ['section', 'Loop this section'],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <label key={value} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="play-loop"
+                          value={value}
+                          checked={loopMode === value}
+                          onChange={() => {
+                            handleLoopModeChange(value)
+                          }}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <MixPresetSelect
+                  compact
+                  value={mixPresetId}
+                  onChange={(id) => {
+                    setMixPresetId(id)
+                    if (playing) {
+                      const from = loopMode === 'off' ? (engineRef.current?.getPositionMs() ?? 0) : undefined
+                      void startPlayback({ fromMs: from, mixPresetId: id })
+                    }
+                  }}
+                />
+              </div>
+              {sheetCrops.length > 0 ? (
+                <p className="mt-2 text-sm text-ink-muted">
+                  Click the notes that should be in the middle now.
+                  {hasPins ? (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        onClick={handleClearPins}
+                        className="underline-offset-2 hover:text-ink hover:underline"
+                      >
+                        Clear all
+                      </button>
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
+              {phrases.length > 0 ? (
+                <ol className="mt-2 flex max-w-full gap-1 overflow-x-auto" aria-label="Phrases">
+                  {phrases.map((item) => {
+                    const current = item.id === displayPhrase.id
+                    return (
+                      <li key={item.id} className="shrink-0">
+                        <button
+                          type="button"
+                          aria-current={current ? 'true' : undefined}
+                          onClick={() => handleJump(item)}
+                          className={`whitespace-nowrap rounded-md px-3 py-2 text-left text-sm studio-transition ${
+                            current ? 'bg-ink text-paper' : 'text-ink/80 hover:bg-ink/5'
+                          }`}
+                        >
+                          {phraseLabel(item)}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ol>
+              ) : null}
+              {playError ? (
+                <p role="alert" className="mt-3 text-record-red">
+                  {playError}
+                </p>
+              ) : null}
+            </>
+          }
+        >
           <PhraseStage
             phrase={displayPhrase}
             phraseIndex={phraseIndex}
@@ -409,120 +508,20 @@ export function PlayPage() {
             sheetCenter={hasPins}
             onPickSheet={handlePickSheet}
           />
-          {sheetCrops.length > 0 ? (
-            <>
-              <p className="mt-2 max-w-xl text-sm text-ink-muted">
-                Click the notes that should be in the middle now.
-              </p>
-              {hasPins ? (
-                <button
-                  type="button"
-                  onClick={handleClearPins}
-                  className="mt-2 text-sm text-ink-muted underline-offset-2 hover:text-ink hover:underline"
-                >
-                  Clear all
-                </button>
-              ) : null}
-            </>
-          ) : null}
+        </BoothLayout>
+      ) : (
+        <div className="pb-8 md:pb-12">
+          {!ghostTrackId ? (
+            <p className="max-w-md text-ink/70">
+              Import a ghost on Prepare before you can follow the song.
+            </p>
+          ) : (
+            <p className="max-w-md text-ink/70">
+              Mark phrases on Prepare so the sheet can follow along.
+            </p>
+          )}
         </div>
-      ) : null}
-
-      <div className="mt-8 flex flex-wrap items-center gap-4">
-        {playing && showPause ? (
-          <button
-            type="button"
-            onClick={handlePause}
-            className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50"
-          >
-            Pause
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handlePlay}
-            disabled={!canPlay || playing}
-            className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50 disabled:opacity-50"
-          >
-            Play
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={handleStop}
-          disabled={!playing && pausedAtMs == null && (playheadMs == null || playheadMs === 0)}
-          className="min-h-11 rounded-pill border border-ink/20 px-8 py-3 text-base font-medium studio-transition hover:border-ink/50 disabled:opacity-50"
-        >
-          Stop
-        </button>
-      </div>
-
-      <fieldset className="mt-8">
-        <legend className="text-sm text-ink-muted">Practice</legend>
-        <div className="mt-2 flex flex-col gap-2">
-          {(
-            [
-              ['off', 'Once through'],
-              ['phrase', 'Loop this phrase'],
-              ['section', 'Loop this section'],
-            ] as const
-          ).map(([value, label]) => (
-            <label key={value} className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="play-loop"
-                value={value}
-                checked={loopMode === value}
-                onChange={() => {
-                  handleLoopModeChange(value)
-                }}
-              />
-              {label}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      <div className="mt-8">
-        <MixPresetSelect
-          value={mixPresetId}
-          onChange={(id) => {
-            setMixPresetId(id)
-            if (playing) {
-              const from = loopMode === 'off' ? (engineRef.current?.getPositionMs() ?? 0) : undefined
-              void startPlayback({ fromMs: from, mixPresetId: id })
-            }
-          }}
-        />
-      </div>
-
-      {phrases.length > 0 ? (
-        <ol className="mt-8 flex max-w-md flex-col gap-1" aria-label="Phrases">
-          {phrases.map((item) => {
-            const current = item.id === displayPhrase?.id
-            return (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  aria-current={current ? 'true' : undefined}
-                  onClick={() => handleJump(item)}
-                  className={`w-full rounded-md px-3 py-2 text-left text-sm studio-transition ${
-                    current ? 'bg-ink text-paper' : 'text-ink/80 hover:bg-ink/5'
-                  }`}
-                >
-                  {phraseLabel(item)}
-                </button>
-              </li>
-            )
-          })}
-        </ol>
-      ) : null}
-
-      {playError ? (
-        <p role="alert" className="mt-4 text-record-red">
-          {playError}
-        </p>
-      ) : null}
+      )}
     </SingerShell>
   )
 }

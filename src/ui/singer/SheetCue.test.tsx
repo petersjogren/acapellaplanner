@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SheetCue, SHEET_CUE_SLIDE_HEIGHT_PX } from './SheetCue.tsx'
+import { SheetCue, SHEET_CUE_SLIDE_HEIGHT_PX, containCropBox } from './SheetCue.tsx'
 
 afterEach(() => {
   cleanup()
@@ -84,6 +84,8 @@ describe('SheetCue', () => {
     expect(img?.style.maxWidth).toBe('none')
     expect(img?.style.maxHeight).toBe('none')
     expect(img?.style.transform).toBe('')
+    expect(figure.className).toMatch(/\babsolute\b/)
+    expect(figure.className).toMatch(/\binset-0\b/)
   })
 
   it('does not transform filmstrip imgs — only the track translates', () => {
@@ -109,7 +111,7 @@ describe('SheetCue', () => {
     expect(track.className).not.toMatch(/sheet-cue-pan/)
   })
 
-  it('sets an aspect-ratio style from the region before the image loads (single crop)', () => {
+  it('contains a single crop in the film viewport instead of stretching it', () => {
     render(
       <SheetCue
         crops={[
@@ -123,9 +125,38 @@ describe('SheetCue', () => {
         pageImageUrls={[PAGE]}
       />,
     )
-    const figure = screen.getByLabelText('Sheet crop')
-    // w/h = 2 pre-load fallback (natural page size not known yet).
-    expect(figure.style.aspectRatio).toBe('2 / 1')
+    const box = screen.getByLabelText('Sheet crop').querySelector('[data-sheet-crop-box]') as HTMLElement
+    // w/h = 2 pre-load fallback; unmeasured viewport uses the 220px height budget.
+    expect(Number(box.style.width.replace('px', ''))).toBeCloseTo(SHEET_CUE_SLIDE_HEIGHT_PX * 2, 5)
+    expect(Number(box.style.height.replace('px', ''))).toBeCloseTo(SHEET_CUE_SLIDE_HEIGHT_PX, 5)
+  })
+
+  it('sizes filmstrip slides from the measured figure height', () => {
+    const clientWidthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800)
+    const clientHeightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400)
+    try {
+      render(
+        <SheetCue
+          crops={[
+            { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 0.25, h: 0.25 } },
+            { id: 'ref-2', sheetDocId: 'doc-2', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 1, h: 0.25 } },
+          ]}
+          pageImageUrls={[PAGE, PAGE_2]}
+          progress={0}
+        />,
+      )
+      expect(slideWidthPx(0)).toBeCloseTo(400, 5)
+      expect(slideWidthPx(1)).toBeCloseTo(1600, 5)
+    } finally {
+      clientWidthSpy.mockRestore()
+      clientHeightSpy.mockRestore()
+    }
+  })
+
+  it('containCropBox never lets a square crop become window-tall', () => {
+    expect(containCropBox(1, 800, 400)).toEqual({ width: 400, height: 400 })
+    expect(containCropBox(1, 400, 800)).toEqual({ width: 400, height: 400 })
+    expect(containCropBox(4, 800, 400)).toEqual({ width: 800, height: 200 })
   })
 
   it('renders every crop as its own slide, in order, each with its own image', () => {
