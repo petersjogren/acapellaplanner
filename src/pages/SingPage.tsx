@@ -6,7 +6,7 @@ import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
 import { GHOST_FOCUS_PRESET_ID } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import { markEnough, reopenEnough, suggestNext } from '../domain/sessionPlan.ts'
-import { sheetPageBlobIdsForPhrase } from '../domain/sheets.ts'
+import { filmScrollProgress, sheetPageBlobIdsForCrops } from '../domain/sheets.ts'
 import type { Phrase, Project, VoicePart } from '../domain/schemas.ts'
 import { SingerShell } from '../ui/shell/SingerShell.tsx'
 import { PartPicker } from '../ui/singer/PartPicker.tsx'
@@ -61,11 +61,8 @@ export function SingPage() {
   bufferRef.current = buffer
 
   const liveProject = project && typeof project === 'object' ? project : null
-  const boothPhrase = liveProject && phraseId
-    ? liveProject.phrases.find((item) => item.id === phraseId)
-    : undefined
-  const sheetImageBlobIds =
-    liveProject && boothPhrase ? sheetPageBlobIdsForPhrase(liveProject, boothPhrase) : []
+  const sheetCrops = liveProject?.sheetCrops ?? []
+  const sheetImageBlobIds = liveProject ? sheetPageBlobIdsForCrops(liveProject, sheetCrops) : []
   const sheetBlobIdsKey = sheetImageBlobIds.join('|')
 
   useEffect(() => {
@@ -117,11 +114,9 @@ export function SingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheetBlobIdsKey, repo])
 
-  // Only a phrase bound to several crops needs to know elapsed time, to pan
-  // between them — one crop (or none) is a static image regardless of where
-  // playback is. Skip the rAF churn for the common single-crop case.
+  // Follow the song film while playing. Idle rests at the phrase start.
   useEffect(() => {
-    if (!boothPhrase || boothPhrase.sheetRefs.length < 2) {
+    if (sheetCrops.length < 2) {
       setSheetElapsedMs(null)
       return
     }
@@ -129,7 +124,7 @@ export function SingPage() {
     function tick() {
       if (cancelled) return
       const posMs = engineRef.current?.getPositionMs() ?? null
-      setSheetElapsedMs(posMs == null ? null : Math.max(0, posMs - boothPhrase!.startMs))
+      setSheetElapsedMs(posMs)
       sheetElapsedRafRef.current = requestAnimationFrame(tick)
     }
     sheetElapsedRafRef.current = requestAnimationFrame(tick)
@@ -138,7 +133,7 @@ export function SingPage() {
       if (sheetElapsedRafRef.current != null) cancelAnimationFrame(sheetElapsedRafRef.current)
       sheetElapsedRafRef.current = null
     }
-  }, [boothPhrase])
+  }, [sheetCrops.length])
 
   useEffect(() => {
     return () => {
@@ -197,6 +192,7 @@ export function SingPage() {
   const ready = parts.length > 0 && phrases.length > 0
   const part = voicePartId ? parts.find((item) => item.id === voicePartId) : undefined
   const phrase = phraseId ? phrases.find((item) => item.id === phraseId) : undefined
+  const sheetProgress = filmScrollProgress(phrases, sheetElapsedMs ?? phrase?.startMs ?? 0)
 
   function applySuggestion(suggestion: ReturnType<typeof suggestNext>, lockedPartId?: string) {
     if (!suggestion) {
@@ -307,8 +303,9 @@ export function SingPage() {
             phraseIndex={phraseIndex}
             phraseCount={phrases.length}
             partColor={part.color}
-            sheetPageUrls={sheetPageUrls}
-            sheetElapsedMs={sheetElapsedMs}
+            sheetCrops={sheetCrops}
+            pageImageUrls={sheetPageUrls}
+            sheetProgress={sheetProgress}
           />
           <div className="mt-8">
             <ProgressRibbon

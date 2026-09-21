@@ -429,8 +429,7 @@ describe('PreparePage voice roster and matrix', () => {
           name: 'Phrase 1',
           startMs: 0,
           endMs: 1000,
-          sheetRefs: [],
-          partPlan: [
+                partPlan: [
             {
               voicePartId: 's1',
               priority: 0,
@@ -576,8 +575,7 @@ describe('PreparePage phrase playback', () => {
           name: 'Phrase 1',
           startMs: 1000,
           endMs: 3000,
-          sheetRefs: [],
-          partPlan: [],
+                partPlan: [],
           loopDefault: { mode: 'phrase-loop', gapMs: 400 },
           preRollMs: 250,
           postRollMs: 100,
@@ -1007,8 +1005,7 @@ describe('PreparePage sheet upload', () => {
           name: 'Phrase 1',
           startMs: 0,
           endMs: 1000,
-          sheetRefs: [],
-          partPlan: [],
+                partPlan: [],
           loopDefault: { mode: 'phrase-loop' as const, gapMs: 400 },
           postRollMs: 0,
         },
@@ -1099,21 +1096,21 @@ describe('PreparePage sheet upload', () => {
     fireEvent.pointerDown(page, { clientX: 20, clientY: 10, pointerId: 1 })
     fireEvent.pointerMove(page, { clientX: 120, clientY: 60, pointerId: 1 })
     fireEvent.pointerUp(page, { clientX: 120, clientY: 60, pointerId: 1 })
-    fireEvent.click(screen.getByRole('button', { name: 'Bind crop' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add crop' }))
 
     await waitFor(async () => {
       const loaded = await repo.getProject(projectId)
-      expect(loaded?.phrases[0]?.sheetRefs).toHaveLength(1)
+      expect(loaded?.sheetCrops).toHaveLength(1)
     })
     const loaded = await repo.getProject(projectId)
-    expect(loaded?.phrases[0]?.sheetRefs[0]).toMatchObject({
+    expect(loaded?.sheetCrops[0]).toMatchObject({
       sheetDocId: loaded?.sheetDocs[0]?.id,
       pageIndex: 0,
       regionNorm: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 },
     })
   })
 
-  it('replaces the phrase crop on re-bind so the latest ref is the only one', async () => {
+  it('appends a second crop to the score film', async () => {
     renderPrepare()
 
     await waitFor(() => {
@@ -1145,26 +1142,26 @@ describe('PreparePage sheet upload', () => {
       fireEvent.pointerDown(page, { clientX: from.x, clientY: from.y, pointerId: 1 })
       fireEvent.pointerMove(page, { clientX: to.x, clientY: to.y, pointerId: 1 })
       fireEvent.pointerUp(page, { clientX: to.x, clientY: to.y, pointerId: 1 })
-      fireEvent.click(screen.getByRole('button', { name: 'Bind crop' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add crop' }))
     }
 
     dragBind({ x: 20, y: 10 }, { x: 120, y: 60 })
     await waitFor(async () => {
       const loaded = await repo.getProject(projectId)
-      expect(loaded?.phrases[0]?.sheetRefs).toHaveLength(1)
-      expect(loaded?.phrases[0]?.sheetRefs[0]).toMatchObject({
+      expect(loaded?.sheetCrops).toHaveLength(1)
+      expect(loaded?.sheetCrops[0]).toMatchObject({
         pageIndex: 0,
         regionNorm: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 },
       })
     })
-    const firstId = (await repo.getProject(projectId))?.phrases[0]?.sheetRefs[0]?.id
+    const firstId = (await repo.getProject(projectId))?.sheetCrops[0]?.id
 
     dragBind({ x: 40, y: 20 }, { x: 140, y: 70 })
     await waitFor(async () => {
       const loaded = await repo.getProject(projectId)
-      expect(loaded?.phrases[0]?.sheetRefs).toHaveLength(1)
-      expect(loaded?.phrases[0]?.sheetRefs[0]?.id).not.toBe(firstId)
-      expect(loaded?.phrases[0]?.sheetRefs[0]).toMatchObject({
+      expect(loaded?.sheetCrops).toHaveLength(2)
+      expect(loaded?.sheetCrops[0]?.id).toBe(firstId)
+      expect(loaded?.sheetCrops[1]).toMatchObject({
         pageIndex: 0,
         regionNorm: { x: 0.2, y: 0.2, w: 0.5, h: 0.5 },
       })

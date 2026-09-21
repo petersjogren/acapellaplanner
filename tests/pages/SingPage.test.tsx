@@ -63,7 +63,6 @@ function phrase(overrides: Partial<Phrase> & { id: string }): Phrase {
     name: overrides.name ?? overrides.id,
     startMs: 0,
     endMs: 1000,
-    sheetRefs: [],
     partPlan: [],
     loopDefault: { mode: 'phrase-loop', gapMs: 400 },
     postRollMs: 0,
@@ -548,21 +547,14 @@ describe('SingPage booth flow', () => {
           pages: [{ pageIndex: 0, imageBlobId }],
         },
       ],
-      phrases: current!.phrases.map((item) =>
-        item.id === 'p1'
-          ? {
-              ...item,
-              sheetRefs: [
-                {
-                  id: 'ref-1',
-                  sheetDocId: 'doc-1',
-                  pageIndex: 0,
-                  regionNorm: { x: 0.1, y: 0.2, w: 0.5, h: 0.25 },
-                },
-              ],
-            }
-          : item,
-      ),
+      sheetCrops: [
+        {
+          id: 'ref-1',
+          sheetDocId: 'doc-1',
+          pageIndex: 0,
+          regionNorm: { x: 0.1, y: 0.2, w: 0.5, h: 0.25 },
+        },
+      ],
     })
 
     renderSing()
@@ -609,31 +601,22 @@ describe('SingPage booth flow', () => {
           pages: [{ pageIndex: 0, imageBlobId: imageBlobIdB }],
         },
       ],
+      sheetCrops: [
+        {
+          id: 'ref-1',
+          sheetDocId: 'doc-1',
+          pageIndex: 0,
+          regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 },
+        },
+        {
+          id: 'ref-2',
+          sheetDocId: 'doc-2',
+          pageIndex: 0,
+          regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+        },
+      ],
       phrases: current!.phrases.map((item) =>
-        item.id === 'p1'
-          ? {
-              ...item,
-              startMs: 0,
-              endMs: 1000,
-              // Different sheetDocId per crop — the common "next crop is on
-              // another page" case. The scroll must stay smooth here too,
-              // not just when both crops share one page image.
-              sheetRefs: [
-                {
-                  id: 'ref-1',
-                  sheetDocId: 'doc-1',
-                  pageIndex: 0,
-                  regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 },
-                },
-                {
-                  id: 'ref-2',
-                  sheetDocId: 'doc-2',
-                  pageIndex: 0,
-                  regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
-                },
-              ],
-            }
-          : item,
+        item.id === 'p1' ? { ...item, startMs: 0, endMs: 1000 } : item,
       ),
     })
 
@@ -699,28 +682,22 @@ describe('SingPage booth flow', () => {
           pages: [{ pageIndex: 0, imageBlobId }],
         },
       ],
+      sheetCrops: [
+        {
+          id: 'ref-1',
+          sheetDocId: 'doc-1',
+          pageIndex: 0,
+          regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 },
+        },
+        {
+          id: 'ref-2',
+          sheetDocId: 'doc-1',
+          pageIndex: 0,
+          regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+        },
+      ],
       phrases: current!.phrases.map((item) =>
-        item.id === 'p1'
-          ? {
-              ...item,
-              startMs: 0,
-              endMs: 1000,
-              sheetRefs: [
-                {
-                  id: 'ref-1',
-                  sheetDocId: 'doc-1',
-                  pageIndex: 0,
-                  regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 },
-                },
-                {
-                  id: 'ref-2',
-                  sheetDocId: 'doc-1',
-                  pageIndex: 0,
-                  regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
-                },
-              ],
-            }
-          : item,
+        item.id === 'p1' ? { ...item, startMs: 0, endMs: 1000 } : item,
       ),
     })
 

@@ -123,7 +123,6 @@ function buildPhrase(input: NewPhraseInput, existing: Phrase[], durationMs: numb
     startMs,
     endMs,
     lyricText: input.lyricText,
-    sheetRefs: [],
     partPlan: [],
     loopDefault: { mode: 'phrase-loop', gapMs: 400 },
     preRollMs: DEFAULT_PRE_ROLL_MS,

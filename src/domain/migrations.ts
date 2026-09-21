@@ -18,6 +18,8 @@ const MIGRATIONS: Record<number, (raw: Record<string, unknown>) => Record<string
   // v1 sections had their own [startMs, endMs] on the ghost. v2 is a span of
   // phrases — "these phrases, sung this way."
   1: migrateSectionsV1toV2,
+  // v2 crops lived on each phrase (`sheetRefs`). v3 is one song film.
+  2: migrateSheetRefsV2toV3,
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -64,6 +66,50 @@ function migrateSectionsV1toV2(raw: Record<string, unknown>): Record<string, unk
   }
 
   return { ...raw, sections }
+}
+
+function regionGeometryKey(ref: Record<string, unknown>): string {
+  const doc = typeof ref.sheetDocId === 'string' ? ref.sheetDocId : ''
+  const page = typeof ref.pageIndex === 'number' ? ref.pageIndex : 0
+  const region = isRecord(ref.regionNorm) ? ref.regionNorm : { x: 0, y: 0, w: 1, h: 1 }
+  const x = typeof region.x === 'number' ? region.x : 0
+  const y = typeof region.y === 'number' ? region.y : 0
+  const w = typeof region.w === 'number' ? region.w : 1
+  const h = typeof region.h === 'number' ? region.h : 1
+  return `${doc}|${page}|${x}|${y}|${w}|${h}`
+}
+
+function migrateSheetRefsV2toV3(raw: Record<string, unknown>): Record<string, unknown> {
+  const phrasesIn = Array.isArray(raw.phrases) ? raw.phrases : []
+  const ordered = phrasesIn.filter(isRecord).slice().sort((a, b) => {
+    const as = typeof a.startMs === 'number' ? a.startMs : 0
+    const bs = typeof b.startMs === 'number' ? b.startMs : 0
+    return as - bs
+  })
+
+  const film: Record<string, unknown>[] = []
+  let lastKey: string | null = null
+  for (const phrase of ordered) {
+    const refs = Array.isArray(phrase.sheetRefs) ? phrase.sheetRefs : []
+    for (const item of refs) {
+      if (!isRecord(item)) continue
+      const key = regionGeometryKey(item)
+      if (key === lastKey) continue
+      film.push(item)
+      lastKey = key
+    }
+  }
+
+  const existingFilm = Array.isArray(raw.sheetCrops) ? raw.sheetCrops.filter(isRecord) : []
+  const sheetCrops = film.length > 0 ? film : existingFilm
+
+  const phrases = phrasesIn.map((item) => {
+    if (!isRecord(item)) return item
+    const { sheetRefs: _drop, ...rest } = item
+    return rest
+  })
+
+  return { ...raw, phrases, sheetCrops }
 }
 
 export class UnsupportedProjectVersionError extends Error {

@@ -17,7 +17,6 @@ function phrase(overrides: { id: string; startMs: number; endMs: number }) {
     name: overrides.id,
     startMs: overrides.startMs,
     endMs: overrides.endMs,
-    sheetRefs: [],
     partPlan: [],
     loopDefault: { mode: 'phrase-loop' as const, gapMs: 400 },
     postRollMs: 0,
@@ -40,7 +39,7 @@ describe('createEmptyProject', () => {
     const project = createEmptyProject()
     const parsed = ProjectSchema.parse(project)
 
-    expect(parsed.schemaVersion).toBe(2)
+    expect(parsed.schemaVersion).toBe(3)
     expect(parsed.title).toBe('Untitled song')
     expect(parsed.defaultTuningHz).toBe(440)
     expect(parsed.ghostTrackId).toBeNull()
@@ -49,6 +48,7 @@ describe('createEmptyProject', () => {
     expect(parsed.phrases).toEqual([])
     expect(parsed.guides).toEqual([])
     expect(parsed.sheetDocs).toEqual([])
+    expect(parsed.sheetCrops).toEqual([])
     expect(parsed.takes).toEqual([])
     expect(parsed.mixPresets).toEqual([])
     expect(parsed.completion.cells).toEqual([])

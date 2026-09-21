@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Phrase } from '../../domain/schemas.ts'
+import type { SheetRef } from '../../domain/schemas.ts'
 import { SheetCropper } from './SheetCropper.tsx'
 
 afterEach(() => {
@@ -8,17 +8,6 @@ afterEach(() => {
 })
 
 const PAGE = 'data:image/png;base64,aaaa'
-
-const phraseOne: Phrase = {
-  id: 'p1',
-  name: 'Phrase 1',
-  startMs: 0,
-  endMs: 1000,
-  sheetRefs: [],
-  partPlan: [],
-  loopDefault: { mode: 'phrase-loop', gapMs: 400 },
-  postRollMs: 0,
-}
 
 function mockPageRect(width = 200, height = 100) {
   const page = screen.getByLabelText('Sheet page')
@@ -39,16 +28,16 @@ function mockPageRect(width = 200, height = 100) {
 }
 
 describe('SheetCropper', () => {
-  it('binds a dragged crop onto the selected phrase', async () => {
-    const onBind = vi.fn()
+  it('adds a dragged crop to the score film', async () => {
+    const onAddCrop = vi.fn()
     render(
       <SheetCropper
         pageImageUrl={PAGE}
         pageIndex={0}
         pageCount={2}
-        phrases={[phraseOne]}
+        crops={[]}
         onPageChange={() => undefined}
-        onBind={onBind}
+        onAddCrop={onAddCrop}
       />,
     )
 
@@ -58,24 +47,24 @@ describe('SheetCropper', () => {
     fireEvent.pointerMove(page, { clientX: 120, clientY: 60, pointerId: 1 })
     fireEvent.pointerUp(page, { clientX: 120, clientY: 60, pointerId: 1 })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bind crop' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add crop' }))
 
     await waitFor(() => {
-      expect(onBind).toHaveBeenCalledTimes(1)
+      expect(onAddCrop).toHaveBeenCalledTimes(1)
     })
-    expect(onBind).toHaveBeenCalledWith('p1', { x: 0.1, y: 0.1, w: 0.5, h: 0.5 })
+    expect(onAddCrop).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.5, h: 0.5 })
   })
 
-  it('binds a reverse drag as a normalized region', async () => {
-    const onBind = vi.fn()
+  it('adds a reverse drag as a normalized region', async () => {
+    const onAddCrop = vi.fn()
     render(
       <SheetCropper
         pageImageUrl={PAGE}
         pageIndex={0}
         pageCount={1}
-        phrases={[phraseOne]}
+        crops={[]}
         onPageChange={() => undefined}
-        onBind={onBind}
+        onAddCrop={onAddCrop}
       />,
     )
 
@@ -83,10 +72,10 @@ describe('SheetCropper', () => {
     fireEvent.pointerDown(page, { clientX: 120, clientY: 60, pointerId: 1 })
     fireEvent.pointerMove(page, { clientX: 20, clientY: 10, pointerId: 1 })
     fireEvent.pointerUp(page, { clientX: 20, clientY: 10, pointerId: 1 })
-    fireEvent.click(screen.getByRole('button', { name: 'Bind crop' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add crop' }))
 
     await waitFor(() => {
-      expect(onBind).toHaveBeenCalledWith('p1', { x: 0.1, y: 0.1, w: 0.5, h: 0.5 })
+      expect(onAddCrop).toHaveBeenCalledWith({ x: 0.1, y: 0.1, w: 0.5, h: 0.5 })
     })
   })
 
@@ -97,9 +86,9 @@ describe('SheetCropper', () => {
         pageImageUrl={PAGE}
         pageIndex={0}
         pageCount={1}
-        phrases={[phraseOne]}
+        crops={[]}
         onPageChange={onPageChange}
-        onBind={() => undefined}
+        onAddCrop={() => undefined}
       />,
     )
 
@@ -109,60 +98,47 @@ describe('SheetCropper', () => {
     expect((screen.getByRole('button', { name: 'Next page' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('appends a crop via "Add as next crop" without touching existing ones', async () => {
-    const onAddCrop = vi.fn()
+  it('does not require phrases to add a crop', () => {
     render(
       <SheetCropper
         pageImageUrl={PAGE}
         pageIndex={0}
         pageCount={1}
-        phrases={[phraseOne]}
+        crops={[]}
+        hasPhrases={false}
         onPageChange={() => undefined}
-        onBind={() => undefined}
-        onAddCrop={onAddCrop}
+        onAddCrop={() => undefined}
       />,
     )
-
-    const page = mockPageRect()
-    fireEvent.pointerDown(page, { clientX: 20, clientY: 10, pointerId: 1 })
-    fireEvent.pointerMove(page, { clientX: 120, clientY: 60, pointerId: 1 })
-    fireEvent.pointerUp(page, { clientX: 120, clientY: 60, pointerId: 1 })
-    fireEvent.click(screen.getByRole('button', { name: 'Add as next crop' }))
-
-    await waitFor(() => {
-      expect(onAddCrop).toHaveBeenCalledWith('p1', { x: 0.1, y: 0.1, w: 0.5, h: 0.5 })
-    })
+    expect(screen.getByText(/Mark phrases on the ghost so Play can scroll/)).toBeTruthy()
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Bind crop' })).toBeNull()
   })
 
-  it('shows bound crops for the selected phrase and can remove one', async () => {
+  it('shows the score film and can remove a crop', async () => {
     const onRemoveCrop = vi.fn()
-    const bound = {
-      ...phraseOne,
-      sheetRefs: [
-        { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 } },
-        { id: 'ref-2', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 } },
-      ],
-    }
+    const crops: SheetRef[] = [
+      { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 } },
+      { id: 'ref-2', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 } },
+    ]
     render(
       <SheetCropper
         pageImageUrl={PAGE}
         pageIndex={0}
         pageCount={1}
-        phrases={[bound]}
-        selectedPhraseId="p1"
+        crops={crops}
         onPageChange={() => undefined}
-        onBind={() => undefined}
+        onAddCrop={() => undefined}
         onRemoveCrop={onRemoveCrop}
       />,
     )
 
-    const list = screen.getByLabelText('Bound crops')
+    const list = screen.getByLabelText('Score film')
     expect(list.textContent).toContain('Crop 1')
     expect(list.textContent).toContain('Crop 2')
-
-    fireEvent.click(screen.getByLabelText('Remove crop 1'))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove crop 1' }))
     await waitFor(() => {
-      expect(onRemoveCrop).toHaveBeenCalledWith('p1', 'ref-1')
+      expect(onRemoveCrop).toHaveBeenCalledWith('ref-1')
     })
   })
 })

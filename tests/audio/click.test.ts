@@ -16,7 +16,6 @@ function phrase(overrides: Partial<Phrase> = {}): Phrase {
     name: 'Phrase 1',
     startMs: 0,
     endMs: 2000,
-    sheetRefs: [],
     partPlan: [],
     loopDefault: { mode: 'phrase-loop', gapMs: 400 },
     postRollMs: 0,

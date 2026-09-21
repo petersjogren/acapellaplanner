@@ -18,7 +18,6 @@ import { createEmptyProject, type Phrase, type Project } from '../../src/domain/
 function phrase(overrides: Partial<Phrase> & { id: string; startMs: number; endMs: number }): Phrase {
   return {
     name: overrides.name ?? overrides.id,
-    sheetRefs: [],
     partPlan: [],
     loopDefault: { mode: 'phrase-loop', gapMs: 400 },
     postRollMs: 0,

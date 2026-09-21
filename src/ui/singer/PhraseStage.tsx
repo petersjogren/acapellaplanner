@@ -1,4 +1,4 @@
-import type { Phrase } from '../../domain/schemas.ts'
+import type { Phrase, SheetRef } from '../../domain/schemas.ts'
 import { SheetCue } from './SheetCue.tsx'
 
 export type PhraseStageProps = {
@@ -6,9 +6,10 @@ export type PhraseStageProps = {
   phraseIndex: number
   phraseCount: number
   partColor?: string
-  sheetPageUrls?: Array<string | null | undefined>
-  /** Ghost ms elapsed since the phrase started; drives multi-crop soft-scroll. */
-  sheetElapsedMs?: number | null
+  sheetCrops?: SheetRef[]
+  pageImageUrls?: Array<string | null | undefined>
+  /** Camera 0–1 along the song film. */
+  sheetProgress?: number | null
 }
 
 export function PhraseStage({
@@ -16,8 +17,9 @@ export function PhraseStage({
   phraseIndex,
   phraseCount,
   partColor,
-  sheetPageUrls = [],
-  sheetElapsedMs = null,
+  sheetCrops = [],
+  pageImageUrls = [],
+  sheetProgress = null,
 }: PhraseStageProps) {
   const lyric = phrase.lyricText?.trim() || phrase.name
 
@@ -37,7 +39,7 @@ export function PhraseStage({
       {phrase.notesForSinger ? (
         <p className="max-w-md text-ink/70">{phrase.notesForSinger}</p>
       ) : null}
-      <SheetCue phrase={phrase} pageImageUrls={sheetPageUrls} elapsedMs={sheetElapsedMs} />
+      <SheetCue crops={sheetCrops} pageImageUrls={pageImageUrls} progress={sheetProgress} />
     </section>
   )
 }

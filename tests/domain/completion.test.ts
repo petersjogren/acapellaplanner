@@ -24,7 +24,6 @@ function phrase(overrides: Partial<Phrase> & { id: string }): Phrase {
     name: overrides.name ?? overrides.id,
     startMs: 0,
     endMs: 1000,
-    sheetRefs: [],
     partPlan: [],
     loopDefault: { mode: 'phrase-loop', gapMs: 400 },
     postRollMs: 0,

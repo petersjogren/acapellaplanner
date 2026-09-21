@@ -26,7 +26,6 @@ const phrase: Phrase = {
   startMs: 200,
   endMs: 800,
   lyricText: 'when I fall',
-  sheetRefs: [],
   partPlan: [],
   loopDefault: { mode: 'phrase-loop', gapMs: 400 },
   postRollMs: 0,

@@ -75,3 +75,8 @@ Fix: use a **callback ref** stored in `useState` (`const [el, setEl] = useState<
 Do not "fix" this by promoting extra compositor layers (`translateZ(0)` on the img, `will-change`, backface-visibility) while keeping the img transform — those work around the symptom and still fight the rAF-driven parent. The crop is static, so use layout: size the page to `width: 100%/w`, `height: 100%/h`, `left: -x/w*100%`, `top: -y/h*100%` and let the slide's `overflow: hidden` clip it. Tailwind preflight sets `img { max-width: 100% }`; without `maxWidth: 'none'` a width greater than the slide collapses back to 100% and the crop is wrong. Do not put a CSS transition on a transform that rAF already updates every frame — Safari leaves ghost compositor layers of in-flight interpolations.
 
 Transform stays on the **track only** (`translateX` in real pixels). That property is compositor-only, so the scroll is still smooth without a transition.
+
+## Score-film camera maps occupied phrase time, not wall-clock ghost
+
+`filmScrollProgress` only ticks inside phrases and **holds** in unmarked gaps (and before the first / after the last). Mapping `F` over `[0, ghostDuration]` lets a long intro consume the film so the actual song races. Phrase-loop wrap snaps `getPositionMs` from end → start — do not CSS-transition that jump (same iPad compositor-ghost rule as rAF `translateX`).
+

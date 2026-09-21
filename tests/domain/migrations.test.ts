@@ -112,7 +112,7 @@ describe('migrateAndParseProject', () => {
     }
 
     const migrated = migrateAndParseProject(v1)
-    expect(migrated.schemaVersion).toBe(2)
+    expect(migrated.schemaVersion).toBe(3)
     expect(migrated.sections).toEqual([
       expect.objectContaining({
         id: 'verse',
@@ -145,5 +145,117 @@ describe('migrateAndParseProject', () => {
     })
     expect(migrated.phrases[0]?.preRollMs).toBeUndefined()
     expect(migrated.phrases[0]?.postRollMs).toBe(0)
+  })
+
+  it('flattens v2 phrase sheetRefs into a song film', () => {
+    const refA = {
+      id: 'a',
+      sheetDocId: 'doc-1',
+      pageIndex: 0,
+      regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 },
+    }
+    const refB = {
+      id: 'b',
+      sheetDocId: 'doc-1',
+      pageIndex: 0,
+      regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+    }
+    const base = createEmptyProject('When I Fall')
+    const { sheetCrops: _drop, ...withoutFilm } = base
+    const v2 = {
+      ...withoutFilm,
+      schemaVersion: 2,
+      phrases: [
+        {
+          id: 'p1',
+          name: 'Phrase 1',
+          startMs: 0,
+          endMs: 1000,
+          sheetRefs: [refA],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          postRollMs: 0,
+        },
+        {
+          id: 'p2',
+          name: 'Phrase 2',
+          startMs: 1000,
+          endMs: 2000,
+          sheetRefs: [refB],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          postRollMs: 0,
+        },
+      ],
+    }
+
+    const migrated = migrateAndParseProject(v2)
+    expect(migrated.schemaVersion).toBe(3)
+    expect(migrated.sheetCrops).toEqual([refA, refB])
+    expect(migrated.phrases[0]).not.toHaveProperty('sheetRefs')
+    expect(migrated.phrases[1]).not.toHaveProperty('sheetRefs')
+  })
+
+  it('collapses consecutive identical crop geometry, but not non-consecutive repeats', () => {
+    const regionA = { x: 0, y: 0, w: 0.5, h: 0.5 }
+    const regionB = { x: 0.5, y: 0.5, w: 0.5, h: 0.5 }
+    const a1 = { id: 'a1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: regionA }
+    const a2 = { id: 'a2', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: regionA }
+    const b = { id: 'b', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: regionB }
+    const a3 = { id: 'a3', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: regionA }
+    const base = createEmptyProject('When I Fall')
+    const { sheetCrops: _drop, ...withoutFilm } = base
+    const v2 = {
+      ...withoutFilm,
+      schemaVersion: 2,
+      phrases: [
+        {
+          id: 'p1',
+          name: 'Phrase 1',
+          startMs: 0,
+          endMs: 1000,
+          sheetRefs: [a1],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          postRollMs: 0,
+        },
+        {
+          id: 'p2',
+          name: 'Phrase 2',
+          startMs: 1000,
+          endMs: 2000,
+          sheetRefs: [a2, b, a3],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          postRollMs: 0,
+        },
+      ],
+    }
+
+    const migrated = migrateAndParseProject(v2)
+    expect(migrated.sheetCrops.map((crop) => crop.id)).toEqual(['a1', 'b', 'a3'])
+  })
+
+  it('gives an empty film when no phrase had crops', () => {
+    const base = createEmptyProject('When I Fall')
+    const { sheetCrops: _drop, ...withoutFilm } = base
+    const v2 = {
+      ...withoutFilm,
+      schemaVersion: 2,
+      phrases: [
+        {
+          id: 'p1',
+          name: 'Phrase 1',
+          startMs: 0,
+          endMs: 1000,
+          sheetRefs: [],
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          postRollMs: 0,
+        },
+      ],
+    }
+    const migrated = migrateAndParseProject(v2)
+    expect(migrated.sheetCrops).toEqual([])
   })
 })

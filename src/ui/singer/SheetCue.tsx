@@ -1,21 +1,17 @@
 import { useEffect, useState, type CSSProperties, type SyntheticEvent } from 'react'
 import { sheetScrollFrame, type SheetSlide } from '../../domain/sheets.ts'
-import type { Phrase } from '../../domain/schemas.ts'
+import type { SheetRef } from '../../domain/schemas.ts'
 
 export type SheetCueProps = {
-  phrase: Phrase
-  /** Page image URL for each of `phrase.sheetRefs`, index-matched. */
+  crops: SheetRef[]
+  /** Page image URL for each of `crops`, index-matched. */
   pageImageUrls?: Array<string | null | undefined>
   /**
-   * Ghost ms elapsed since the phrase started. Drives the horizontal
-   * filmstrip scroll across a multi-crop phrase: elapsed 0 is scrolled
-   * hard left (the first crop's own left edge flush with the viewport's
-   * left edge), elapsed = phrase duration is scrolled hard right (the last
-   * crop's own right edge flush with the viewport's right edge), linear
-   * in between and never past either end. A single-crop phrase ignores it
-   * entirely. Missing/null pins to the start (hard left).
+   * Camera 0–1 along the song film. 0 is scrolled hard left (first crop's
+   * left edge flush with the viewport), 1 is hard right (last crop's right
+   * edge flush). A single-crop film ignores it. Missing pins to 0.
    */
-  elapsedMs?: number | null
+  progress?: number | null
 }
 
 /**
@@ -55,7 +51,7 @@ function regionStyle(region: SheetSlide['region']): CSSProperties {
   }
 }
 
-export function SheetCue({ phrase, pageImageUrls = [], elapsedMs = null }: SheetCueProps) {
+export function SheetCue({ crops, pageImageUrls = [], progress: progressProp = null }: SheetCueProps) {
   // True aspect ratio per image (page pixels), corrected once that slide's
   // own <img> has loaded — region fractions alone don't account for the
   // source page's real pixel dimensions. Keyed by imageKey so several
@@ -90,8 +86,7 @@ export function SheetCue({ phrase, pageImageUrls = [], elapsedMs = null }: Sheet
     return () => observer.disconnect()
   }, [figureEl])
 
-  const durationMs = Math.max(0, phrase.endMs - phrase.startMs)
-  const frame = sheetScrollFrame(phrase.sheetRefs, pageImageUrls, elapsedMs ?? 0, durationMs)
+  const frame = sheetScrollFrame(crops, pageImageUrls, progressProp ?? 0)
   if (!frame || frame.slides.length === 0) return null
 
   const { slides, progress } = frame

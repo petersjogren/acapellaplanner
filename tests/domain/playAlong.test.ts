@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   phraseForPlayhead,
   playAlongWindow,
-  sheetElapsedInPhrase,
 } from '../../src/domain/playAlong.ts'
 import type { Phrase, Section } from '../../src/domain/schemas.ts'
 
 function phrase(overrides: Partial<Phrase> & { id: string; startMs: number; endMs: number }): Phrase {
   return {
     name: overrides.name ?? overrides.id,
-    sheetRefs: [],
     partPlan: [],
     loopDefault: { mode: 'phrase-loop', gapMs: 400 },
     postRollMs: 0,
@@ -52,16 +50,6 @@ describe('phraseForPlayhead', () => {
 
   it('holds the last phrase after the song', () => {
     expect(phraseForPlayhead([p1, p2, p3], 12_000)?.id).toBe('p3')
-  })
-})
-
-describe('sheetElapsedInPhrase', () => {
-  it('is playhead minus phrase start, clamped to the phrase span', () => {
-    expect(sheetElapsedInPhrase(p1, 1000)).toBe(0)
-    expect(sheetElapsedInPhrase(p1, 2000)).toBe(1000)
-    expect(sheetElapsedInPhrase(p1, 3000)).toBe(2000)
-    expect(sheetElapsedInPhrase(p1, 0)).toBe(0)
-    expect(sheetElapsedInPhrase(p1, 9000)).toBe(2000)
   })
 })
 

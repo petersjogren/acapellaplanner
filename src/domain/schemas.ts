@@ -147,7 +147,6 @@ export const PhraseSchema = z
     startMs: z.number(),
     endMs: z.number(),
     lyricText: z.string().optional(),
-    sheetRefs: z.array(SheetRefSchema),
     partPlan: z.array(PhrasePartPlanSchema),
     loopDefault: LoopPolicySchema,
     preRollMs: z.number().nonnegative().optional(),
@@ -266,8 +265,10 @@ export const ProjectSettingsSchema = z.object({
  *
  * v2: Section is a span of phrases (fromPhraseId/toPhraseId), not its own
  * [startMs, endMs] on the ghost.
+ * v3: Crops leave the phrase (`sheetRefs`) and become `sheetCrops` — one
+ * ordered score film for the song. Camera math is `filmScrollProgress`.
  */
-export const CURRENT_SCHEMA_VERSION = 2
+export const CURRENT_SCHEMA_VERSION = 3
 
 export const ProjectSchema = z
   .object({
@@ -284,6 +285,7 @@ export const ProjectSchema = z
     phrases: z.array(PhraseSchema),
     guides: z.array(GuideAssetSchema),
     sheetDocs: z.array(SheetDocumentSchema),
+    sheetCrops: z.array(SheetRefSchema),
     takes: z.array(TakeSchema),
     completion: CompletionStateSchema,
     mixPresets: z.array(MixPresetSchema),
@@ -340,6 +342,7 @@ export function createEmptyProject(title = 'Untitled song'): Project {
     phrases: [],
     guides: [],
     sheetDocs: [],
+    sheetCrops: [],
     takes: [],
     completion: { cells: [] },
     mixPresets: [],

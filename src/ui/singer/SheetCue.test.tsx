@@ -1,6 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Phrase } from '../../domain/schemas.ts'
 import { SheetCue, SHEET_CUE_SLIDE_HEIGHT_PX } from './SheetCue.tsx'
 
 afterEach(() => {
@@ -23,20 +22,6 @@ beforeEach(() => {
 const PAGE = 'data:image/png;base64,aaaa'
 const PAGE_2 = 'data:image/png;base64,bbbb'
 
-function phrase(overrides: Partial<Phrase> = {}): Phrase {
-  return {
-    id: 'p1',
-    name: 'when I fall',
-    startMs: 0,
-    endMs: 1000,
-    sheetRefs: [],
-    partPlan: [],
-    loopDefault: { mode: 'phrase-loop', gapMs: 400 },
-    postRollMs: 0,
-    ...overrides,
-  }
-}
-
 function trackWidthPx(): number {
   const track = screen.getByLabelText('Sheet crop').querySelector('[data-sheet-cue-track]') as HTMLElement
   return Number(track.style.width.replace('px', ''))
@@ -54,8 +39,8 @@ function slideWidthPx(index: number): number {
 }
 
 describe('SheetCue', () => {
-  it('renders nothing without sheetRefs', () => {
-    const { container } = render(<SheetCue phrase={phrase()} pageImageUrls={[PAGE]} />)
+  it('renders nothing without crops', () => {
+    const { container } = render(<SheetCue crops={[]} pageImageUrls={[PAGE]} />)
     expect(container.querySelector('img, canvas')).toBeNull()
     expect(screen.queryByLabelText('Sheet crop')).toBeNull()
   })
@@ -63,9 +48,7 @@ describe('SheetCue', () => {
   it('renders nothing without a page image even when a crop exists', () => {
     const { container } = render(
       <SheetCue
-        phrase={phrase({
-          sheetRefs: [{ id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 1, h: 1 } }],
-        })}
+        crops={[{ id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 1, h: 1 } }]}
       />,
     )
     expect(container.querySelector('img, canvas')).toBeNull()
@@ -74,16 +57,14 @@ describe('SheetCue', () => {
   it('shows an img clipped to the crop', () => {
     render(
       <SheetCue
-        phrase={phrase({
-          sheetRefs: [
+        crops={[
             {
               id: 'ref-1',
               sheetDocId: 'doc-1',
               pageIndex: 0,
               regionNorm: { x: 0.1, y: 0.2, w: 0.5, h: 0.25 },
             },
-          ],
-        })}
+          ]}
         pageImageUrls={[PAGE]}
       />,
     )
@@ -108,16 +89,12 @@ describe('SheetCue', () => {
   it('does not transform filmstrip imgs — only the track translates', () => {
     render(
       <SheetCue
-        phrase={phrase({
-          startMs: 0,
-          endMs: 4000,
-          sheetRefs: [
+        crops={[
             { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 } },
             { id: 'ref-2', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 } },
-          ],
-        })}
+          ]}
         pageImageUrls={[PAGE, PAGE]}
-        elapsedMs={1000}
+        progress={0.25}
       />,
     )
     const figure = screen.getByLabelText('Sheet crop')
@@ -135,16 +112,14 @@ describe('SheetCue', () => {
   it('sets an aspect-ratio style from the region before the image loads (single crop)', () => {
     render(
       <SheetCue
-        phrase={phrase({
-          sheetRefs: [
+        crops={[
             {
               id: 'ref-1',
               sheetDocId: 'doc-1',
               pageIndex: 0,
               regionNorm: { x: 0, y: 0, w: 0.5, h: 0.25 },
             },
-          ],
-        })}
+          ]}
         pageImageUrls={[PAGE]}
       />,
     )
@@ -156,16 +131,12 @@ describe('SheetCue', () => {
   it('renders every crop as its own slide, in order, each with its own image', () => {
     render(
       <SheetCue
-        phrase={phrase({
-          startMs: 0,
-          endMs: 4000,
-          sheetRefs: [
+        crops={[
             { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 } },
             { id: 'ref-2', sheetDocId: 'doc-2', pageIndex: 0, regionNorm: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 } },
-          ],
-        })}
+          ]}
         pageImageUrls={[PAGE, PAGE_2]}
-        elapsedMs={0}
+        progress={0}
       />,
     )
     const slides = screen.getByLabelText('Sheet crop').querySelectorAll('[data-sheet-slide]')
@@ -181,18 +152,14 @@ describe('SheetCue', () => {
     // same slide width just because there are two slides.
     render(
       <SheetCue
-        phrase={phrase({
-          startMs: 0,
-          endMs: 4000,
-          sheetRefs: [
+        crops={[
             // Square region -> aspect 1.
             { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 0.25, h: 0.25 } },
             // 4x wider than tall -> aspect 4.
             { id: 'ref-2', sheetDocId: 'doc-2', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 1, h: 0.25 } },
-          ],
-        })}
+          ]}
         pageImageUrls={[PAGE, PAGE_2]}
-        elapsedMs={0}
+        progress={0}
       />,
     )
     const squareWidth = slideWidthPx(0)
@@ -209,17 +176,13 @@ describe('SheetCue', () => {
   it('places slides side by side without gaps (track width is the exact sum of slide widths)', () => {
     render(
       <SheetCue
-        phrase={phrase({
-          startMs: 0,
-          endMs: 3000,
-          sheetRefs: [
+        crops={[
             { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 0.5, h: 0.5 } },
             { id: 'ref-2', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 0.2, h: 0.4 } },
             { id: 'ref-3', sheetDocId: 'doc-2', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 1, h: 0.1 } },
-          ],
-        })}
+          ]}
         pageImageUrls={[PAGE, PAGE, PAGE_2]}
-        elapsedMs={0}
+        progress={0}
       />,
     )
     const sum = slideWidthPx(0) + slideWidthPx(1) + slideWidthPx(2)
@@ -233,9 +196,9 @@ describe('SheetCue', () => {
     ]
     render(
       <SheetCue
-        phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+        crops={sheetRefs}
         pageImageUrls={[PAGE, PAGE]}
-        elapsedMs={0}
+        progress={0}
       />,
     )
     // translateX 0 means the track's own left edge sits exactly at the
@@ -251,9 +214,9 @@ describe('SheetCue', () => {
     ]
     render(
       <SheetCue
-        phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+        crops={sheetRefs}
         pageImageUrls={[PAGE, PAGE_2]}
-        elapsedMs={4000}
+        progress={1}
       />,
     )
     const totalWidth = slideWidthPx(0) + slideWidthPx(1)
@@ -276,18 +239,18 @@ describe('SheetCue', () => {
       ]
       const { rerender } = render(
         <SheetCue
-          phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+          crops={sheetRefs}
           pageImageUrls={[PAGE, PAGE]}
-          elapsedMs={0}
+          progress={0}
         />,
       )
       expect(trackTranslateXPx()).toBe(0)
 
       rerender(
         <SheetCue
-          phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+          crops={sheetRefs}
           pageImageUrls={[PAGE, PAGE]}
-          elapsedMs={4000}
+          progress={1}
         />,
       )
       // A viewport wider than the whole strip means there is no scroll
@@ -320,9 +283,9 @@ describe('SheetCue', () => {
       // First render: no image URLs resolved yet -> renders null, no <figure>.
       const { rerender } = render(
         <SheetCue
-          phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+          crops={sheetRefs}
           pageImageUrls={[undefined, undefined]}
-          elapsedMs={4000}
+          progress={1}
         />,
       )
       expect(screen.queryByLabelText('Sheet crop')).toBeNull()
@@ -331,9 +294,9 @@ describe('SheetCue', () => {
       // time on THIS render, not the component's first render.
       rerender(
         <SheetCue
-          phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+          crops={sheetRefs}
           pageImageUrls={[PAGE, PAGE_2]}
-          elapsedMs={4000}
+          progress={1}
         />,
       )
 
@@ -355,27 +318,27 @@ describe('SheetCue', () => {
     ]
     const { rerender } = render(
       <SheetCue
-        phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+        crops={sheetRefs}
         pageImageUrls={[PAGE, PAGE]}
-        elapsedMs={0}
+        progress={0}
       />,
     )
     const atStart = trackTranslateXPx()
 
     rerender(
       <SheetCue
-        phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+        crops={sheetRefs}
         pageImageUrls={[PAGE, PAGE]}
-        elapsedMs={1000}
+        progress={0.25}
       />,
     )
     const atQuarter = trackTranslateXPx()
 
     rerender(
       <SheetCue
-        phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+        crops={sheetRefs}
         pageImageUrls={[PAGE, PAGE]}
-        elapsedMs={2000}
+        progress={0.5}
       />,
     )
     const atHalf = trackTranslateXPx()
@@ -392,18 +355,18 @@ describe('SheetCue', () => {
     ]
     const { rerender } = render(
       <SheetCue
-        phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+        crops={sheetRefs}
         pageImageUrls={[PAGE, PAGE_2]}
-        elapsedMs={1000}
+        progress={0.25}
       />,
     )
     const before = trackTranslateXPx()
 
     rerender(
       <SheetCue
-        phrase={phrase({ startMs: 0, endMs: 4000, sheetRefs })}
+        crops={sheetRefs}
         pageImageUrls={[PAGE, PAGE_2]}
-        elapsedMs={3000}
+        progress={0.75}
       />,
     )
     const after = trackTranslateXPx()

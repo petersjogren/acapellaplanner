@@ -28,9 +28,10 @@ Pages compose domain mutations + repository I/O. Do not put Zod/schema rules in 
 
 ## Project document
 
-One JSON `Project` (`CURRENT_SCHEMA_VERSION = 2`) plus blobs in IndexedDB `audioBlobs`.
+One JSON `Project` (`CURRENT_SCHEMA_VERSION = 3`) plus blobs in IndexedDB `audioBlobs`.
 
-- **Phrases**: non-overlapping `[startMs, endMs]` on the ghost. `preRollMs` / `postRollMs` extend the *play/record window* and **may overlap** neighbouring phrases. New phrases persist 2000/2000; missing `preRollMs` on disk still means 0.
+- **Phrases**: non-overlapping `[startMs, endMs]` on the ghost. `preRollMs` / `postRollMs` extend the *play/record window* and **may overlap** neighbouring phrases. New phrases persist 2000/2000; missing `preRollMs` on disk still means 0. Phrases do **not** own sheet crops.
+- **Sheet film**: `project.sheetCrops` is an ordered list of `SheetRef` (same shape as the old per-phrase refs). Camera `F` is `filmScrollProgress` in `domain/sheets.ts`: occupied phrase-time only, hold in gaps. `SheetCue` is phrase-agnostic.
 - **Sections**: inclusive span of phrases (`fromPhraseId`/`toPhraseId`), not their own time range. v1→v2 migration maps old `[startMs,endMs]` onto overlapping phrases. Sections must not share a phrase.
 - **Takes**: phrase + part + `takeIndex`, blob id, optional `rating` (`keeper` \| `scratch` \| 1–5), `latencyCompMs`, headphone mix snapshot, optional `timelineStartMs`. `timelineStartMs` is a record-time snapshot of `phraseTimelineStartMs(phrase)` (domain/phrases.ts) — the whole-song "All phrases" mix and DAW stem export read it instead of recomputing from `take.phraseId` so editing or deleting the phrase afterwards cannot move, or orphan-drop, audio already sung. Missing on takes recorded before this field existed; those fall back to a live phrase lookup, or 0 if that phrase is also gone.
 - **Completion**: persisted but **re-derived on every save** (`deriveCompletion`). `partPlan.status` of `enough`/`final` is the singer/preparer override.

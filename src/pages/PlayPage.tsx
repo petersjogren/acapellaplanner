@@ -14,11 +14,10 @@ import {
 import {
   phraseForPlayhead,
   playAlongWindow,
-  sheetElapsedInPhrase,
   type PlayAlongLoopMode,
 } from '../domain/playAlong.ts'
 import { sortPhrases } from '../domain/phrases.ts'
-import { sheetPageBlobIdsForPhrase } from '../domain/sheets.ts'
+import { filmScrollProgress, sheetPageBlobIdsForCrops } from '../domain/sheets.ts'
 import type { Phrase } from '../domain/schemas.ts'
 import { MixPresetSelect } from '../ui/shared/MixPresetSelect.tsx'
 import { SingerShell } from '../ui/shell/SingerShell.tsx'
@@ -89,8 +88,8 @@ export function PlayPage() {
   const playheadPhrase =
     playheadMs != null ? phraseForPlayhead(phrases, playheadMs) : undefined
   const displayPhrase = (playing ? playheadPhrase : undefined) ?? selectedPhrase ?? playheadPhrase
-  const sheetImageBlobIds =
-    liveProject && displayPhrase ? sheetPageBlobIdsForPhrase(liveProject, displayPhrase) : []
+  const sheetCrops = liveProject?.sheetCrops ?? []
+  const sheetImageBlobIds = liveProject ? sheetPageBlobIdsForCrops(liveProject, sheetCrops) : []
   const sheetBlobIdsKey = sheetImageBlobIds.join('|')
 
   useEffect(() => {
@@ -345,10 +344,8 @@ export function PlayPage() {
     }
   }
 
-  const displayElapsed =
-    displayPhrase != null
-      ? sheetElapsedInPhrase(displayPhrase, playheadMs ?? displayPhrase.startMs)
-      : 0
+  const restMs = playheadMs ?? selectedPhrase?.startMs ?? 0
+  const sheetProgress = filmScrollProgress(phrases, restMs)
   const phraseIndex = displayPhrase
     ? phrases.findIndex((item) => item.id === displayPhrase.id) + 1
     : 0
@@ -377,8 +374,9 @@ export function PlayPage() {
             phrase={displayPhrase}
             phraseIndex={phraseIndex}
             phraseCount={phrases.length}
-            sheetPageUrls={sheetPageUrls}
-            sheetElapsedMs={displayElapsed}
+            sheetCrops={sheetCrops}
+            pageImageUrls={sheetPageUrls}
+            sheetProgress={sheetProgress}
           />
         </div>
       ) : null}

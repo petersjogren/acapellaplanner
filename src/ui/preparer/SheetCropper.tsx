@@ -1,23 +1,16 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { regionFromDrag } from '../../domain/sheets.ts'
-import type { Phrase, RegionNorm } from '../../domain/schemas.ts'
+import type { RegionNorm, SheetRef } from '../../domain/schemas.ts'
 
 export type SheetCropperProps = {
   pageImageUrl: string
   pageIndex: number
   pageCount: number
-  phrases: Phrase[]
-  selectedPhraseId?: string | null
+  crops: SheetRef[]
+  hasPhrases?: boolean
   onPageChange: (pageIndex: number) => void | Promise<void>
-  /** Replaces the phrase's whole crop sequence with just this one region. */
-  onBind: (phraseId: string, region: RegionNorm) => void | Promise<void>
-  /**
-   * Appends this region as the next crop in the phrase's sequence, for a
-   * phrase whose notes span more than one crop — the booth soft-scrolls
-   * through them in order as the phrase plays.
-   */
-  onAddCrop?: (phraseId: string, region: RegionNorm) => void | Promise<void>
-  onRemoveCrop?: (phraseId: string, refId: string) => void | Promise<void>
+  onAddCrop: (region: RegionNorm) => void | Promise<void>
+  onRemoveCrop?: (refId: string) => void | Promise<void>
 }
 
 function messageFrom(error: unknown, fallback: string): string {
@@ -54,34 +47,21 @@ export function SheetCropper({
   pageImageUrl,
   pageIndex,
   pageCount,
-  phrases,
-  selectedPhraseId = null,
+  crops,
+  hasPhrases = true,
   onPageChange,
-  onBind,
   onAddCrop,
   onRemoveCrop,
 }: SheetCropperProps) {
   const dragRef = useRef<{ x: number; y: number } | null>(null)
   const [preview, setPreview] = useState<RegionNorm | null>(null)
   const [region, setRegion] = useState<RegionNorm | null>(null)
-  const [phraseId, setPhraseId] = useState(selectedPhraseId ?? phrases[0]?.id ?? '')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setRegion(null)
     setPreview(null)
   }, [pageImageUrl, pageIndex])
-
-  useEffect(() => {
-    if (selectedPhraseId) {
-      setPhraseId(selectedPhraseId)
-      return
-    }
-    setPhraseId((current) => {
-      if (current && phrases.some((item) => item.id === current)) return current
-      return phrases[0]?.id ?? ''
-    })
-  }, [selectedPhraseId, phrases])
 
   function regionFromEvent(event: ReactPointerEvent<HTMLElement>, start: { x: number; y: number }) {
     const point = localPoint(event)
@@ -113,21 +93,10 @@ export function SheetCropper({
     setRegion(regionFromEvent(event, start))
   }
 
-  async function handleSave() {
-    if (!phraseId || !region) return
-    try {
-      await onBind(phraseId, region)
-      setRegion(null)
-      setError(null)
-    } catch (err: unknown) {
-      setError(messageFrom(err, 'Could not bind sheet crop'))
-    }
-  }
-
   async function handleAddCrop() {
-    if (!phraseId || !region || !onAddCrop) return
+    if (!region) return
     try {
-      await onAddCrop(phraseId, region)
+      await onAddCrop(region)
       setRegion(null)
       setError(null)
     } catch (err: unknown) {
@@ -136,9 +105,9 @@ export function SheetCropper({
   }
 
   async function handleRemoveCrop(refId: string) {
-    if (!phraseId || !onRemoveCrop) return
+    if (!onRemoveCrop) return
     try {
-      await onRemoveCrop(phraseId, refId)
+      await onRemoveCrop(refId)
       setError(null)
     } catch (err: unknown) {
       setError(messageFrom(err, 'Could not remove sheet crop'))
@@ -148,7 +117,6 @@ export function SheetCropper({
   const overlay = preview ?? region
   const canPrev = pageIndex > 0
   const canNext = pageIndex + 1 < pageCount
-  const boundRefs = phrases.find((item) => item.id === phraseId)?.sheetRefs ?? []
 
   return (
     <section className="mt-6 max-w-3xl" aria-label="Sheet crop">
@@ -195,49 +163,27 @@ export function SheetCropper({
           />
         ) : null}
       </div>
-      <p className="mt-2 text-sm text-ink-muted">Drag a rectangle on the page, then bind it to a phrase.</p>
-      {phrases.length === 0 ? (
-        <p className="mt-3 text-sm text-ink-muted">Mark phrases on the ghost before cropping the sheet.</p>
-      ) : (
-        <div className="mt-4 flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            Phrase
-            <select
-              value={phraseId}
-              onChange={(event) => setPhraseId(event.target.value)}
-              className="rounded-md border border-ink/15 bg-paper px-2 py-1"
-            >
-              {phrases.map((phrase) => (
-                <option key={phrase.id} value={phrase.id}>
-                  {phrase.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            disabled={!phraseId || !region}
-            onClick={() => void handleSave()}
-            className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red disabled:opacity-50"
-          >
-            Bind crop
-          </button>
-          {onAddCrop ? (
-            <button
-              type="button"
-              disabled={!phraseId || !region}
-              onClick={() => void handleAddCrop()}
-              title="For a phrase whose notes span more than one crop — the booth soft-scrolls through them in order."
-              className="rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:border-ink/50 disabled:opacity-50"
-            >
-              Add as next crop
-            </button>
-          ) : null}
-        </div>
-      )}
-      {phraseId && boundRefs.length > 0 ? (
-        <ol className="mt-4 flex flex-wrap gap-2 text-sm" aria-label="Bound crops">
-          {boundRefs.map((ref, index) => (
+      <p className="mt-2 text-sm text-ink-muted">
+        Drag a rectangle on the page, then add it to the score film.
+      </p>
+      {!hasPhrases ? (
+        <p className="mt-3 text-sm text-ink-muted">
+          Mark phrases on the ghost so Play can scroll this film with the song.
+        </p>
+      ) : null}
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <button
+          type="button"
+          disabled={!region}
+          onClick={() => void handleAddCrop()}
+          className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red disabled:opacity-50"
+        >
+          Add crop
+        </button>
+      </div>
+      {crops.length > 0 ? (
+        <ol className="mt-4 flex flex-wrap gap-2 text-sm" aria-label="Score film">
+          {crops.map((ref, index) => (
             <li
               key={ref.id}
               className="flex items-center gap-2 rounded-md border border-ink/15 bg-paper px-3 py-1.5"

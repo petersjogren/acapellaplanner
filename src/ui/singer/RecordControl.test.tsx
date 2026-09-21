@@ -35,7 +35,6 @@ const phrase: Phrase = {
   name: 'when I fall',
   startMs: 1000,
   endMs: 3000,
-  sheetRefs: [],
   partPlan: [],
   loopDefault: { mode: 'phrase-loop', gapMs: 400 },
   preRollMs: 250,

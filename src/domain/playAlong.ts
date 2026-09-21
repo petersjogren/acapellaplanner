@@ -33,16 +33,6 @@ export function phraseForPlayhead<T extends { startMs: number; endMs: number }>(
   return previous
 }
 
-/** Ghost ms elapsed since the phrase started, clamped to `[0, duration]`. */
-export function sheetElapsedInPhrase(
-  phrase: { startMs: number; endMs: number },
-  playheadMs: number,
-): number {
-  const duration = Math.max(0, phrase.endMs - phrase.startMs)
-  const elapsed = playheadMs - phrase.startMs
-  return Math.min(duration, Math.max(0, elapsed))
-}
-
 /**
  * Play/Practice window on the ghost clock. Play mode is follow-along, not
  * recording, so windows use phrase boundaries — not pre/post-roll.

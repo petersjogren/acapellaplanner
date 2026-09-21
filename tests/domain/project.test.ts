@@ -15,7 +15,6 @@ function phrase(id: string, name: string, startMs: number, endMs: number): Phras
     name,
     startMs,
     endMs,
-    sheetRefs: [],
     partPlan: [],
     loopDefault: { mode: 'phrase-loop', gapMs: 400 },
     postRollMs: 0,

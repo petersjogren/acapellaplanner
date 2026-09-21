@@ -31,7 +31,7 @@ import {
   type NewVoicePartInput,
   type VoicePartPatch,
 } from '../domain/roster.ts'
-import { addSheetRefToPhrase, bindSheetRefToPhrase, removeSheetRefFromPhrase } from '../domain/sheets.ts'
+import { appendSheetCrop, removeSheetCrop } from '../domain/sheets.ts'
 import { renameProject, phrasesBeyondGhost, reconcileGhostDuration } from '../domain/project.ts'
 import type { Phrase, Project, RegionNorm, SheetDocument } from '../domain/schemas.ts'
 import { renderPageToCanvas } from '../pdf/renderPage.ts'
@@ -582,11 +582,11 @@ export function PreparePage() {
     setTitleDraft(null)
   }
 
-  async function handleBindCrop(phraseId: string, region: RegionNorm) {
+  async function handleAddCrop(region: RegionNorm) {
     const doc = (projectRef.current ?? loaded).sheetDocs.at(-1)
     if (!doc) return
     await persistProject((current) =>
-      bindSheetRefToPhrase(current, phraseId, {
+      appendSheetCrop(current, {
         id: crypto.randomUUID(),
         sheetDocId: doc.id,
         pageIndex: sheetPageIndex,
@@ -595,21 +595,8 @@ export function PreparePage() {
     )
   }
 
-  async function handleAddCrop(phraseId: string, region: RegionNorm) {
-    const doc = (projectRef.current ?? loaded).sheetDocs.at(-1)
-    if (!doc) return
-    await persistProject((current) =>
-      addSheetRefToPhrase(current, phraseId, {
-        id: crypto.randomUUID(),
-        sheetDocId: doc.id,
-        pageIndex: sheetPageIndex,
-        regionNorm: region,
-      }),
-    )
-  }
-
-  async function handleRemoveCrop(phraseId: string, refId: string) {
-    await persistProject((current) => removeSheetRefFromPhrase(current, phraseId, refId))
+  async function handleRemoveCrop(refId: string) {
+    await persistProject((current) => removeSheetCrop(current, refId))
   }
 
   const ghostMeta = loaded.settings.ghostMeta
@@ -794,7 +781,7 @@ export function PreparePage() {
       <section className="mt-10 max-w-3xl" aria-label="Sheet music">
         <h3 className="font-medium">Sheet music</h3>
         <p className="mt-1 text-sm text-ink-muted">
-          Upload a PDF, crop a region, and bind it to a phrase.
+          Upload a PDF, crop regions, and add them to the score film in order.
         </p>
         <SheetUploader
           onUploaded={handleSheetUploaded}
@@ -805,10 +792,9 @@ export function PreparePage() {
             pageImageUrl={sheetPageUrl}
             pageIndex={sheetPageIndex}
             pageCount={activeSheet.pages.length}
-            phrases={loaded.phrases}
-            selectedPhraseId={selectedPhraseId}
+            crops={loaded.sheetCrops}
+            hasPhrases={loaded.phrases.length > 0}
             onPageChange={handleSheetPageChange}
-            onBind={handleBindCrop}
             onAddCrop={handleAddCrop}
             onRemoveCrop={handleRemoveCrop}
           />
