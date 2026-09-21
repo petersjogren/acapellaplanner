@@ -1,5 +1,5 @@
 import { sortPhrases } from './phrases.ts'
-import type { Project, RegionNorm, SheetRef } from './schemas.ts'
+import type { FilmPin, Project, RegionNorm, SheetRef } from './schemas.ts'
 
 export const MIN_REGION_NORM = 0.02
 
@@ -112,14 +112,89 @@ export function ghostToOccupiedMs(
   return acc
 }
 
+type FilmPhrase = {
+  startMs: number
+  endMs: number
+}
+
+const PIN_REPLACE_MS = 80
+
+export function addFilmPin(project: Project, ghostMs: number, u: number): Project {
+  const nextU = clamp(u, 0, 1)
+  const existing = project.filmPins ?? []
+  const nearby = existing.findIndex((pin) => Math.abs(pin.ghostMs - ghostMs) <= PIN_REPLACE_MS)
+  const pin: FilmPin = {
+    id: nearby >= 0 ? existing[nearby]!.id : crypto.randomUUID(),
+    ghostMs,
+    u: nextU,
+  }
+  const filmPins =
+    nearby >= 0
+      ? existing.map((item, index) => (index === nearby ? pin : item))
+      : [...existing, pin]
+  filmPins.sort((a, b) => a.ghostMs - b.ghostMs)
+  return { ...project, filmPins }
+}
+
+export function clearFilmPins(project: Project): Project {
+  if (!project.filmPins?.length) return project
+  return { ...project, filmPins: [] }
+}
+
+function lerpKnots(knots: Array<{ t: number; u: number }>, t: number): number {
+  if (knots.length === 0) return 0
+  const collapsed: Array<{ t: number; u: number }> = []
+  for (const knot of [...knots].sort((a, b) => a.t - b.t)) {
+    const last = collapsed[collapsed.length - 1]
+    if (last && last.t === knot.t) last.u = knot.u
+    else collapsed.push({ t: knot.t, u: knot.u })
+  }
+  let prevU = 0
+  for (const knot of collapsed) {
+    knot.u = Math.max(clamp(knot.u, 0, 1), prevU)
+    prevU = knot.u
+  }
+  const head = collapsed[0]!
+  const tail = collapsed[collapsed.length - 1]!
+  if (t <= head.t) return head.u
+  if (t >= tail.t) return tail.u
+  for (let i = 0; i < collapsed.length - 1; i++) {
+    const from = collapsed[i]!
+    const to = collapsed[i + 1]!
+    if (t > to.t) continue
+    const span = to.t - from.t
+    if (!(span > 0)) return to.u
+    return from.u + ((to.u - from.u) * (t - from.t)) / span
+  }
+  return tail.u
+}
+
 /** 0–1 camera progress along the song film. Empty or zero-duration phrases → 0. */
 export function filmScrollProgress(
-  phrases: Array<{ startMs: number; endMs: number }>,
+  phrases: FilmPhrase[],
   ghostMs: number,
+  pins: FilmPin[] = [],
 ): number {
-  const duration = occupiedDurationMs(phrases)
-  if (!(duration > 0)) return 0
-  return clamp(ghostToOccupiedMs(phrases, ghostMs) / duration, 0, 1)
+  const ordered = sortPhrases(phrases)
+  if (ordered.length === 0) return 0
+
+  if (pins.length === 0) {
+    const duration = occupiedDurationMs(ordered)
+    if (!(duration > 0)) return 0
+    return clamp(ghostToOccupiedMs(ordered, ghostMs) / duration, 0, 1)
+  }
+
+  const startMs = ordered[0]!.startMs
+  const endMs = ordered[ordered.length - 1]!.endMs
+  if (!(endMs > startMs)) return 0
+  return lerpKnots(
+    [
+      { t: startMs, u: 0 },
+      ...pins.map((pin) => ({ t: pin.ghostMs, u: pin.u })),
+      { t: endMs, u: 1 },
+    ],
+    ghostMs,
+  )
 }
 
 /**

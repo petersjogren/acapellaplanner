@@ -7,11 +7,14 @@ export type SheetCueProps = {
   /** Page image URL for each of `crops`, index-matched. */
   pageImageUrls?: Array<string | null | undefined>
   /**
-   * Camera 0–1 along the song film. 0 is scrolled hard left (first crop's
-   * left edge flush with the viewport), 1 is hard right (last crop's right
-   * edge flush). A single-crop film ignores it. Missing pins to 0.
+   * Camera 0–1 along the song film. Without `center`, 0 is hard left and
+   * 1 is hard right (edge-flush). With `center`, 0–1 is a content
+   * fraction kept in the middle of the viewport (clamped at the ends).
    */
   progress?: number | null
+  center?: boolean
+  /** Film content fraction (0–1) under a click — Play uses this to pin. */
+  onPickPosition?: (u: number) => void
 }
 
 /**
@@ -51,7 +54,13 @@ function regionStyle(region: SheetSlide['region']): CSSProperties {
   }
 }
 
-export function SheetCue({ crops, pageImageUrls = [], progress: progressProp = null }: SheetCueProps) {
+export function SheetCue({
+  crops,
+  pageImageUrls = [],
+  progress: progressProp = null,
+  center = false,
+  onPickPosition,
+}: SheetCueProps) {
   // True aspect ratio per image (page pixels), corrected once that slide's
   // own <img> has loaded — region fractions alone don't account for the
   // source page's real pixel dimensions. Keyed by imageKey so several
@@ -126,8 +135,19 @@ export function SheetCue({ crops, pageImageUrls = [], progress: progressProp = n
         ref={setFigureEl}
         data-sheet-cue=""
         aria-label="Sheet crop"
-        className="relative mt-2 max-w-xl overflow-hidden contain-paint rounded-md border border-ink/10 bg-paper-shadow"
+        className={`relative mt-2 max-w-xl overflow-hidden contain-paint rounded-md border border-ink/10 bg-paper-shadow${
+          onPickPosition ? ' cursor-pointer' : ''
+        }`}
         style={{ aspectRatio: `${aspectOf(only)}` }}
+        onClick={
+          onPickPosition
+            ? (event) => {
+                const rect = event.currentTarget.getBoundingClientRect()
+                if (!(rect.width > 0)) return
+                onPickPosition(Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)))
+              }
+            : undefined
+        }
       >
         <img
           src={only.imageKey}
@@ -153,7 +173,9 @@ export function SheetCue({ crops, pageImageUrls = [], progress: progressProp = n
   const widths = slides.map((slide) => SHEET_CUE_SLIDE_HEIGHT_PX * (aspectOf(slide) || 1))
   const totalWidthPx = widths.reduce((sum, width) => sum + width, 0)
   const maxScrollPx = Math.max(0, totalWidthPx - viewportWidthPx)
-  const scrollLeftPx = progress * maxScrollPx
+  const scrollLeftPx = center
+    ? Math.min(maxScrollPx, Math.max(0, progress * totalWidthPx - viewportWidthPx / 2))
+    : progress * maxScrollPx
   const translateXPx = -scrollLeftPx
   // No CSS transition on this translateX: Play/Sing sample elapsed every
   // rAF frame. A 100ms transition on top of that left Safari compositor
@@ -165,8 +187,20 @@ export function SheetCue({ crops, pageImageUrls = [], progress: progressProp = n
       ref={setFigureEl}
       data-sheet-cue=""
       aria-label="Sheet crop"
-      className="relative mt-2 max-w-xl overflow-hidden contain-paint rounded-md border border-ink/10 bg-paper-shadow"
+      className={`relative mt-2 max-w-xl overflow-hidden contain-paint rounded-md border border-ink/10 bg-paper-shadow${
+        onPickPosition ? ' cursor-pointer' : ''
+      }`}
       style={{ height: SHEET_CUE_SLIDE_HEIGHT_PX }}
+      onClick={
+        onPickPosition
+          ? (event) => {
+              if (!(totalWidthPx > 0)) return
+              const rect = event.currentTarget.getBoundingClientRect()
+              const contentX = scrollLeftPx + (event.clientX - rect.left)
+              onPickPosition(Math.min(1, Math.max(0, contentX / totalWidthPx)))
+            }
+          : undefined
+      }
     >
       <div
         data-sheet-cue-track=""

@@ -192,7 +192,7 @@ export function SingPage() {
   const ready = parts.length > 0 && phrases.length > 0
   const part = voicePartId ? parts.find((item) => item.id === voicePartId) : undefined
   const phrase = phraseId ? phrases.find((item) => item.id === phraseId) : undefined
-  const sheetProgress = filmScrollProgress(phrases, sheetElapsedMs ?? phrase?.startMs ?? 0)
+  const sheetProgress = filmScrollProgress(phrases, sheetElapsedMs ?? phrase?.startMs ?? 0, loaded.filmPins ?? [])
 
   function applySuggestion(suggestion: ReturnType<typeof suggestNext>, lockedPartId?: string) {
     if (!suggestion) {
@@ -306,6 +306,7 @@ export function SingPage() {
             sheetCrops={sheetCrops}
             pageImageUrls={sheetPageUrls}
             sheetProgress={sheetProgress}
+            sheetCenter={(loaded.filmPins?.length ?? 0) > 0}
           />
           <div className="mt-8">
             <ProgressRibbon

@@ -17,8 +17,9 @@ import {
   type PlayAlongLoopMode,
 } from '../domain/playAlong.ts'
 import { sortPhrases } from '../domain/phrases.ts'
-import { filmScrollProgress, sheetPageBlobIdsForCrops } from '../domain/sheets.ts'
-import type { Phrase } from '../domain/schemas.ts'
+import { addFilmPin, clearFilmPins, filmScrollProgress, sheetPageBlobIdsForCrops } from '../domain/sheets.ts'
+import type { Phrase, Project } from '../domain/schemas.ts'
+import { deriveCompletion } from '../domain/completion.ts'
 import { MixPresetSelect } from '../ui/shared/MixPresetSelect.tsx'
 import { SingerShell } from '../ui/shell/SingerShell.tsx'
 import { PhraseStage } from '../ui/singer/PhraseStage.tsx'
@@ -36,7 +37,7 @@ function phraseLabel(phrase: Phrase): string {
 
 export function PlayPage() {
   const { id: routeProjectId } = useParams()
-  const { project, error } = useLoadedProject()
+  const { project, error, setProject } = useLoadedProject()
   const repo = useProjectRepository()
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null)
   const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
@@ -53,13 +54,17 @@ export function PlayPage() {
   const selectedPhraseIdRef = useRef<string | null>(null)
   const phrasesRef = useRef<Phrase[]>([])
   const sheetElapsedRafRef = useRef<number | null>(null)
+  const writeQueueRef = useRef(Promise.resolve())
+  const projectRef = useRef<Project | null>(null)
 
   bufferRef.current = buffer
   selectedPhraseIdRef.current = selectedPhraseId
 
   const liveProject = project && typeof project === 'object' ? project : null
+  if (liveProject) projectRef.current = liveProject
   const phrases = liveProject ? sortPhrases(liveProject.phrases) : []
   phrasesRef.current = phrases
+  const filmPins = liveProject?.filmPins ?? []
 
   useEffect(() => {
     setSelectedPhraseId(null)
@@ -188,6 +193,21 @@ export function PlayPage() {
   }
 
   const loaded = project
+
+  function persistProject(mutate: (current: Project) => Project): void {
+    const run = writeQueueRef.current.then(async () => {
+      const current = projectRef.current
+      if (!current) return
+      const next = mutate(current)
+      const saved = await repo.saveProject({ ...next, completion: deriveCompletion(next) })
+      projectRef.current = saved
+      setProject(saved)
+    })
+    writeQueueRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    )
+  }
 
   function getEngine(): PlaybackEngine {
     if (!engineRef.current) {
@@ -345,7 +365,16 @@ export function PlayPage() {
   }
 
   const restMs = playheadMs ?? selectedPhrase?.startMs ?? 0
-  const sheetProgress = filmScrollProgress(phrases, restMs)
+  const sheetProgress = filmScrollProgress(phrases, restMs, filmPins)
+  const hasPins = filmPins.length > 0
+
+  function handlePickSheet(u: number) {
+    persistProject((current) => addFilmPin(current, restMs, u))
+  }
+
+  function handleClearPins() {
+    persistProject((current) => clearFilmPins(current))
+  }
   const phraseIndex = displayPhrase
     ? phrases.findIndex((item) => item.id === displayPhrase.id) + 1
     : 0
@@ -377,7 +406,25 @@ export function PlayPage() {
             sheetCrops={sheetCrops}
             pageImageUrls={sheetPageUrls}
             sheetProgress={sheetProgress}
+            sheetCenter={hasPins}
+            onPickSheet={handlePickSheet}
           />
+          {sheetCrops.length > 0 ? (
+            <>
+              <p className="mt-2 max-w-xl text-sm text-ink-muted">
+                Click the notes that should be in the middle now.
+              </p>
+              {hasPins ? (
+                <button
+                  type="button"
+                  onClick={handleClearPins}
+                  className="mt-2 text-sm text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+                >
+                  Clear all
+                </button>
+              ) : null}
+            </>
+          ) : null}
         </div>
       ) : null}
 

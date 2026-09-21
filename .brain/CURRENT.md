@@ -9,7 +9,7 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 - Home: create / rename / delete songs; import/export `.acapella.zip`.
 - Prepare: ghost import, phrase mark/edit (incl. head start / crossfade tail), roster (unique short labels), sections as phrase spans (ghost-follow vs fixed-tempo + optional click), **score film** (ordered sheet crops for the whole song), completion matrix, phrase preview with mix presets.
 - Sing: part picker / surprise-me, session suggestions, one-shot record, Hear (ghost/stack/solo), Keep / Scrap, Good enough / Next (both mark `enough`), Need more takes, mix presets, sheet cue that follows the song film.
-- Play: whole-song follow-along (`/project/:id/play`) with a continuous score-film camera, mix presets, tap-a-phrase jump, Pause on once-through, Practice loop of a phrase or section. No recording.
+- Play: whole-song follow-along (`/project/:id/play`) with a continuous score-film camera, mix presets, tap-a-phrase jump, Pause on once-through, Practice loop of a phrase or section. Click the visible film to pin that moment to the centre of the viewport; **Clear all** drops the pins. No recording.
 - Review: rate (keeper/scratch/1–5), play take with/without ghost, all keepers on a phrase or whole song, project zip, **DAW stem zip** (lanes default, keepers-only default, size estimate).
 - Calibrate: mic meter + **Check mic**; default **Line up** (880 Hz SNR); alternate **Clap with the click** (sequential Normal–Normal, MAD outliers, min 16 clicks, pair cap 400 ms); both auto-save the same `localStorage` profile; type-ms after a miss.
 - PWA app-shell offline; IDB projects survive refresh.
@@ -17,7 +17,7 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 
 ## Just landed
 
-Song-level sheet film (schema v3): crops no longer live on phrases. Prepare **Add crop** appends to `project.sheetCrops` (no phrase dropdown). Play and Sing share one `SheetCue` camera: `filmScrollProgress` maps ghost ms onto occupied phrase-time (hold in unmarked gaps), then onto edge-flush `translateX`. Pre/post-roll on Sing is the same `F` over the record-window playhead. Lyric still hops with `phraseForPlayhead`; the strip does not remount. iPad rules unchanged (layout crops, track-only transform, no CSS transition, callback-ref measure). Old songs flatten `sheetRefs` in timeline order and collapse consecutive identical rectangles.
+Song-level sheet film (schema v3): crops live on `project.sheetCrops`. Play click-to-pin (`project.filmPins`: ghost ms ↔ film `u`) warps `filmScrollProgress` piecewise-linear in ghost time; no pins = uniform occupied-time camera, edge-flush. With pins, the camera centres the interpolated `u`. Prepare is crop-only. Play and Sing share one `SheetCue`. Lyric still hops with `phraseForPlayhead`; the strip does not remount. iPad rules unchanged. Old songs flatten `sheetRefs` in timeline order and collapse consecutive identical rectangles.
 
 iPad Play-page multi-crop ghosting: two bound crops started scrolling then split into a diverging half-intensity copy of the sheet. Cause was nested CSS transforms — each crop `<img>` used `translate(%) scale()` inside a filmstrip track whose `translateX` updates every rAF, plus a 100ms CSS transition on that track. iPad Safari double-paints a transformed replaced element inside a translating ancestor. Crops are now static `left`/`top`/`width`/`height` (with `max-width: none` to beat Tailwind preflight); only the track translates, with no CSS transition. Same `SheetCue` on Sing and Play.
 

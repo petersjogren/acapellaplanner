@@ -78,5 +78,7 @@ Transform stays on the **track only** (`translateX` in real pixels). That proper
 
 ## Score-film camera maps occupied phrase time, not wall-clock ghost
 
-`filmScrollProgress` only ticks inside phrases and **holds** in unmarked gaps (and before the first / after the last). Mapping `F` over `[0, ghostDuration]` lets a long intro consume the film so the actual song races. Phrase-loop wrap snaps `getPositionMs` from end → start — do not CSS-transition that jump (same iPad compositor-ghost rule as rAF `translateX`).
+`filmScrollProgress` with **no pins** only ticks inside phrases and **holds** in unmarked gaps (and before the first / after the last). Mapping `F` over `[0, ghostDuration]` lets a long intro consume the film so the actual song races. Phrase-loop wrap snaps `getPositionMs` from end → start — do not CSS-transition that jump (same iPad compositor-ghost rule as rAF `translateX`).
+
+With pins, `F` lerps in **ghost ms** between implicit `(first.start, 0)`, user `(ghostMs, u)`, and `(last.end, 1)`. Store content-fraction `u` (click x along the strip), not viewport-dependent `scrollLeft`. Nearby clicks within 80 ms replace. Never rewind — clamp `u` non-decreasing. Phrase-start crop chips were too clunky; pin by clicking the visible film on Play.
 

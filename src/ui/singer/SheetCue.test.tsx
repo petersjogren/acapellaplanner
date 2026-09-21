@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SheetCue, SHEET_CUE_SLIDE_HEIGHT_PX } from './SheetCue.tsx'
 
@@ -375,5 +375,38 @@ describe('SheetCue', () => {
     // not stop the scroll — it is still one continuous horizontal
     // translateX in real pixels.
     expect(after).toBeLessThan(before)
+  })
+
+  it('reports the clicked content fraction along the film', () => {
+    const onPickPosition = vi.fn()
+    const sheetRefs = [
+      { id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 1, h: 1 } },
+      { id: 'ref-2', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 1, h: 1 } },
+    ]
+    render(
+      <SheetCue
+        crops={sheetRefs}
+        pageImageUrls={[PAGE, PAGE]}
+        progress={0}
+        onPickPosition={onPickPosition}
+      />,
+    )
+    const figure = screen.getByLabelText('Sheet crop')
+    vi.spyOn(figure, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      bottom: SHEET_CUE_SLIDE_HEIGHT_PX,
+      right: 400,
+      width: 400,
+      height: SHEET_CUE_SLIDE_HEIGHT_PX,
+      toJSON() {
+        return {}
+      },
+    })
+    fireEvent.click(figure, { clientX: 80, clientY: 80 })
+    expect(onPickPosition).toHaveBeenCalledTimes(1)
+    expect(onPickPosition.mock.calls[0]![0]).toBeCloseTo(80 / trackWidthPx(), 5)
   })
 })

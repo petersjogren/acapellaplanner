@@ -118,6 +118,13 @@ export const RegionNormSchema = z.object({
   h: z.number().min(0).max(1),
 })
 
+export const FilmPinSchema = z.object({
+  id: z.string().min(1),
+  ghostMs: z.number(),
+  /** Content fraction along the film (0 = start, 1 = end). */
+  u: z.number().min(0).max(1),
+})
+
 export const SheetRefSchema = z.object({
   id: z.string().min(1),
   sheetDocId: z.string().min(1),
@@ -286,6 +293,7 @@ export const ProjectSchema = z
     guides: z.array(GuideAssetSchema),
     sheetDocs: z.array(SheetDocumentSchema),
     sheetCrops: z.array(SheetRefSchema),
+    filmPins: z.array(FilmPinSchema).optional(),
     takes: z.array(TakeSchema),
     completion: CompletionStateSchema,
     mixPresets: z.array(MixPresetSchema),
@@ -308,6 +316,7 @@ export type LoopPolicy = z.infer<typeof LoopPolicySchema>
 export type VoicePart = z.infer<typeof VoicePartSchema>
 export type Section = z.infer<typeof SectionSchema>
 export type RegionNorm = z.infer<typeof RegionNormSchema>
+export type FilmPin = z.infer<typeof FilmPinSchema>
 export type SheetRef = z.infer<typeof SheetRefSchema>
 export type PhrasePartStatus = z.infer<typeof PhrasePartStatusSchema>
 export type RequiredGuide = z.infer<typeof RequiredGuideSchema>

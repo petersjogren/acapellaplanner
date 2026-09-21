@@ -20,9 +20,9 @@ Record only choices that future work must not silently reverse.
 ## Schema
 
 - **v2 (2026-09):** Section is `fromPhraseId`/`toPhraseId`. v1 `[startMs,endMs]` migrated by claiming phrases that overlap the old region in timeline order; empty regions dropped. `ProjectSchema` describes **only** current shape; history lives in `migrations.ts`.
-- **v3 (2026-09-21):** `Project.sheetCrops` is the ordered score film. `Phrase.sheetRefs` removed. v2→v3 concatenates phrase refs in timeline order and collapses consecutive identical `doc+page+region`. No pins. Camera is `filmScrollProgress` (occupied phrase-time, hold in gaps).
+- **v3 (2026-09-21):** `Project.sheetCrops` is the ordered score film. `Phrase.sheetRefs` removed. v2→v3 concatenates phrase refs in timeline order and collapses consecutive identical `doc+page+region`. No pins in that landing.
+- Optional field additions do not bump `schemaVersion`. **`Project.filmPins`** (`{ id, ghostMs, u }`) is one: missing/empty means uniform occupied-time `F` (edge-flush). Click the visible film on Play to pin `(playhead, content-u)`; next play lerps in ghost time between implicit start `u=0`, pins, end `u=1`. With pins, `SheetCue` centres `u`. Never rewind (`u` non-decreasing). Nearby clicks (80 ms) replace. **Clear all** empties the list. No global speed knob. Do not pin on Prepare crops or on phrases.
 - Unversioned historical JSON is implicit v1 (`withVersionStamped`).
-- Optional field additions do not bump `schemaVersion`.
 - **New-phrase rolls (2026-09):** `addPhrase` writes `preRollMs`/`postRollMs` = 2000. Missing `preRollMs` on disk still means 0. Do not Zod-default or migrate old phrases to 2000.
 
 ## Audio / export

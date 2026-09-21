@@ -10,6 +10,8 @@ export type PhraseStageProps = {
   pageImageUrls?: Array<string | null | undefined>
   /** Camera 0–1 along the song film. */
   sheetProgress?: number | null
+  sheetCenter?: boolean
+  onPickSheet?: (u: number) => void
 }
 
 export function PhraseStage({
@@ -20,6 +22,8 @@ export function PhraseStage({
   sheetCrops = [],
   pageImageUrls = [],
   sheetProgress = null,
+  sheetCenter = false,
+  onPickSheet,
 }: PhraseStageProps) {
   const lyric = phrase.lyricText?.trim() || phrase.name
 
@@ -39,7 +43,13 @@ export function PhraseStage({
       {phrase.notesForSinger ? (
         <p className="max-w-md text-ink/70">{phrase.notesForSinger}</p>
       ) : null}
-      <SheetCue crops={sheetCrops} pageImageUrls={pageImageUrls} progress={sheetProgress} />
+      <SheetCue
+        crops={sheetCrops}
+        pageImageUrls={pageImageUrls}
+        progress={sheetProgress}
+        center={sheetCenter}
+        onPickPosition={onPickSheet}
+      />
     </section>
   )
 }

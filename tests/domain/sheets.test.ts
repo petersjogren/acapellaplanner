@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addFilmPin,
   appendSheetCrop,
+  clearFilmPins,
   filmScrollProgress,
   ghostToOccupiedMs,
   MIN_REGION_NORM,
@@ -197,5 +199,57 @@ describe('filmScrollProgress', () => {
     expect(ghostToOccupiedMs(gapped, 7000)).toBe(5000)
     expect(filmScrollProgress(gapped, 5000)).toBeCloseTo(4000 / 6000, 10)
     expect(filmScrollProgress(gapped, 7000)).toBeCloseTo(5000 / 6000, 10)
+  })
+
+  it('lerps in ghost time between click pins', () => {
+    const phrases = [
+      { startMs: 0, endMs: 4000 },
+      { startMs: 4000, endMs: 8000 },
+    ]
+    const pins = [{ id: 'pin', ghostMs: 4000, u: 0.25 }]
+    expect(filmScrollProgress(phrases, 0, pins)).toBe(0)
+    expect(filmScrollProgress(phrases, 4000, pins)).toBe(0.25)
+    expect(filmScrollProgress(phrases, 8000, pins)).toBe(1)
+    expect(filmScrollProgress(phrases, 2000, pins)).toBeCloseTo(0.125, 10)
+  })
+
+  it('does not rewind when a later pin is further left on the film', () => {
+    const phrases = [{ startMs: 0, endMs: 8000 }]
+    const pins = [
+      { id: 'a', ghostMs: 2000, u: 0.6 },
+      { id: 'b', ghostMs: 4000, u: 0.2 },
+    ]
+    expect(filmScrollProgress(phrases, 2000, pins)).toBe(0.6)
+    expect(filmScrollProgress(phrases, 4000, pins)).toBe(0.6)
+  })
+
+  it('holds outside the phrase span', () => {
+    const phrases = [{ startMs: 1000, endMs: 5000 }]
+    const pins = [{ id: 'pin', ghostMs: 3000, u: 0.4 }]
+    expect(filmScrollProgress(phrases, 0, pins)).toBe(0)
+    expect(filmScrollProgress(phrases, 9000, pins)).toBe(1)
+  })
+})
+
+describe('addFilmPin / clearFilmPins', () => {
+  it('appends a pin sorted by ghost time', () => {
+    const project = createEmptyProject('When I Fall')
+    const next = addFilmPin(addFilmPin(project, 4000, 0.5), 1000, 0.2)
+    expect(next.filmPins?.map((pin) => pin.ghostMs)).toEqual([1000, 4000])
+    expect(next.filmPins?.[0]?.u).toBe(0.2)
+  })
+
+  it('replaces a pin at nearly the same ghost time', () => {
+    const project = addFilmPin(createEmptyProject('When I Fall'), 1000, 0.2)
+    const next = addFilmPin(project, 1040, 0.8)
+    expect(next.filmPins).toHaveLength(1)
+    expect(next.filmPins?.[0]?.u).toBe(0.8)
+    expect(next.filmPins?.[0]?.id).toBe(project.filmPins?.[0]?.id)
+  })
+
+  it('clears all pins', () => {
+    const project = addFilmPin(createEmptyProject('When I Fall'), 1000, 0.2)
+    const next = clearFilmPins(project)
+    expect(next.filmPins).toEqual([])
   })
 })
