@@ -1,4 +1,7 @@
+import { msToSamples } from '../audio/pcm.ts'
+
 export const WAV_HEADER_BYTES = 44
+export { msToSamples }
 
 /**
  * Clamp before scaling: a float above 1 would wrap to a loud negative click.
@@ -56,11 +59,6 @@ export function wavFromPcm16(pcm: Int16Array, sampleRate: number): Uint8Array {
 
 export function encodeWav(buffer: AudioBuffer): Uint8Array {
   return wavFromPcm16(floatToPcm16(buffer.getChannelData(0)), buffer.sampleRate)
-}
-
-export function msToSamples(ms: number, sampleRate: number): number {
-  if (!Number.isFinite(ms) || ms <= 0) return 0
-  return Math.round((ms / 1000) * sampleRate)
 }
 
 /**
