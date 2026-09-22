@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from '../../src/app/routes.tsx'
 import { decodeAudioFile } from '../../src/audio/decode.ts'
-import type { PlaybackMix } from '../../src/audio/mix.ts'
+import { BLEND_CHECK_PRESET_ID, type PlaybackMix, STACK_BUILD_PRESET_ID } from '../../src/audio/mix.ts'
 import {
   createEmptyProject,
   type Phrase,
@@ -12,6 +12,8 @@ import {
   type Take,
   type VoicePart,
 } from '../../src/domain/schemas.ts'
+import { canEncodeFilmMp4 } from '../../src/export/canEncodeFilmMp4.ts'
+import { exportFilmMp4 } from '../../src/export/filmMp4.ts'
 import { AcapellaDB } from '../../src/storage/db.ts'
 import { exportDawStemsZip } from '../../src/storage/dawExport.ts'
 import {
@@ -67,6 +69,22 @@ vi.mock('../../src/storage/dawExport.ts', async (importOriginal) => {
   return {
     ...actual,
     exportDawStemsZip: vi.fn(),
+  }
+})
+
+vi.mock('../../src/export/filmMp4.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/export/filmMp4.ts')>()
+  return {
+    ...actual,
+    exportFilmMp4: vi.fn(),
+  }
+})
+
+vi.mock('../../src/export/canEncodeFilmMp4.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/export/canEncodeFilmMp4.ts')>()
+  return {
+    ...actual,
+    canEncodeFilmMp4: vi.fn(),
   }
 })
 
@@ -137,6 +155,10 @@ describe('ReviewPage', () => {
     vi.mocked(downloadBlob).mockReset()
     vi.mocked(exportDawStemsZip).mockReset()
     vi.mocked(exportDawStemsZip).mockResolvedValue(new Blob(['stems'], { type: 'application/zip' }))
+    vi.mocked(exportFilmMp4).mockReset()
+    vi.mocked(exportFilmMp4).mockResolvedValue(new Blob(['mp4'], { type: 'video/mp4' }))
+    vi.mocked(canEncodeFilmMp4).mockReset()
+    vi.mocked(canEncodeFilmMp4).mockResolvedValue({ video: true, audio: 'aac' })
     vi.mocked(decodeAudioFile).mockResolvedValue({
       buffer: { duration: 3, sampleRate: 44100 } as AudioBuffer,
       durationMs: 3000,
@@ -449,6 +471,102 @@ describe('ReviewPage', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toMatch(/no takes to export/i)
+    })
+    expect(downloadBlob).not.toHaveBeenCalled()
+  })
+
+  async function saveProjectWithSheetCrops() {
+    const current = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...current!,
+      sheetDocs: [
+        {
+          id: 'doc-1',
+          name: 'lead.pdf',
+          source: 'pdf',
+          pages: [{ pageIndex: 0, imageBlobId: 'img-1' }],
+        },
+      ],
+      sheetCrops: [
+        {
+          id: 'crop-1',
+          sheetDocId: 'doc-1',
+          pageIndex: 0,
+          regionNorm: { x: 0, y: 0, w: 1, h: 1 },
+        },
+      ],
+    })
+  }
+
+  it('Export film for YouTube downloads a .film.mp4 with Stack Build by default', async () => {
+    await saveProjectWithSheetCrops()
+    renderReview()
+
+    await waitFor(() => {
+      const button = screen.getByRole('button', { name: 'Export film for YouTube' })
+      expect(button.hasAttribute('disabled')).toBe(false)
+    })
+    expect((screen.getByRole('combobox', { name: 'Film mix' }) as HTMLSelectElement).value).toBe(
+      STACK_BUILD_PRESET_ID,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export film for YouTube' }))
+
+    await waitFor(() => {
+      expect(downloadBlob).toHaveBeenCalled()
+    })
+    expect(vi.mocked(exportFilmMp4).mock.calls[0]?.[0]).toMatchObject({
+      presetId: STACK_BUILD_PRESET_ID,
+    })
+    expect(vi.mocked(downloadBlob).mock.calls[0]?.[1]).toMatch(/\.film\.mp4$/)
+  })
+
+  it('passes Blend Check when the film mix is changed', async () => {
+    await saveProjectWithSheetCrops()
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: 'Film mix' })).toBeTruthy()
+    })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Film mix' }), {
+      target: { value: BLEND_CHECK_PRESET_ID },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Export film for YouTube' }))
+
+    await waitFor(() => {
+      expect(exportFilmMp4).toHaveBeenCalled()
+    })
+    expect(vi.mocked(exportFilmMp4).mock.calls[0]?.[0]).toMatchObject({
+      presetId: BLEND_CHECK_PRESET_ID,
+    })
+  })
+
+  it('disables Export film for YouTube when there are no sheet crops', async () => {
+    renderReview()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Export film for YouTube' })).toBeTruthy()
+    })
+    expect(
+      screen.getByRole('button', { name: 'Export film for YouTube' }).hasAttribute('disabled'),
+    ).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Export film for YouTube' }))
+    expect(exportFilmMp4).not.toHaveBeenCalled()
+  })
+
+  it('shows an alert and does not download when exportFilmMp4 rejects', async () => {
+    vi.mocked(exportFilmMp4).mockRejectedValue(new Error('Could not export film'))
+    await saveProjectWithSheetCrops()
+    renderReview()
+
+    await waitFor(() => {
+      const button = screen.getByRole('button', { name: 'Export film for YouTube' })
+      expect(button.hasAttribute('disabled')).toBe(false)
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Export film for YouTube' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/could not export film/i)
     })
     expect(downloadBlob).not.toHaveBeenCalled()
   })

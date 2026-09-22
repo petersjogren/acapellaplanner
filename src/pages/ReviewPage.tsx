@@ -4,6 +4,7 @@ import { decodeAudioFile } from '../audio/decode.ts'
 import { createPlaybackEngine, type PlaybackEngine } from '../audio/engine.ts'
 import {
   BLEND_CHECK_PRESET_ID,
+  builtinMixPresets,
   createAudioBlobLoader,
   loadAllKeepersMixForSong,
   loadPlaybackMixForPhrase,
@@ -12,10 +13,13 @@ import {
 } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import type { Project, TakeRating } from '../domain/schemas.ts'
+import { canEncodeFilmMp4 } from '../export/canEncodeFilmMp4.ts'
+import { exportFilmMp4 } from '../export/filmMp4.ts'
 import { estimateStemBytes, exportDawStemsZip } from '../storage/dawExport.ts'
 import {
   downloadBlob,
   exportProjectZip,
+  filmMp4Filename,
   projectZipFilename,
   resolveExportBlob,
   stemsZipFilename,
@@ -70,6 +74,10 @@ export function ReviewPage() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportingStems, setExportingStems] = useState(false)
+  const [exportingFilm, setExportingFilm] = useState(false)
+  const [filmProgress, setFilmProgress] = useState(0)
+  const [mp4Unsupported, setMp4Unsupported] = useState(false)
+  const [filmMixPresetId, setFilmMixPresetId] = useState(STACK_BUILD_PRESET_ID)
   const [keepersOnly, setKeepersOnly] = useState(true)
   const [stemMode, setStemMode] = useState<'lanes' | 'per-take'>('lanes')
   const projectRef = useRef<Project | null>(null)
@@ -90,6 +98,12 @@ export function ReviewPage() {
     return () => {
       engineRef.current?.stop()
     }
+  }, [])
+
+  useEffect(() => {
+    void canEncodeFilmMp4()
+      .then(() => setMp4Unsupported(false))
+      .catch(() => setMp4Unsupported(true))
   }, [])
 
   const ghostTrackId = project && typeof project === 'object' ? project.ghostTrackId : null
@@ -321,6 +335,30 @@ export function ReviewPage() {
     }
   }
 
+  async function handleExportFilm() {
+    setExportError(null)
+    setExportingFilm(true)
+    setFilmProgress(0)
+    try {
+      const current = projectRef.current ?? loaded
+      const blob = await exportFilmMp4({
+        project: current,
+        presetId: filmMixPresetId,
+        ghost: bufferRef.current,
+        loadBlob: async (id) => (await repo.getAudioBlob(id))?.blob,
+        loadAudioBuffer: createAudioBlobLoader((id) => repo.getAudioBlob(id)),
+        onProgress: (ratio) => {
+          setFilmProgress(ratio)
+        },
+      })
+      downloadBlob(blob, filmMp4Filename(current.title))
+    } catch (err: unknown) {
+      setExportError(messageFrom(err, 'Could not export film'))
+    } finally {
+      setExportingFilm(false)
+    }
+  }
+
   return (
     <PreparerShell title={loaded.title} current="review" projectId={loaded.id}>
       <div className="flex flex-wrap items-baseline justify-between gap-4">
@@ -374,6 +412,33 @@ export function ReviewPage() {
             Export
           </button>
         </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <select
+          aria-label="Film mix"
+          value={filmMixPresetId}
+          onChange={(event) => setFilmMixPresetId(event.target.value)}
+          className="rounded-md border border-ink/15 bg-paper px-3 py-2 text-sm studio-transition hover:border-ink/40"
+        >
+          {builtinMixPresets().map((preset) => (
+            <option key={preset.id} value={preset.id}>
+              {preset.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="rounded-md border border-ink/15 px-4 py-2 text-sm font-medium studio-transition hover:bg-ink/5 disabled:opacity-50"
+          onClick={() => void handleExportFilm()}
+          disabled={exportingFilm || loaded.sheetCrops.length === 0 || mp4Unsupported}
+        >
+          Export film for YouTube
+        </button>
+        {exportingFilm ? (
+          <span className="text-sm text-ink/70">
+            Encoding film… {Math.round(filmProgress * 100)}%
+          </span>
+        ) : null}
       </div>
       <p className="mt-3 max-w-xl text-ink/70">
         Hear a take with the ghost or solo, or all keepers together with or without the ghost.
