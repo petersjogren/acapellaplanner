@@ -3,7 +3,10 @@ import {
   addFilmPin,
   appendSheetCrop,
   clearFilmPins,
+  containCropBox,
+  cropAspect,
   filmScrollProgress,
+  filmTrackLayout,
   ghostToOccupiedMs,
   MIN_REGION_NORM,
   occupiedDurationMs,
@@ -11,6 +14,7 @@ import {
   removeSheetCrop,
   sheetPageBlobIdsForCrops,
   sheetScrollFrame,
+  sourceCropPx,
 } from '../../src/domain/sheets.ts'
 import { createEmptyProject, type Project, type SheetRef } from '../../src/domain/schemas.ts'
 
@@ -251,5 +255,71 @@ describe('addFilmPin / clearFilmPins', () => {
     const project = addFilmPin(createEmptyProject('When I Fall'), 1000, 0.2)
     const next = clearFilmPins(project)
     expect(next.filmPins).toEqual([])
+  })
+})
+
+describe('cropAspect', () => {
+  it('is region width over height', () => {
+    expect(cropAspect({ x: 0, y: 0, w: 0.5, h: 0.25 })).toBe(2)
+  })
+
+  it('scales by natural image size when given', () => {
+    expect(cropAspect({ x: 0, y: 0, w: 0.5, h: 0.5 }, { w: 2000, h: 1000 })).toBe(2)
+  })
+})
+
+describe('containCropBox', () => {
+  it('never lets a square crop become window-tall', () => {
+    expect(containCropBox(1, 800, 400)).toEqual({ width: 400, height: 400 })
+    expect(containCropBox(1, 400, 800)).toEqual({ width: 400, height: 400 })
+    expect(containCropBox(4, 800, 400)).toEqual({ width: 800, height: 200 })
+  })
+})
+
+describe('filmTrackLayout', () => {
+  it('scrolls edge-flush when not centering', () => {
+    const layout = filmTrackLayout({
+      aspects: [2, 4],
+      viewportWidthPx: 800,
+      viewportHeightPx: 200,
+      progress: 1,
+      center: false,
+    })
+    expect(layout.totalWidthPx).toBe(1200)
+    expect(layout.scrollLeftPx).toBe(400)
+    expect(layout.translateXPx).toBe(-400)
+  })
+
+  it('keeps progress as a content fraction in the viewport middle', () => {
+    const layout = filmTrackLayout({
+      aspects: [2, 4],
+      viewportWidthPx: 800,
+      viewportHeightPx: 200,
+      progress: 0.5,
+      center: true,
+    })
+    expect(layout.scrollLeftPx).toBe(200)
+  })
+
+  it('does not scroll when the film is narrower than the viewport', () => {
+    const layout = filmTrackLayout({
+      aspects: [1],
+      viewportWidthPx: 800,
+      viewportHeightPx: 200,
+      progress: 1,
+      center: false,
+    })
+    expect(layout.scrollLeftPx).toBe(0)
+  })
+})
+
+describe('sourceCropPx', () => {
+  it('maps a normalized region onto image pixels', () => {
+    expect(sourceCropPx({ x: 0.1, y: 0.2, w: 0.5, h: 0.25 }, 1000, 800)).toEqual({
+      sx: 100,
+      sy: 160,
+      sw: 500,
+      sh: 200,
+    })
   })
 })

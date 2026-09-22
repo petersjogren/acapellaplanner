@@ -218,3 +218,76 @@ export function sheetScrollFrame(
   }
   return { slides, progress: clamp(progress, 0, 1) }
 }
+
+export function cropAspect(
+  region: RegionNorm,
+  natural?: { w: number; h: number },
+): number {
+  const w = region.w <= 0 ? 1 : region.w
+  const h = region.h <= 0 ? 1 : region.h
+  if (natural) return (w * natural.w) / Math.max(1e-6, h * natural.h)
+  return w / h
+}
+
+export function containCropBox(
+  aspect: number,
+  viewportWidthPx: number,
+  viewportHeightPx: number,
+  fallbackHeightPx = 220,
+): { width: number; height: number } {
+  const safeAspect = aspect > 0 ? aspect : 1
+  const heightBudget = viewportHeightPx > 0 ? viewportHeightPx : fallbackHeightPx
+  let height = heightBudget
+  let width = height * safeAspect
+  if (viewportWidthPx > 0 && width > viewportWidthPx) {
+    width = viewportWidthPx
+    height = width / safeAspect
+  }
+  return { width, height }
+}
+
+export type FilmTrackLayout = {
+  slideBoxes: Array<{ x: number; y: number; width: number; height: number }>
+  totalWidthPx: number
+  scrollLeftPx: number
+  translateXPx: number
+}
+
+export function filmTrackLayout(args: {
+  aspects: number[]
+  viewportWidthPx: number
+  viewportHeightPx: number
+  progress: number
+  center: boolean
+}): FilmTrackLayout {
+  const height = args.viewportHeightPx
+  const widths = args.aspects.map((a) => height * (a > 0 ? a : 1))
+  const totalWidthPx = widths.reduce((sum, width) => sum + width, 0)
+  const maxScrollPx = Math.max(0, totalWidthPx - args.viewportWidthPx)
+  const progress = clamp(args.progress, 0, 1)
+  const scrollLeftPx = args.center
+    ? Math.min(maxScrollPx, Math.max(0, progress * totalWidthPx - args.viewportWidthPx / 2))
+    : progress * maxScrollPx
+  const slideBoxes: FilmTrackLayout['slideBoxes'] = []
+  let x = 0
+  for (const width of widths) {
+    slideBoxes.push({ x, y: 0, width, height })
+    x += width
+  }
+  return { slideBoxes, totalWidthPx, scrollLeftPx, translateXPx: -scrollLeftPx }
+}
+
+export function sourceCropPx(
+  region: RegionNorm,
+  imageW: number,
+  imageH: number,
+): { sx: number; sy: number; sw: number; sh: number } {
+  const w = region.w <= 0 ? 1 : region.w
+  const h = region.h <= 0 ? 1 : region.h
+  return {
+    sx: region.x * imageW,
+    sy: region.y * imageH,
+    sw: w * imageW,
+    sh: h * imageH,
+  }
+}

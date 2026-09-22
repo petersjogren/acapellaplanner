@@ -1,6 +1,14 @@
 import { useEffect, useState, type CSSProperties, type SyntheticEvent } from 'react'
-import { sheetScrollFrame, type SheetSlide } from '../../domain/sheets.ts'
+import {
+  containCropBox,
+  cropAspect,
+  filmTrackLayout,
+  sheetScrollFrame,
+  type SheetSlide,
+} from '../../domain/sheets.ts'
 import type { SheetRef } from '../../domain/schemas.ts'
+
+export { containCropBox }
 
 export type SheetCueProps = {
   crops: SheetRef[]
@@ -24,29 +32,6 @@ export type SheetCueProps = {
  * (`heightPx * ownAspect`) or the crop distorts.
  */
 export const SHEET_CUE_SLIDE_HEIGHT_PX = 220
-
-/**
- * Fit one crop into the film viewport without stretching. Uses the
- * measured height as the budget; if that would overflow the measured
- * width, scale down so a tall/square crop never becomes window-tall.
- * Unmeasured width (0, jsdom) does not clamp.
- */
-export function containCropBox(
-  aspect: number,
-  viewportWidthPx: number,
-  viewportHeightPx: number,
-  fallbackHeightPx: number = SHEET_CUE_SLIDE_HEIGHT_PX,
-): { width: number; height: number } {
-  const safeAspect = aspect > 0 ? aspect : 1
-  const heightBudget = viewportHeightPx > 0 ? viewportHeightPx : fallbackHeightPx
-  let height = heightBudget
-  let width = height * safeAspect
-  if (viewportWidthPx > 0 && width > viewportWidthPx) {
-    width = viewportWidthPx
-    height = width / safeAspect
-  }
-  return { width, height }
-}
 
 /**
  * Sizes the full page image so this slide's crop rectangle exactly fills
@@ -133,17 +118,6 @@ export function SheetCue({
   const viewportWidthPx = viewportSize.w
   const slideHeightPx = viewportSize.h > 0 ? viewportSize.h : SHEET_CUE_SLIDE_HEIGHT_PX
 
-  function aspectOf(slide: SheetSlide): number {
-    const region = slide.region
-    const w = region.w <= 0 ? 1 : region.w
-    const h = region.h <= 0 ? 1 : region.h
-    const natural = slide.imageKey ? naturalSizes[slide.imageKey] : undefined
-    if (natural) {
-      return (w * natural.w) / Math.max(1e-6, h * natural.h)
-    }
-    return w / h
-  }
-
   function handleLoad(slide: SheetSlide) {
     return (event: SyntheticEvent<HTMLImageElement>) => {
       const img = event.currentTarget
@@ -160,7 +134,12 @@ export function SheetCue({
   if (slides.length === 1) {
     const only = slides[0]!
     if (!only.imageKey) return null
-    const box = containCropBox(aspectOf(only) || 1, viewportWidthPx, viewportSize.h)
+    const box = containCropBox(
+      cropAspect(only.region, only.imageKey ? naturalSizes[only.imageKey] : undefined),
+      viewportWidthPx,
+      viewportSize.h,
+      SHEET_CUE_SLIDE_HEIGHT_PX,
+    )
     // Single crop: contain the box in the full-width film viewport so a
     // square crop never becomes window-tall. Same never-stretch guarantee
     // as the filmstrip — the box is the crop's own aspect.
@@ -198,23 +177,19 @@ export function SheetCue({
     )
   }
 
-  // Multi-crop filmstrip: each slide keeps its own true crop aspect ratio —
-  // never squeezed into an equal-width share of the track — by sizing its
-  // width to slideHeightPx * its own aspect, then laying every slide out
-  // side by side. `progress` (0–1) maps directly onto scroll position: 0
-  // is scrolled hard left (first slide's left edge flush with the
-  // viewport's left edge — every part of it visible from elapsed 0), 1 is
-  // scrolled hard right (last slide's right edge flush with the viewport's
-  // right edge). `maxScrollPx` is clamped to >= 0 so a strip narrower than
-  // the viewport (few/small crops) just never scrolls, rather than
-  // reserving empty space past either edge.
-  const widths = slides.map((slide) => slideHeightPx * (aspectOf(slide) || 1))
-  const totalWidthPx = widths.reduce((sum, width) => sum + width, 0)
-  const maxScrollPx = Math.max(0, totalWidthPx - viewportWidthPx)
-  const scrollLeftPx = center
-    ? Math.min(maxScrollPx, Math.max(0, progress * totalWidthPx - viewportWidthPx / 2))
-    : progress * maxScrollPx
-  const translateXPx = -scrollLeftPx
+  // Multi-crop filmstrip: domain `filmTrackLayout` sizes each slide to
+  // slideHeightPx * its own aspect (never an equal-width share) and maps
+  // progress onto scroll. 0 is hard left, 1 is hard right; a strip
+  // narrower than the viewport does not scroll.
+  const layout = filmTrackLayout({
+    aspects: slides.map((slide) =>
+      cropAspect(slide.region, slide.imageKey ? naturalSizes[slide.imageKey] : undefined),
+    ),
+    viewportWidthPx,
+    viewportHeightPx: slideHeightPx,
+    progress,
+    center,
+  })
   // No CSS transition on this translateX: Play/Sing sample elapsed every
   // rAF frame. A 100ms transition on top of that left Safari compositor
   // ghosts of the strip (the same "drifting half-intensity sheet" as the
@@ -229,10 +204,10 @@ export function SheetCue({
       onClick={
         onPickPosition
           ? (event) => {
-              if (!(totalWidthPx > 0)) return
+              if (!(layout.totalWidthPx > 0)) return
               const rect = event.currentTarget.getBoundingClientRect()
-              const contentX = scrollLeftPx + (event.clientX - rect.left)
-              onPickPosition(Math.min(1, Math.max(0, contentX / totalWidthPx)))
+              const contentX = layout.scrollLeftPx + (event.clientX - rect.left)
+              onPickPosition(Math.min(1, Math.max(0, contentX / layout.totalWidthPx)))
             }
           : undefined
       }
@@ -240,14 +215,14 @@ export function SheetCue({
       <div
         data-sheet-cue-track=""
         className="flex h-full"
-        style={{ width: totalWidthPx, transform: `translateX(${translateXPx}px)` }}
+        style={{ width: layout.totalWidthPx, transform: `translateX(${layout.translateXPx}px)` }}
       >
         {slides.map((slide, index) => (
           <div
             key={slide.id}
             data-sheet-slide={index}
             className="relative h-full shrink-0 overflow-hidden"
-            style={{ width: widths[index] }}
+            style={{ width: layout.slideBoxes[index]!.width }}
           >
             {slide.imageKey ? (
               <img
