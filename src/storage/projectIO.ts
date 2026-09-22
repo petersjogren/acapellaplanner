@@ -107,6 +107,10 @@ export function stemsZipFilename(title: string): string {
   return `${projectTitleSlug(title) || 'song'}.stems.zip`
 }
 
+export function filmMp4Filename(title: string): string {
+  return `${projectTitleSlug(title) || 'song'}.film.mp4`
+}
+
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')

@@ -5,6 +5,7 @@ import {
   audioBlobIdFromZipPath,
   downloadBlob,
   exportProjectZip,
+  filmMp4Filename,
   importProjectZip,
   projectTitleSlug,
   projectZipFilename,
@@ -118,10 +119,15 @@ describe('zip filenames', () => {
     expect(stemsZipFilename(title)).toBe('When-I-Fall-In-Love.stems.zip')
   })
 
+  it('names the film mp4 from the title slug', () => {
+    expect(filmMp4Filename('When I Fall')).toBe('When-I-Fall.film.mp4')
+  })
+
   it('falls back to song when the title is only punctuation', () => {
     expect(projectTitleSlug('!!!')).toBe('')
     expect(projectZipFilename('!!!')).toBe('song.acapella.zip')
     expect(stemsZipFilename('!!!')).toBe('song.stems.zip')
+    expect(filmMp4Filename('!!!')).toBe('song.film.mp4')
   })
 })
 
