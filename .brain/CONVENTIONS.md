@@ -13,6 +13,7 @@
 - Breaking schema shape → bump `CURRENT_SCHEMA_VERSION`, add a step in `src/domain/migrations.ts`, fixture-test the old JSON. Optional fields do not need a bump.
 - Web Audio scheduling / capture → `src/audio/`, not pages.
 - IndexedDB / zip / WAV bytes → `src/storage/`.
+- Canvas/WebCodecs film encode → `src/export/`. Pages call `exportFilmMp4`; do not mux in storage or pages. Pixel math stays in `domain/sheets.ts`.
 - PDF.js stays behind `src/pdf/renderPage.ts` so tests can stub `setRenderPageToCanvas`.
 
 ## UI
@@ -38,7 +39,7 @@ Never fire overlapping `saveProject` from click handlers without the queue. Afte
 
 - Vitest + jsdom (`tests/setup.ts` stubs `URL.createObjectURL`).
 - **Colocated** `*.test.tsx` next to UI components under `src/ui/`.
-- **Mirrored** tests for domain/audio/storage/pages/app/build under `tests/<area>/`.
+- **Mirrored** tests for domain/audio/storage/pages/app/build/export under `tests/<area>/`.
 - Dexie tests: `import 'fake-indexeddb/auto'` at the top of **that file** (not global setup).
 - Inject `ProjectRepository` via `AppRoutes({ repo })` / context. Don’t hit the default DB from unit tests.
 - Engine/schedule tests are fake-clock + stubbed AudioContext — they do not prove Safari/iPad behaviour.

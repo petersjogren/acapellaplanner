@@ -13,7 +13,7 @@ Agent contract: `AGENTS.md` and `.brain/MAINTENANCE.md` (keep this folder in loc
 - **Preparer** (desktop Chrome): import ghost, mark phrases, roster, sections, sheet crops, review keepers, export.
 - **Singer** (same origin, later iPad Safari Home Screen): pick a part, hear a mix, Record once per pass, Hear / Keep / Scrap, Good enough / Next.
 
-Songs live in **this browser on this device** (IndexedDB). Nothing syncs. The `.acapella.zip` is backup and the way a song moves between devices. DAW stems are a one-way mixdown.
+Songs live in **this browser on this device** (IndexedDB). Nothing syncs. The `.acapella.zip` is backup and the way a song moves between devices. DAW stems and the Review film MP4 are one-way mixdowns.
 
 ## Stack
 

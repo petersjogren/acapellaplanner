@@ -23,6 +23,10 @@ Active product work is whatever the user asks next. This list is **code-backed**
 - `pan` is stored on mix layers and never applied (no StereoPanner).
 - `take.durationMs` is wall-clock from `Date.now()` around MediaRecorder, not decoded length. DAW export therefore **must** `bindDecodedDuration` before `assignLanes`.
 
+## Export
+
+- Film MP4 encode has no cancel. Closing Review mid-run does not abort WebCodecs.
+
 ## Platform / CI
 
 - No PR CI — lint/test run only on the manual Pages workflow.

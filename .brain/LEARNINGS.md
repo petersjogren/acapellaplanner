@@ -82,3 +82,10 @@ Transform stays on the **track only** (`translateX` in real pixels). That proper
 
 With pins, `F` lerps in **ghost ms** between implicit `(first.start, 0)`, user `(ghostMs, u)`, and `(last.end, 1)`. Store content-fraction `u` (click x along the strip), not viewport-dependent `scrollLeft`. Nearby clicks within 80 ms replace. Never rewind — clamp `u` non-decreasing. Phrase-start crop chips were too clunky; pin by clicking the visible film on Play.
 
+## Film MP4 encode
+
+- Close every `VideoFrame` (and `AudioData`) after `encode` — WebCodecs leaks GPU memory otherwise. `encodeFilmMp4` uses try/finally around each frame.
+- Do not MediaRecorder / `captureStream` the live CSS `SheetCue`. Paint `drawFilmFrame` onto an offline canvas; camera math is domain (`filmScrollProgress` + `filmTrackLayout`).
+- `mp4-muxer` `fastStart: 'in-memory'` so YouTube/QuickTime get an `moov` at the front. Do not stream-to-file without that.
+- `mp4-muxer` has no PCM audio track. Require AAC (`audioMode: 'aac'`). Missing AudioEncoder/AAC is `Mp4UnsupportedError`, not a silent WebM or a PCM fallback.
+

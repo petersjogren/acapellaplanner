@@ -13,7 +13,7 @@ Local-first. Desktop Chrome MVP; iPad Safari as a booth once the song is prepare
 3. **Mark a phrase** on the ghost — musical sentences and breaths, not arbitrary bars. **Play ghost** opens a phrase at 0; tap **New phrase** at each later line. Or drag on the ghost, or double-click empty space to fill that gap. Click a marked phrase to select it, Option-click to play it. Name them; add lyrics if you have them.
 4. **Voice parts** — add the roster (S1, A2, …) and how many doubles you want on each.
 5. **Sections** — group a run of phrases as *Follow the ghost* (rubato, no click) or *In time* (optional click). A section is those phrases, sung that way.
-6. Open **Sing** for the booth, **Play** to follow the sheet through the whole song, or **Review** later to promote keepers and export a zip or DAW stems.
+6. Open **Sing** for the booth, **Play** to follow the sheet through the whole song, or **Review** later to promote keepers and export a zip, DAW stems, or a film for YouTube.
 
 Optional: crop sheet music onto a phrase so the booth shows only that cue.
 
@@ -83,6 +83,16 @@ compresses it. Review shows an ≈ estimate next to the button.
 
 [`.acapella.zip`](#moving-a-song-between-devices) remains the
 round-trip/backup format.
+
+## Export film for YouTube
+
+**Review** has **Export film for YouTube**. It downloads
+`<song-title>.film.mp4`: 1920×1080, 30 fps, H.264 + AAC. Desktop Chrome
+(WebCodecs). iPad Safari cannot encode this.
+
+Pick a mix — **Ghost Focus**, **Stack Build** (default), or **Blend Check**.
+The film uses the song’s sheet crops and Play pins. It is not a zip and is
+not round-trip. Open it in YouTube or QuickTime.
 
 ## Develop
 

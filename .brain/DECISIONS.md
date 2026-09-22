@@ -10,6 +10,7 @@ Record only choices that future work must not silently reverse.
 - **Ghost timeline is truth.** Sections are feels on a run of phrases (`ghost-follow` vs `fixed-tempo`), never a second clock.
 - **Singer UX:** one Record press = one pass (one phrase play-window), then Hear / Keep / Scrap. A singer may later want one pass to cover several phrases — parked, not committed; see TODO. Good enough and Next both mark the cell `enough` (session planner skips it). **Play** (`/project/:id/play`) is a separate follow-along mode: whole song or looped phrase/section, sheet follows the song film with the playhead, no recording. Pause/resume only when playing once through; looping is Play/Stop. Jump is tap-a-phrase, not a scrub bar. Play windows use phrase boundaries, not pre/post-roll.
 - **Booth dock (2026-09-21):** Sing and Play share `BoothLayout` — lyric strip, full-width film filling leftover `dvh`, sticky action dock (safe-area). `SheetCue` has no `max-w-xl` / 220px box; slide height is the measured figure (`SHEET_CUE_SLIDE_HEIGHT_PX` is unmeasured fallback). Width remains `height × ownAspect`. A single crop **contains** in the viewport so a square never becomes window-tall. Do not overlay lyric on the staff. iPad crop layout (no nested `<img>` transform, no CSS transition on rAF `translateX`) unchanged.
+- **Film pixel layout is domain (2026-09-22):** `cropAspect` / `containCropBox` / `filmTrackLayout` in `domain/sheets.ts` are the only source of slide widths and `translateX`. `SheetCue` consumes them (`SHEET_CUE_SLIDE_HEIGHT_PX` stays in the UI as the unmeasured 220 fallback; `containCropBox` is re-exported for existing tests). Do not re-inline that math in UI or canvas export.
 - **Default stack density:** `targetTakes` default 4. Keepers (not star ratings) are what later doubles hear and what stem export prefers.
 - **Deploy is manual.** Publishing on every `main` push is explicitly unwanted.
 - **Phrase overlay tints (2026-09):** even/odd by `sortPhrases` order (gold vs bronze), not gap-based colouring and not slate/forest (those are section/voice).
@@ -34,6 +35,7 @@ Record only choices that future work must not silently reverse.
 - Stem format: 16-bit PCM WAV, mono, decode-context sample rate (no extra resampler). Absolute pad from 0:00. Default **lanes**, keepers-only. Naming: `Bass/Bass_A.wav` vs `Bass/B_p1_t1.wav`.
 - Lane assignment is greedy interval colouring **after** `bindDecodedDuration`. Do not assign on metadata duration.
 - WAV PCM scaling is symmetric `* 32767` (not −32768) to avoid DC tick on looped material.
+- **Film MP4 (2026-09-22):** Review **Export film for YouTube** only. 1920×1080 16:9 paper, 30 fps, H.264 + AAC. Fail closed (`Mp4UnsupportedError`) if avc1 or AAC is missing — never WebM, never a silent other container, never PCM-in-MP4 (`mp4-muxer` has no PCM track). Offline canvas (`drawFilmFrame`), not MediaRecorder/screen-capture of CSS `SheetCue`. Default mix Stack Build. Ghost ms clocks canvas + mix; pins from `project.filmPins`. Third one-way format — do not merge into `.acapella.zip` or `.stems.zip`. `mp4-muxer` is deprecated upstream toward Mediabunny; we did not migrate.
 
 ## Hosting
 

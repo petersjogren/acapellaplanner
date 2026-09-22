@@ -1,6 +1,6 @@
 # Current state
 
-As of 2026-09-21 (branch `main`).
+As of 2026-09-22 (branch `main`).
 
 Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is documented with mic/PWA caveats, not proven in CI. iPhone Safari (portrait + landscape) is responsive at the shell/page level — same layout as desktop/iPad above `md:`, not proven in CI (manual browser-emulation screenshots only).
 
@@ -10,12 +10,16 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 - Prepare: ghost import, phrase mark/edit (incl. head start / crossfade tail), roster (unique short labels), sections as phrase spans (ghost-follow vs fixed-tempo + optional click), **score film** (ordered sheet crops for the whole song), completion matrix, phrase preview with mix presets.
 - Sing: part picker / surprise-me, session suggestions, one-shot record, Hear (ghost/stack/solo), Keep / Scrap, Good enough / Next (both mark `enough`), Need more takes, mix presets, **dock booth** (full-width film + Record always on screen).
 - Play: whole-song follow-along (`/project/:id/play`) with the same dock booth, mix presets, tap-a-phrase jump (horizontal chips), Pause on once-through, Practice loop of a phrase or section. Click the visible film to pin that moment to the centre of the viewport; **Clear all** drops the pins. No recording.
-- Review: rate (keeper/scratch/1–5), play take with/without ghost, all keepers on a phrase or whole song, project zip, **DAW stem zip** (lanes default, keepers-only default, size estimate).
+- Review: rate (keeper/scratch/1–5), play take with/without ghost, all keepers on a phrase or whole song, project zip, **DAW stem zip** (lanes default, keepers-only default, size estimate), **Export film for YouTube** (`.film.mp4`, desktop Chrome, default Stack Build).
 - Calibrate: mic meter + **Check mic**; default **Line up** (880 Hz SNR); alternate **Clap with the click** (sequential Normal–Normal, MAD outliers, min 16 clicks, pair cap 400 ms); both auto-save the same `localStorage` profile; type-ms after a miss.
 - PWA app-shell offline; IDB projects survive refresh.
 - Schema v3 + migration from v2 per-phrase `sheetRefs` into `sheetCrops`. v1 section spans still migrate through.
 
 ## Just landed
+
+Review **Export film for YouTube** (`<title>.film.mp4`, 1920×1080 30fps H.264+AAC). Desktop Chrome WebCodecs; missing avc1 or AAC → `Mp4UnsupportedError` (never WebM, never PCM-in-MP4). Mix Ghost Focus / Stack Build / Blend Check (default Stack Build). Ghost ms clocks canvas + mix; pins from `project.filmPins`. Offline `drawFilmFrame` (paper fill, one crop centred/contain, 2+ via `filmTrackLayout` clip; missing bitmaps skip `drawImage`) + `renderPlaybackMix` (additive Float32 L/R, gain only — no pan/click/fades). `src/export/` orchestrates; pages do not mux. Tests cover layout/mix/preflight/encode fakes/UI; real file is manual Chrome. `mp4-muxer` (deprecated upstream toward Mediabunny; we did not migrate).
+
+Live `SheetCue` film layout now comes from `domain/sheets.ts` (`cropAspect`, `containCropBox`, `filmTrackLayout`) so canvas film export cannot drift. Pixel contract and iPad no-nested-`<img>`-transform unchanged.
 
 Sing/Play **dock booth**: film is leftover viewport, full width of main (shell margins). Record / Play / Good enough live in a sticky dock (`BoothLayout`, shared). `SheetCue` fills that slot — slide height is the measured figure (`SHEET_CUE_SLIDE_HEIGHT_PX` 220 only if unmeasured); single crop contains so a square never becomes window-tall. Camera math, crop layout, and iPad no-nested-`<img>`-transform unchanged.
 
