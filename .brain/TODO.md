@@ -37,6 +37,7 @@ Active product work is whatever the user asks next. This list is **code-backed**
 
 - **Parking lot — multi-phrase Record (do not implement unless asked).** A singer may want one Record press to cover more than one phrase (e.g. two adjacent lines without stopping). Booth stays one-shot per phrase today. Do not silently stretch the play-window across phrases; if we ever do this it needs design (which `phraseId` the take belongs to, Hear/Keep/Scrap, sheet cue, session planner). Keep in mind, not a committed feature.
 - **Parking lot — crop reorder (do not implement unless asked).** Film order is append order. Pins (`filmPins`) correct camera drift; they do not reorder slides.
+- **Parking lot — fix a suggested crop (do not implement unless asked).** Detection sometimes puts two staves in one crop, and sometimes makes a crop out of text that is not a system. The preparer needs to delete one suggested box and add a manual rectangle instead. Not designed. Do not invent the interaction.
 - No multi-device sync (zip is the bus). Zip import forks a new project (own id, own blobs) instead of overwriting — safe for one-preparer/many-singers fan-out, but there is still no way to merge N singers' returned projects' takes back into one project; combining them today means DAW stem export from each and mixing externally.
 - No tonal guide layer under the ghost.
 - No auto phrase-split by silence.
