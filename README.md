@@ -15,7 +15,7 @@ Local-first. Desktop Chrome MVP; iPad Safari as a booth once the song is prepare
 5. **Sections** — group a run of phrases as *Follow the ghost* (rubato, no click) or *In time* (optional click). A section is those phrases, sung that way.
 6. Open **Sing** for the booth, **Play** to follow the sheet through the whole song, or **Review** later to promote keepers and export a zip, DAW stems, or a film for YouTube.
 
-Optional: crop sheet music onto a phrase so the booth shows only that cue.
+Optional: upload a PDF and add the suggested systems (or drag a rectangle). The film is the whole song, not a phrase binding.
 
 ## Singer quickstart
 

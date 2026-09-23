@@ -1,6 +1,6 @@
 # Current state
 
-As of 2026-09-22 (branch `main`).
+As of 2026-09-23 (branch `main`).
 
 Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is documented with mic/PWA caveats, not proven in CI. iPhone Safari (portrait + landscape) is responsive at the shell/page level — same layout as desktop/iPad above `md:`, not proven in CI (manual browser-emulation screenshots only).
 
@@ -16,6 +16,8 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 - Schema v3 + migration from v2 per-phrase `sheetRefs` into `sheetCrops`. v1 section spans still migrate through.
 
 ## Just landed
+
+- Prepare suggests staff-system crops from a PDF. **Add all** / **Replace film**; drag and single Add crop still work. No schema bump.
 
 Review **Export film for YouTube** (`<title>.film.mp4`, 1920×1080 30fps H.264+AAC). Desktop Chrome WebCodecs; missing avc1 or AAC → `Mp4UnsupportedError` (never WebM, never PCM-in-MP4). Mix Ghost Focus / Stack Build / Blend Check (default Stack Build). Ghost ms clocks canvas + mix; pins from `project.filmPins`. Offline `drawFilmFrame` (paper fill, one crop centred/contain, 2+ via `filmTrackLayout` clip; missing bitmaps skip `drawImage`) + `renderPlaybackMix` (additive Float32 L/R, gain only — no pan/click/fades). `src/export/` orchestrates; pages do not mux. Tests cover layout/mix/preflight/encode fakes/UI; real file is manual Chrome. `mp4-muxer` (deprecated upstream toward Mediabunny; we did not migrate).
 
