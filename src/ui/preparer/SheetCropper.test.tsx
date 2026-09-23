@@ -141,4 +141,77 @@ describe('SheetCropper', () => {
       expect(onRemoveCrop).toHaveBeenCalledWith('ref-1')
     })
   })
+
+  it('shows suggestion boxes and adds them only when asked', () => {
+    const onAddAll = vi.fn()
+    const onDismiss = vi.fn()
+    render(
+      <SheetCropper
+        pageImageUrl={PAGE}
+        pageIndex={0}
+        pageCount={1}
+        crops={[]}
+        onPageChange={() => undefined}
+        onAddCrop={() => undefined}
+        onFindSystems={() => undefined}
+        suggestions={[
+          { x: 0.1, y: 0.1, w: 0.8, h: 0.2 },
+          { x: 0.1, y: 0.5, w: 0.8, h: 0.2 },
+        ]}
+        suggestionTotal={2}
+        onAddAll={onAddAll}
+        onDismissSuggestions={onDismiss}
+      />,
+    )
+    expect(document.querySelectorAll('[data-system-rect]')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Replace film and clear pins' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Add all 2' }))
+    expect(onAddAll).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('resizes a suggestion from its top edge', () => {
+    const onResizeSuggestion = vi.fn()
+    render(
+      <SheetCropper
+        pageImageUrl={PAGE}
+        pageIndex={0}
+        pageCount={1}
+        crops={[]}
+        onPageChange={() => undefined}
+        onAddCrop={() => undefined}
+        suggestions={[{ x: 0.1, y: 0.1, w: 0.8, h: 0.2 }]}
+        suggestionTotal={1}
+        onResizeSuggestion={onResizeSuggestion}
+      />,
+    )
+    mockPageRect(200, 100)
+    const handle = screen.getByRole('button', { name: 'Resize system 1 top' })
+    fireEvent.pointerDown(handle, { clientX: 40, clientY: 10, pointerId: 2 })
+    fireEvent.pointerMove(handle, { clientX: 40, clientY: 20, pointerId: 2 })
+    fireEvent.pointerUp(handle, { clientX: 40, clientY: 20, pointerId: 2 })
+    expect(onResizeSuggestion).toHaveBeenCalled()
+    const region = onResizeSuggestion.mock.calls.at(-1)?.[1] as { y: number; h: number }
+    expect(region.y).toBeCloseTo(0.2)
+    expect(region.h).toBeCloseTo(0.1)
+  })
+
+  it('offers replace only when the film already has crops', () => {
+    render(
+      <SheetCropper
+        pageImageUrl={PAGE}
+        pageIndex={0}
+        pageCount={1}
+        crops={[{ id: 'ref-1', sheetDocId: 'doc-1', pageIndex: 0, regionNorm: { x: 0, y: 0, w: 1, h: 0.2 } }]}
+        onPageChange={() => undefined}
+        onAddCrop={() => undefined}
+        onFindSystems={() => undefined}
+        suggestions={[{ x: 0, y: 0, w: 1, h: 0.2 }]}
+        suggestionTotal={1}
+        onReplaceFilm={() => undefined}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Replace film and clear pins' })).toBeTruthy()
+  })
 })

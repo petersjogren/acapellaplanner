@@ -46,9 +46,53 @@ export function regionFromDrag(
   return { x, y, w, h }
 }
 
+export type RegionEdge = 'n' | 'e' | 's' | 'w'
+
+/** Moves one edge. `dx` and `dy` are fractions of the page, not pixels. */
+export function resizeRegionNorm(
+  region: RegionNorm,
+  edge: RegionEdge,
+  dx: number,
+  dy: number,
+): RegionNorm {
+  let left = region.x
+  let top = region.y
+  let right = region.x + region.w
+  let bottom = region.y + region.h
+  if (edge === 'w') left += dx
+  if (edge === 'e') right += dx
+  if (edge === 'n') top += dy
+  if (edge === 's') bottom += dy
+
+  const minW = Math.min(MIN_REGION_NORM, 1)
+  const minH = Math.min(MIN_REGION_NORM, 1)
+  if (right - left < minW) {
+    if (edge === 'w') left = right - minW
+    else right = left + minW
+  }
+  if (bottom - top < minH) {
+    if (edge === 'n') top = bottom - minH
+    else bottom = top + minH
+  }
+  left = clamp(left, 0, 1 - minW)
+  top = clamp(top, 0, 1 - minH)
+  right = clamp(right, left + minW, 1)
+  bottom = clamp(bottom, top + minH, 1)
+  return { x: left, y: top, w: right - left, h: bottom - top }
+}
+
 /** Appends a crop to the song film. Order is append order; no reorder in v1. */
 export function appendSheetCrop(project: Project, ref: SheetRef): Project {
   return { ...project, sheetCrops: [...project.sheetCrops, ref] }
+}
+
+export function appendSheetCrops(project: Project, refs: SheetRef[]): Project {
+  if (refs.length === 0) return project
+  return clearFilmPins({ ...project, sheetCrops: [...project.sheetCrops, ...refs] })
+}
+
+export function replaceSheetCrops(project: Project, refs: SheetRef[]): Project {
+  return clearFilmPins({ ...project, sheetCrops: refs })
 }
 
 /** Drops one crop from the song film, leaving the others in order. */

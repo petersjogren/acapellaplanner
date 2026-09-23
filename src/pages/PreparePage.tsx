@@ -31,9 +31,15 @@ import {
   type NewVoicePartInput,
   type VoicePartPatch,
 } from '../domain/roster.ts'
-import { appendSheetCrop, removeSheetCrop } from '../domain/sheets.ts'
+import { detectStaffSystems, pageInkFromRgba, type PageInk } from '../domain/staffSystems.ts'
+import {
+  appendSheetCrop,
+  appendSheetCrops,
+  removeSheetCrop,
+  replaceSheetCrops,
+} from '../domain/sheets.ts'
 import { renameProject, phrasesBeyondGhost, reconcileGhostDuration } from '../domain/project.ts'
-import type { Phrase, Project, RegionNorm, SheetDocument } from '../domain/schemas.ts'
+import type { Phrase, Project, RegionNorm, SheetDocument, SheetRef } from '../domain/schemas.ts'
 import { renderPageToCanvas } from '../pdf/renderPage.ts'
 import { CompletionMatrix } from '../ui/preparer/CompletionMatrix.tsx'
 import { SectionEditor } from '../ui/preparer/SectionEditor.tsx'
@@ -42,6 +48,37 @@ import { MixPresetSelect } from '../ui/shared/MixPresetSelect.tsx'
 import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
+
+type SystemSuggestions = {
+  docId: string
+  byPage: RegionNorm[][]
+}
+
+function messageFrom(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
+function inkFromCanvas(canvas: HTMLCanvasElement): PageInk {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Could not read the sheet page')
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  return pageInkFromRgba(canvas.width, canvas.height, image.data)
+}
+
+function refsFromSuggestions(docId: string, byPage: RegionNorm[][]): SheetRef[] {
+  const refs: SheetRef[] = []
+  for (let pageIndex = 0; pageIndex < byPage.length; pageIndex++) {
+    for (const regionNorm of byPage[pageIndex] ?? []) {
+      refs.push({
+        id: crypto.randomUUID(),
+        sheetDocId: docId,
+        pageIndex,
+        regionNorm,
+      })
+    }
+  }
+  return refs
+}
 
 function isTextEntryTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -59,6 +96,9 @@ export function PreparePage() {
   const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
   const [sheetPageIndex, setSheetPageIndex] = useState(0)
   const [sheetPageUrl, setSheetPageUrl] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<SystemSuggestions | null>(null)
+  const [findingSystems, setFindingSystems] = useState(false)
+  const [findError, setFindError] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState<string | null>(null)
   const [markAlongPlaying, setMarkAlongPlaying] = useState(false)
   const [openStartMs, setOpenStartMs] = useState<number | null>(null)
@@ -68,6 +108,7 @@ export function PreparePage() {
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
   const sheetPageChangeGenRef = useRef(0)
+  const findSystemsGenRef = useRef(0)
   const openStartMsRef = useRef<number | null>(null)
   const committedIdsRef = useRef<string[]>([])
   const markAlongPlayingRef = useRef(false)
@@ -78,12 +119,17 @@ export function PreparePage() {
 
   const liveProject = project && typeof project === 'object' ? project : null
   const sheetDoc = liveProject?.sheetDocs.at(-1) ?? null
+  const activeSheetId = sheetDoc?.id ?? null
   const sheetImageBlobId = sheetDoc?.pages.find((page) => page.pageIndex === sheetPageIndex)
     ?.imageBlobId
 
   useEffect(() => {
     setSheetPageIndex(0)
   }, [liveProject?.id])
+
+  useEffect(() => {
+    setSuggestions((current) => (current && current.docId !== activeSheetId ? null : current))
+  }, [activeSheetId])
 
   useEffect(() => {
     let cancelled = false
@@ -484,7 +530,102 @@ export function PreparePage() {
     void finishMarkAlong()
   }
 
+  async function ensureSheetPageImage(
+    docId: string,
+    pageIndex: number,
+    stillCurrent: () => boolean = () => true,
+  ): Promise<void> {
+    if (!stillCurrent()) return
+    const doc = (projectRef.current ?? loaded).sheetDocs.find((item) => item.id === docId)
+    if (!doc?.pdfBlobId) throw new Error('Could not read the sheet PDF')
+    const page = doc.pages.find((item) => item.pageIndex === pageIndex)
+    if (!page) throw new Error('Could not read the sheet page')
+    if (page.imageBlobId) return
+
+    const pdfRecord = await repo.getAudioBlob(doc.pdfBlobId)
+    if (!stillCurrent()) return
+    if (!pdfRecord) throw new Error('Could not read the sheet PDF')
+    const alreadySaved = (projectRef.current ?? loaded).sheetDocs
+      .find((item) => item.id === docId)
+      ?.pages.find((item) => item.pageIndex === pageIndex)
+    if (alreadySaved?.imageBlobId) return
+
+    const rendered = await renderPageToCanvas(await pdfRecord.blob.arrayBuffer(), pageIndex)
+    if (!stillCurrent()) return
+    const pageBlobId = crypto.randomUUID()
+    await repo.putAudioBlob({
+      id: pageBlobId,
+      projectId: loaded.id,
+      kind: 'sheet',
+      mimeType: 'image/png',
+      byteSize: rendered.pngBlob.size,
+      createdAt: new Date().toISOString(),
+      blob: rendered.pngBlob,
+    })
+    if (!stillCurrent()) return
+    await persistProject((proj) => ({
+      ...proj,
+      sheetDocs: proj.sheetDocs.map((item) =>
+        item.id === docId
+          ? {
+              ...item,
+              pages: item.pages.map((row) =>
+                row.pageIndex === pageIndex ? { ...row, imageBlobId: pageBlobId } : row,
+              ),
+            }
+          : item,
+      ),
+    }))
+  }
+
+  async function handleFindSystems() {
+    const gen = ++findSystemsGenRef.current
+    const stillCurrent = () => gen === findSystemsGenRef.current
+    const doc = (projectRef.current ?? loaded).sheetDocs.at(-1)
+    if (!doc) return
+    setFindingSystems(true)
+    setFindError(null)
+    try {
+      if (!doc.pdfBlobId) {
+        setFindError('Could not read the sheet PDF')
+        return
+      }
+      const pdfRecord = await repo.getAudioBlob(doc.pdfBlobId)
+      if (!stillCurrent()) return
+      if (!pdfRecord) {
+        if (stillCurrent()) setFindError('Could not read the sheet PDF')
+        return
+      }
+      const bytes = await pdfRecord.blob.arrayBuffer()
+      if (!stillCurrent()) return
+      const byPage: RegionNorm[][] = []
+      for (let pageIndex = 0; pageIndex < doc.pages.length; pageIndex++) {
+        const rendered = await renderPageToCanvas(bytes, pageIndex)
+        if (!stillCurrent()) return
+        byPage.push(detectStaffSystems(inkFromCanvas(rendered.canvas)))
+      }
+      if (!stillCurrent()) return
+      const active = (projectRef.current ?? loaded).sheetDocs.at(-1)
+      if (!active || active.id !== doc.id) return
+      if (byPage.every((page) => page.length === 0)) {
+        setSuggestions({ docId: doc.id, byPage: [] })
+        setFindError('No systems found. Drag a rectangle instead.')
+        return
+      }
+      setSuggestions({ docId: doc.id, byPage })
+      setFindError(null)
+    } catch (err: unknown) {
+      if (stillCurrent()) setFindError(messageFrom(err, 'Could not find systems'))
+    } finally {
+      if (stillCurrent()) setFindingSystems(false)
+    }
+  }
+
   async function handleSheetUploaded({ blob, filename }: SheetUploadResult) {
+    findSystemsGenRef.current += 1
+    setFindingSystems(false)
+    setFindError(null)
+    setSuggestions(null)
     const bytes = await blob.arrayBuffer()
     const rendered = await renderPageToCanvas(bytes, 0)
     const pdfBlobId = crypto.randomUUID()
@@ -524,6 +665,9 @@ export function PreparePage() {
     }))
     sheetPageChangeGenRef.current += 1
     setSheetPageIndex(0)
+    if ((projectRef.current ?? loaded).sheetCrops.length === 0) {
+      await handleFindSystems()
+    }
   }
 
   async function handleSheetPageChange(nextIndex: number) {
@@ -537,39 +681,69 @@ export function PreparePage() {
       if (stillCurrent()) setSheetPageIndex(nextIndex)
       return
     }
-    const pdfRecord = await repo.getAudioBlob(doc.pdfBlobId)
-    if (!stillCurrent()) return
-    if (!pdfRecord) {
-      if (stillCurrent()) setSheetPageIndex(nextIndex)
-      return
+    try {
+      await ensureSheetPageImage(doc.id, nextIndex, stillCurrent)
+    } catch (err: unknown) {
+      if (!stillCurrent()) return
+      if (err instanceof Error && err.message === 'Could not read the sheet PDF') {
+        setSheetPageIndex(nextIndex)
+        return
+      }
+      throw err
     }
-    const rendered = await renderPageToCanvas(await pdfRecord.blob.arrayBuffer(), nextIndex)
-    if (!stillCurrent()) return
-    const pageBlobId = crypto.randomUUID()
-    await repo.putAudioBlob({
-      id: pageBlobId,
-      projectId: loaded.id,
-      kind: 'sheet',
-      mimeType: 'image/png',
-      byteSize: rendered.pngBlob.size,
-      createdAt: new Date().toISOString(),
-      blob: rendered.pngBlob,
-    })
-    if (!stillCurrent()) return
-    await persistProject((proj) => ({
-      ...proj,
-      sheetDocs: proj.sheetDocs.map((item) =>
-        item.id === doc.id
-          ? {
-              ...item,
-              pages: item.pages.map((row) =>
-                row.pageIndex === nextIndex ? { ...row, imageBlobId: pageBlobId } : row,
-              ),
-            }
-          : item,
-      ),
-    }))
     if (stillCurrent()) setSheetPageIndex(nextIndex)
+  }
+
+  async function persistSuggestedFilm(
+    apply: (current: Project, refs: SheetRef[]) => Project,
+    fallback: string,
+  ) {
+    const pending = suggestions
+    const doc = (projectRef.current ?? loaded).sheetDocs.at(-1)
+    if (!pending || !doc || pending.docId !== doc.id) return
+    try {
+      for (let pageIndex = 0; pageIndex < pending.byPage.length; pageIndex++) {
+        if ((pending.byPage[pageIndex]?.length ?? 0) === 0) continue
+        await ensureSheetPageImage(doc.id, pageIndex)
+      }
+      const active = (projectRef.current ?? loaded).sheetDocs.at(-1)
+      if (!active || active.id !== doc.id) return
+      const refs = refsFromSuggestions(active.id, pending.byPage)
+      if (refs.length === 0) return
+      await persistProject((current) => apply(current, refs))
+      setSuggestions(null)
+      setFindError(null)
+    } catch (err: unknown) {
+      setFindError(messageFrom(err, fallback))
+    }
+  }
+
+  function handleAddAll() {
+    return persistSuggestedFilm(
+      (current, refs) => appendSheetCrops(current, refs),
+      'Could not add systems',
+    )
+  }
+
+  function handleReplaceFilm() {
+    return persistSuggestedFilm(
+      (current, refs) => replaceSheetCrops(current, refs),
+      'Could not replace the film',
+    )
+  }
+
+  function handleResizeSuggestion(index: number, region: RegionNorm) {
+    setSuggestions((current) => {
+      if (!current) return current
+      const docId = (projectRef.current ?? loaded).sheetDocs.at(-1)?.id
+      if (!docId || current.docId !== docId) return current
+      return {
+        ...current,
+        byPage: current.byPage.map((page, pageIndex) =>
+          pageIndex === sheetPageIndex ? page.map((box, i) => (i === index ? region : box)) : page,
+        ),
+      }
+    })
   }
 
   async function handleRenameSong(title: string) {
@@ -781,7 +955,7 @@ export function PreparePage() {
       <section className="mt-10 max-w-3xl" aria-label="Sheet music">
         <h3 className="font-medium">Sheet music</h3>
         <p className="mt-1 text-sm text-ink-muted">
-          Upload a PDF, crop regions, and add them to the score film in order.
+          Upload a PDF. Systems are suggested; add them to the score film, or drag a rectangle.
         </p>
         <SheetUploader
           onUploaded={handleSheetUploaded}
@@ -794,9 +968,26 @@ export function PreparePage() {
             pageCount={activeSheet.pages.length}
             crops={loaded.sheetCrops}
             hasPhrases={loaded.phrases.length > 0}
+            suggestions={
+              suggestions?.docId === activeSheet.id
+                ? (suggestions.byPage[sheetPageIndex] ?? [])
+                : []
+            }
+            suggestionTotal={
+              suggestions?.docId === activeSheet.id
+                ? suggestions.byPage.reduce((sum, page) => sum + page.length, 0)
+                : 0
+            }
+            finding={findingSystems}
+            findError={findError}
             onPageChange={handleSheetPageChange}
             onAddCrop={handleAddCrop}
             onRemoveCrop={handleRemoveCrop}
+            onFindSystems={handleFindSystems}
+            onAddAll={handleAddAll}
+            onReplaceFilm={handleReplaceFilm}
+            onDismissSuggestions={() => setSuggestions(null)}
+            onResizeSuggestion={handleResizeSuggestion}
           />
         ) : null}
       </section>

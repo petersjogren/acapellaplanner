@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   addFilmPin,
   appendSheetCrop,
+  appendSheetCrops,
   clearFilmPins,
   containCropBox,
   cropAspect,
@@ -11,7 +12,9 @@ import {
   MIN_REGION_NORM,
   occupiedDurationMs,
   regionFromDrag,
+  resizeRegionNorm,
   removeSheetCrop,
+  replaceSheetCrops,
   sheetPageBlobIdsForCrops,
   sheetScrollFrame,
   sourceCropPx,
@@ -47,6 +50,19 @@ describe('regionFromDrag', () => {
   })
 })
 
+describe('resizeRegionNorm', () => {
+  const box = { x: 0.1, y: 0.2, w: 0.4, h: 0.3 }
+
+  it('moves the top edge down without moving the bottom', () => {
+    expect(resizeRegionNorm(box, 'n', 0, 0.05)).toEqual({ x: 0.1, y: 0.25, w: 0.4, h: 0.25 })
+  })
+
+  it('does not shrink past the minimum or off the page', () => {
+    expect(resizeRegionNorm(box, 'n', 0, 1).h).toBeGreaterThanOrEqual(0.02)
+    expect(resizeRegionNorm({ x: 0, y: 0, w: 0.5, h: 0.5 }, 'w', -1, 0).x).toBe(0)
+  })
+})
+
 describe('appendSheetCrop / removeSheetCrop', () => {
   const refA: SheetRef = {
     id: 'ref-a',
@@ -72,6 +88,29 @@ describe('appendSheetCrop / removeSheetCrop', () => {
     const project: Project = { ...createEmptyProject('When I Fall'), sheetCrops: [refA, refB] }
     const next = removeSheetCrop(project, 'ref-a')
     expect(next.sheetCrops).toEqual([refB])
+  })
+
+  it('appends many crops and clears film pins', () => {
+    const project: Project = {
+      ...createEmptyProject('When I Fall'),
+      sheetCrops: [refA],
+      filmPins: [{ id: 'pin-1', ghostMs: 10, u: 0.2 }],
+    }
+    const next = appendSheetCrops(project, [refB])
+    expect(next.sheetCrops).toEqual([refA, refB])
+    expect(next.filmPins).toEqual([])
+    expect(project.sheetCrops).toEqual([refA])
+  })
+
+  it('replaces the film and clears film pins', () => {
+    const project: Project = {
+      ...createEmptyProject('When I Fall'),
+      sheetCrops: [refA],
+      filmPins: [{ id: 'pin-1', ghostMs: 10, u: 0.2 }],
+    }
+    const next = replaceSheetCrops(project, [refB])
+    expect(next.sheetCrops).toEqual([refB])
+    expect(next.filmPins).toEqual([])
   })
 })
 
