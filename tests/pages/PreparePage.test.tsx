@@ -996,7 +996,23 @@ describe('PreparePage sheet upload', () => {
 
   beforeEach(async () => {
     database = new AcapellaDB(`acapellaplanner-prepare-sheet-${crypto.randomUUID()}`)
-    repo = createProjectRepository(database)
+    const stored = createProjectRepository(database)
+    // fake-indexeddb structured-clones a Blob into a plain object, so the
+    // round-tripped record has no `.arrayBuffer()`. Hand back the original.
+    const blobsById = new Map<string, Blob>()
+    repo = {
+      ...stored,
+      async putAudioBlob(record) {
+        blobsById.set(record.id, record.blob)
+        return stored.putAudioBlob(record)
+      },
+      async getAudioBlob(id) {
+        const row = await stored.getAudioBlob(id)
+        if (!row) return row
+        const original = blobsById.get(id)
+        return original ? { ...row, blob: original } : row
+      },
+    }
     const project = await repo.saveProject({
       ...createEmptyProject('When I Fall'),
       phrases: [
@@ -1065,7 +1081,7 @@ describe('PreparePage sheet upload', () => {
     expect(pageBlob?.mimeType).toBe('image/png')
   })
 
-  it('binds a dragged crop onto the selected phrase', async () => {
+  it('stages a dragged rect and adds it to the film', async () => {
     renderPrepare()
 
     await waitFor(() => {
@@ -1096,7 +1112,13 @@ describe('PreparePage sheet upload', () => {
     fireEvent.pointerDown(page, { clientX: 20, clientY: 10, pointerId: 1 })
     fireEvent.pointerMove(page, { clientX: 120, clientY: 60, pointerId: 1 })
     fireEvent.pointerUp(page, { clientX: 120, clientY: 60, pointerId: 1 })
-    fireEvent.click(screen.getByRole('button', { name: 'Add crop' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add rect' }))
+
+    // Staged, not persisted: the film is only written by Add all.
+    expect((await repo.getProject(projectId))?.sheetCrops).toHaveLength(0)
+    expect(document.querySelectorAll('[data-page-rect]')).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add all 1' }))
 
     await waitFor(async () => {
       const loaded = await repo.getProject(projectId)
@@ -1124,7 +1146,7 @@ describe('PreparePage sheet upload', () => {
       expect(screen.getByLabelText('Sheet page')).toBeTruthy()
     })
 
-    function dragBind(from: { x: number; y: number }, to: { x: number; y: number }) {
+    function dragRect(from: { x: number; y: number }, to: { x: number; y: number }) {
       const page = screen.getByLabelText('Sheet page')
       vi.spyOn(page, 'getBoundingClientRect').mockReturnValue({
         x: 0,
@@ -1142,10 +1164,11 @@ describe('PreparePage sheet upload', () => {
       fireEvent.pointerDown(page, { clientX: from.x, clientY: from.y, pointerId: 1 })
       fireEvent.pointerMove(page, { clientX: to.x, clientY: to.y, pointerId: 1 })
       fireEvent.pointerUp(page, { clientX: to.x, clientY: to.y, pointerId: 1 })
-      fireEvent.click(screen.getByRole('button', { name: 'Add crop' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add rect' }))
     }
 
-    dragBind({ x: 20, y: 10 }, { x: 120, y: 60 })
+    dragRect({ x: 20, y: 10 }, { x: 120, y: 60 })
+    fireEvent.click(screen.getByRole('button', { name: 'Add all 1' }))
     await waitFor(async () => {
       const loaded = await repo.getProject(projectId)
       expect(loaded?.sheetCrops).toHaveLength(1)
@@ -1156,7 +1179,8 @@ describe('PreparePage sheet upload', () => {
     })
     const firstId = (await repo.getProject(projectId))?.sheetCrops[0]?.id
 
-    dragBind({ x: 40, y: 20 }, { x: 140, y: 70 })
+    dragRect({ x: 40, y: 20 }, { x: 140, y: 70 })
+    fireEvent.click(screen.getByRole('button', { name: 'Add all 1' }))
     await waitFor(async () => {
       const loaded = await repo.getProject(projectId)
       expect(loaded?.sheetCrops).toHaveLength(2)
@@ -1166,6 +1190,83 @@ describe('PreparePage sheet upload', () => {
         regionNorm: { x: 0.2, y: 0.2, w: 0.5, h: 0.5 },
       })
     })
+  })
+
+  it('clears one page and commits the redraw together with the other page', async () => {
+    renderPrepare()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Upload sheet PDF')).toBeTruthy()
+    })
+
+    const file = new File([new Uint8Array([9, 8, 7])], 'lead.pdf', { type: 'application/pdf' })
+    fireEvent.change(screen.getByLabelText('Upload sheet PDF'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sheet page')).toBeTruthy()
+    })
+
+    function dragRect(from: { x: number; y: number }, to: { x: number; y: number }) {
+      const page = screen.getByLabelText('Sheet page')
+      vi.spyOn(page, 'getBoundingClientRect').mockReturnValue({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 200,
+        bottom: 100,
+        width: 200,
+        height: 100,
+        toJSON() {
+          return {}
+        },
+      })
+      fireEvent.pointerDown(page, { clientX: from.x, clientY: from.y, pointerId: 1 })
+      fireEvent.pointerMove(page, { clientX: to.x, clientY: to.y, pointerId: 1 })
+      fireEvent.pointerUp(page, { clientX: to.x, clientY: to.y, pointerId: 1 })
+      fireEvent.click(screen.getByRole('button', { name: 'Add rect' }))
+    }
+
+    // Page 1 keeps its rect for the whole run.
+    dragRect({ x: 20, y: 10 }, { x: 120, y: 60 })
+    expect(document.querySelectorAll('[data-page-rect]')).toHaveLength(1)
+
+    const firstPageSrc = document.querySelector<HTMLImageElement>('[aria-label="Sheet page"] img')
+      ?.src
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+    // The cropper unmounts while page 2's PNG is rendered and its blob URL
+    // minted; waiting for the label alone catches a stale-URL frame.
+    await waitFor(() => {
+      expect(screen.getByText('Page 2 of 2')).toBeTruthy()
+      const src = document.querySelector<HTMLImageElement>('[aria-label="Sheet page"] img')?.src
+      expect(src && src !== firstPageSrc).toBe(true)
+    })
+
+    // Two bad rects on page 2, thrown away, then one redraw.
+    dragRect({ x: 10, y: 10 }, { x: 60, y: 30 })
+    dragRect({ x: 10, y: 50 }, { x: 60, y: 80 })
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-page-rect]')).toHaveLength(2)
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear page rects' }))
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-page-rect]')).toHaveLength(0)
+    })
+    // Page 1's rect survived the clear.
+    expect(screen.getByRole('button', { name: 'Add all 1' })).toBeTruthy()
+
+    dragRect({ x: 40, y: 20 }, { x: 140, y: 70 })
+    fireEvent.click(screen.getByRole('button', { name: 'Add all 2' }))
+
+    await waitFor(async () => {
+      const loaded = await repo.getProject(projectId)
+      expect(loaded?.sheetCrops.map((crop) => crop.pageIndex)).toEqual([0, 1])
+    })
+    const loaded = await repo.getProject(projectId)
+    expect(loaded?.sheetCrops[0]?.regionNorm).toEqual({ x: 0.1, y: 0.1, w: 0.5, h: 0.5 })
+    expect(loaded?.sheetCrops[1]?.regionNorm).toEqual({ x: 0.2, y: 0.2, w: 0.5, h: 0.5 })
+    // The hand-drawn page-2 rect got its page image rendered on commit.
+    expect(loaded?.sheetDocs[0]?.pages[1]?.imageBlobId).toBeTruthy()
   })
 
   it('renames the song from the prepare page and persists it', async () => {

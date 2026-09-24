@@ -33,11 +33,16 @@ import {
 } from '../domain/roster.ts'
 import { detectStaffSystems, pageInkFromRgba, type PageInk } from '../domain/staffSystems.ts'
 import {
-  appendSheetCrop,
-  appendSheetCrops,
-  removeSheetCrop,
-  replaceSheetCrops,
-} from '../domain/sheets.ts'
+  addDraftRect,
+  clearDraftPage,
+  draftRectCount,
+  draftRectsBeforePage,
+  draftRefs,
+  removeDraftRect,
+  resizeDraftRect,
+  type CropDraft,
+} from '../domain/cropDraft.ts'
+import { appendSheetCrops, removeSheetCrop, replaceSheetCrops } from '../domain/sheets.ts'
 import { renameProject, phrasesBeyondGhost, reconcileGhostDuration } from '../domain/project.ts'
 import type { Phrase, Project, RegionNorm, SheetDocument, SheetRef } from '../domain/schemas.ts'
 import { renderPageToCanvas } from '../pdf/renderPage.ts'
@@ -49,11 +54,6 @@ import { ProjectNotFound } from './ProjectNotFound.tsx'
 import { StorageError } from './StorageError.tsx'
 import { useLoadedProject } from './useLoadedProject.ts'
 
-type SystemSuggestions = {
-  docId: string
-  byPage: RegionNorm[][]
-}
-
 function messageFrom(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
@@ -63,21 +63,6 @@ function inkFromCanvas(canvas: HTMLCanvasElement): PageInk {
   if (!ctx) throw new Error('Could not read the sheet page')
   const image = ctx.getImageData(0, 0, canvas.width, canvas.height)
   return pageInkFromRgba(canvas.width, canvas.height, image.data)
-}
-
-function refsFromSuggestions(docId: string, byPage: RegionNorm[][]): SheetRef[] {
-  const refs: SheetRef[] = []
-  for (let pageIndex = 0; pageIndex < byPage.length; pageIndex++) {
-    for (const regionNorm of byPage[pageIndex] ?? []) {
-      refs.push({
-        id: crypto.randomUUID(),
-        sheetDocId: docId,
-        pageIndex,
-        regionNorm,
-      })
-    }
-  }
-  return refs
 }
 
 function isTextEntryTarget(target: EventTarget | null): boolean {
@@ -96,7 +81,7 @@ export function PreparePage() {
   const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
   const [sheetPageIndex, setSheetPageIndex] = useState(0)
   const [sheetPageUrl, setSheetPageUrl] = useState<string | null>(null)
-  const [suggestions, setSuggestions] = useState<SystemSuggestions | null>(null)
+  const [cropDraft, setCropDraft] = useState<CropDraft | null>(null)
   const [findingSystems, setFindingSystems] = useState(false)
   const [findError, setFindError] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState<string | null>(null)
@@ -128,7 +113,7 @@ export function PreparePage() {
   }, [liveProject?.id])
 
   useEffect(() => {
-    setSuggestions((current) => (current && current.docId !== activeSheetId ? null : current))
+    setCropDraft((current) => (current && current.docId !== activeSheetId ? null : current))
   }, [activeSheetId])
 
   useEffect(() => {
@@ -608,11 +593,11 @@ export function PreparePage() {
       const active = (projectRef.current ?? loaded).sheetDocs.at(-1)
       if (!active || active.id !== doc.id) return
       if (byPage.every((page) => page.length === 0)) {
-        setSuggestions({ docId: doc.id, byPage: [] })
+        setCropDraft({ docId: doc.id, byPage: [] })
         setFindError('No systems found. Drag a rectangle instead.')
         return
       }
-      setSuggestions({ docId: doc.id, byPage })
+      setCropDraft({ docId: doc.id, byPage })
       setFindError(null)
     } catch (err: unknown) {
       if (stillCurrent()) setFindError(messageFrom(err, 'Could not find systems'))
@@ -625,7 +610,7 @@ export function PreparePage() {
     findSystemsGenRef.current += 1
     setFindingSystems(false)
     setFindError(null)
-    setSuggestions(null)
+    setCropDraft(null)
     const bytes = await blob.arrayBuffer()
     const rendered = await renderPageToCanvas(bytes, 0)
     const pdfBlobId = crypto.randomUUID()
@@ -694,24 +679,25 @@ export function PreparePage() {
     if (stillCurrent()) setSheetPageIndex(nextIndex)
   }
 
-  async function persistSuggestedFilm(
+  async function persistDraftFilm(
     apply: (current: Project, refs: SheetRef[]) => Project,
     fallback: string,
   ) {
-    const pending = suggestions
+    const pending = cropDraft
     const doc = (projectRef.current ?? loaded).sheetDocs.at(-1)
     if (!pending || !doc || pending.docId !== doc.id) return
     try {
+      // Hand-drawn rects can sit on a page whose PNG was never rendered.
       for (let pageIndex = 0; pageIndex < pending.byPage.length; pageIndex++) {
         if ((pending.byPage[pageIndex]?.length ?? 0) === 0) continue
         await ensureSheetPageImage(doc.id, pageIndex)
       }
       const active = (projectRef.current ?? loaded).sheetDocs.at(-1)
       if (!active || active.id !== doc.id) return
-      const refs = refsFromSuggestions(active.id, pending.byPage)
+      const refs = draftRefs({ ...pending, docId: active.id })
       if (refs.length === 0) return
       await persistProject((current) => apply(current, refs))
-      setSuggestions(null)
+      setCropDraft(null)
       setFindError(null)
     } catch (err: unknown) {
       setFindError(messageFrom(err, fallback))
@@ -719,31 +705,42 @@ export function PreparePage() {
   }
 
   function handleAddAll() {
-    return persistSuggestedFilm(
+    return persistDraftFilm(
       (current, refs) => appendSheetCrops(current, refs),
-      'Could not add systems',
+      'Could not add the rects',
     )
   }
 
   function handleReplaceFilm() {
-    return persistSuggestedFilm(
+    return persistDraftFilm(
       (current, refs) => replaceSheetCrops(current, refs),
       'Could not replace the film',
     )
   }
 
-  function handleResizeSuggestion(index: number, region: RegionNorm) {
-    setSuggestions((current) => {
-      if (!current) return current
-      const docId = (projectRef.current ?? loaded).sheetDocs.at(-1)?.id
-      if (!docId || current.docId !== docId) return current
-      return {
-        ...current,
-        byPage: current.byPage.map((page, pageIndex) =>
-          pageIndex === sheetPageIndex ? page.map((box, i) => (i === index ? region : box)) : page,
-        ),
-      }
-    })
+  /** Every draft write goes through here so a draft exists even before Find systems ran. */
+  function mutateDraft(mutate: (draft: CropDraft) => CropDraft) {
+    const docId = (projectRef.current ?? loaded).sheetDocs.at(-1)?.id
+    if (!docId) return
+    setCropDraft((current) =>
+      mutate(current && current.docId === docId ? current : { docId, byPage: [] }),
+    )
+  }
+
+  function handleClearPageRects(pageIndex: number) {
+    mutateDraft((draft) => clearDraftPage(draft, pageIndex))
+  }
+
+  function handleAddRect(region: RegionNorm) {
+    mutateDraft((draft) => addDraftRect(draft, sheetPageIndex, region))
+  }
+
+  function handleRemoveRect(index: number) {
+    mutateDraft((draft) => removeDraftRect(draft, sheetPageIndex, index))
+  }
+
+  function handleResizeRect(index: number, region: RegionNorm) {
+    mutateDraft((draft) => resizeDraftRect(draft, sheetPageIndex, index, region))
   }
 
   async function handleRenameSong(title: string) {
@@ -754,19 +751,6 @@ export function PreparePage() {
     }
     await persistProject((current) => renameProject(current, trimmed))
     setTitleDraft(null)
-  }
-
-  async function handleAddCrop(region: RegionNorm) {
-    const doc = (projectRef.current ?? loaded).sheetDocs.at(-1)
-    if (!doc) return
-    await persistProject((current) =>
-      appendSheetCrop(current, {
-        id: crypto.randomUUID(),
-        sheetDocId: doc.id,
-        pageIndex: sheetPageIndex,
-        regionNorm: region,
-      }),
-    )
   }
 
   async function handleRemoveCrop(refId: string) {
@@ -955,7 +939,8 @@ export function PreparePage() {
       <section className="mt-10 max-w-3xl" aria-label="Sheet music">
         <h3 className="font-medium">Sheet music</h3>
         <p className="mt-1 text-sm text-ink-muted">
-          Upload a PDF. Systems are suggested; add them to the score film, or drag a rectangle.
+          Upload a PDF. Systems are suggested per page; clear the ones that came out wrong, draw your
+          own, then add every rect to the score film in one press.
         </p>
         <SheetUploader
           onUploaded={handleSheetUploaded}
@@ -968,26 +953,27 @@ export function PreparePage() {
             pageCount={activeSheet.pages.length}
             crops={loaded.sheetCrops}
             hasPhrases={loaded.phrases.length > 0}
-            suggestions={
-              suggestions?.docId === activeSheet.id
-                ? (suggestions.byPage[sheetPageIndex] ?? [])
-                : []
+            pageRects={
+              cropDraft?.docId === activeSheet.id ? (cropDraft.byPage[sheetPageIndex] ?? []) : []
             }
-            suggestionTotal={
-              suggestions?.docId === activeSheet.id
-                ? suggestions.byPage.reduce((sum, page) => sum + page.length, 0)
+            rectTotal={cropDraft?.docId === activeSheet.id ? draftRectCount(cropDraft) : 0}
+            rectNumberOffset={
+              cropDraft?.docId === activeSheet.id
+                ? draftRectsBeforePage(cropDraft, sheetPageIndex)
                 : 0
             }
             finding={findingSystems}
             findError={findError}
             onPageChange={handleSheetPageChange}
-            onAddCrop={handleAddCrop}
+            onAddRect={handleAddRect}
+            onRemoveRect={handleRemoveRect}
+            onClearPageRects={handleClearPageRects}
             onRemoveCrop={handleRemoveCrop}
             onFindSystems={handleFindSystems}
             onAddAll={handleAddAll}
             onReplaceFilm={handleReplaceFilm}
-            onDismissSuggestions={() => setSuggestions(null)}
-            onResizeSuggestion={handleResizeSuggestion}
+            onDismissRects={() => setCropDraft(null)}
+            onResizeRect={handleResizeRect}
           />
         ) : null}
       </section>

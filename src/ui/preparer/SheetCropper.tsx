@@ -9,17 +9,26 @@ export type SheetCropperProps = {
   crops: SheetRef[]
   hasPhrases?: boolean
   onPageChange: (pageIndex: number) => void | Promise<void>
-  onAddCrop: (region: RegionNorm) => void | Promise<void>
   onRemoveCrop?: (refId: string) => void | Promise<void>
-  suggestions?: RegionNorm[]
-  suggestionTotal?: number
+  /** Rects staged on the page currently shown — detector output plus hand-drawn ones. */
+  pageRects?: RegionNorm[]
+  /** Rects staged across every page; drives the Add all / Replace labels. */
+  rectTotal?: number
+  /**
+   * Rects staged on earlier pages. Badges show film position (`offset + index + 1`),
+   * not the per-page index, so the numbers read as the order Play will scroll.
+   */
+  rectNumberOffset?: number
   finding?: boolean
   findError?: string | null
   onFindSystems?: () => void | Promise<void>
+  onAddRect?: (region: RegionNorm) => void | Promise<void>
+  onRemoveRect?: (index: number) => void
+  onClearPageRects?: (pageIndex: number) => void
   onAddAll?: () => void | Promise<void>
   onReplaceFilm?: () => void | Promise<void>
-  onDismissSuggestions?: () => void
-  onResizeSuggestion?: (index: number, region: RegionNorm) => void
+  onDismissRects?: () => void
+  onResizeRect?: (index: number, region: RegionNorm) => void
 }
 
 function messageFrom(error: unknown, fallback: string): string {
@@ -59,17 +68,20 @@ export function SheetCropper({
   crops,
   hasPhrases = true,
   onPageChange,
-  onAddCrop,
   onRemoveCrop,
-  suggestions = [],
-  suggestionTotal = 0,
+  pageRects = [],
+  rectTotal = 0,
+  rectNumberOffset = 0,
   finding = false,
   findError = null,
   onFindSystems,
+  onAddRect,
+  onRemoveRect,
+  onClearPageRects,
   onAddAll,
   onReplaceFilm,
-  onDismissSuggestions,
-  onResizeSuggestion,
+  onDismissRects,
+  onResizeRect,
 }: SheetCropperProps) {
   const dragRef = useRef<{ x: number; y: number } | null>(null)
   const pageRef = useRef<HTMLDivElement>(null)
@@ -125,9 +137,9 @@ export function SheetCropper({
   function startResize(event: ReactPointerEvent<HTMLButtonElement>, index: number, edge: RegionEdge) {
     event.stopPropagation()
     event.preventDefault()
-    const box = suggestions[index]
+    const box = pageRects[index]
     const page = pageRef.current
-    if (!box || !page || !onResizeSuggestion) return
+    if (!box || !page || !onResizeRect) return
     const rect = page.getBoundingClientRect()
     resizeRef.current = {
       index,
@@ -143,10 +155,10 @@ export function SheetCropper({
 
   function moveResize(event: ReactPointerEvent<HTMLButtonElement>) {
     const drag = resizeRef.current
-    if (!drag || !onResizeSuggestion) return
+    if (!drag || !onResizeRect) return
     const dx = drag.width > 0 ? (event.clientX - drag.x) / drag.width : 0
     const dy = drag.height > 0 ? (event.clientY - drag.y) / drag.height : 0
-    onResizeSuggestion(drag.index, resizeRegionNorm(drag.region, drag.edge, dx, dy))
+    onResizeRect(drag.index, resizeRegionNorm(drag.region, drag.edge, dx, dy))
   }
 
   function endResize(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -154,14 +166,14 @@ export function SheetCropper({
     releasePointer(event.currentTarget, event.pointerId)
   }
 
-  async function handleAddCrop() {
-    if (!region) return
+  async function handleAddRect() {
+    if (!region || !onAddRect) return
     try {
-      await onAddCrop(region)
+      await onAddRect(region)
       setRegion(null)
       setError(null)
     } catch (err: unknown) {
-      setError(messageFrom(err, 'Could not add sheet crop'))
+      setError(messageFrom(err, 'Could not add rect'))
     }
   }
 
@@ -212,10 +224,10 @@ export function SheetCropper({
         onPointerCancel={(event) => finishDrag(event, false)}
       >
         <img src={pageImageUrl} alt="" draggable={false} className="block w-full select-none" />
-        {suggestions.map((box, index) => (
+        {pageRects.map((box, index) => (
           <div
             key={index}
-            data-system-rect=""
+            data-page-rect=""
             className="pointer-events-none absolute border border-dashed border-ink"
             style={{
               left: `${box.x * 100}%`,
@@ -224,7 +236,24 @@ export function SheetCropper({
               height: `${box.h * 100}%`,
             }}
           >
-            {onResizeSuggestion
+            <span
+              data-rect-number=""
+              className="pointer-events-none absolute left-0 top-0 min-w-6 rounded-br-md rounded-tl-sm bg-ink px-1.5 py-0.5 text-center text-xs font-semibold tabular-nums text-paper"
+            >
+              {rectNumberOffset + index + 1}
+            </span>
+            {onRemoveRect ? (
+              <button
+                type="button"
+                aria-label={`Remove rect ${rectNumberOffset + index + 1}`}
+                className="pointer-events-auto absolute right-0 top-0 rounded-bl-md rounded-tr-sm bg-ink px-1.5 py-0.5 text-xs font-semibold text-paper studio-transition hover:bg-record-red"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => onRemoveRect(index)}
+              >
+                ✕
+              </button>
+            ) : null}
+            {onResizeRect
               ? (
                   [
                     ['n', 'top', '50%', '0%'],
@@ -236,7 +265,7 @@ export function SheetCropper({
                   <button
                     key={edge}
                     type="button"
-                    aria-label={`Resize system ${index + 1} ${name}`}
+                    aria-label={`Resize rect ${index + 1} ${name}`}
                     className="pointer-events-auto absolute h-3 w-3 rounded-sm border border-ink bg-paper"
                     style={{ left, top, marginLeft: -6, marginTop: -6 }}
                     onPointerDown={(event) => startResize(event, index, edge)}
@@ -262,11 +291,15 @@ export function SheetCropper({
         ) : null}
       </div>
       <p className="mt-2 text-sm text-ink-muted">
-        Drag a rectangle on the page, then add it to the score film.
+        Drag a rectangle on the page, then Add rect. The number on each rect is its place in the
+        score film — that is the order Play scrolls them, so check it reads top to bottom before you
+        add them.
       </p>
       {onFindSystems ? (
         <p className="mt-1 text-sm text-ink-muted">
-          Finds each system from the space between them. Drag an edge to resize a box, then add them.
+          Finds each system from the space between them. Drag an edge to resize a rect, ✕ drops one.
+          A rect you draw goes last on its page, so if the numbers come out wrong, Clear page rects
+          and draw them in reading order.
         </p>
       ) : null}
       {!hasPhrases ? (
@@ -285,24 +318,36 @@ export function SheetCropper({
             {finding ? 'Finding systems…' : 'Find systems'}
           </button>
         ) : null}
-        <button
-          type="button"
-          disabled={!region}
-          onClick={() => void handleAddCrop()}
-          className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red disabled:opacity-50"
-        >
-          Add crop
-        </button>
-        {suggestionTotal > 0 ? (
+        {onClearPageRects ? (
+          <button
+            type="button"
+            disabled={pageRects.length === 0}
+            onClick={() => onClearPageRects(pageIndex)}
+            className="rounded-md border border-ink/15 px-3 py-2 text-sm font-medium disabled:opacity-50"
+          >
+            Clear page rects
+          </button>
+        ) : null}
+        {onAddRect ? (
+          <button
+            type="button"
+            disabled={!region}
+            onClick={() => void handleAddRect()}
+            className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red disabled:opacity-50"
+          >
+            Add rect
+          </button>
+        ) : null}
+        {rectTotal > 0 ? (
           <button
             type="button"
             onClick={() => void onAddAll?.()}
             className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red disabled:opacity-50"
           >
-            Add all {suggestionTotal}
+            Add all {rectTotal}
           </button>
         ) : null}
-        {suggestionTotal > 0 && crops.length > 0 ? (
+        {rectTotal > 0 && crops.length > 0 ? (
           <button
             type="button"
             onClick={() => void onReplaceFilm?.()}
@@ -311,10 +356,10 @@ export function SheetCropper({
             Replace film and clear pins
           </button>
         ) : null}
-        {suggestionTotal > 0 ? (
+        {rectTotal > 0 ? (
           <button
             type="button"
-            onClick={() => onDismissSuggestions?.()}
+            onClick={() => onDismissRects?.()}
             className="rounded-md border border-ink/15 px-3 py-2 text-sm font-medium disabled:opacity-50"
           >
             Dismiss
