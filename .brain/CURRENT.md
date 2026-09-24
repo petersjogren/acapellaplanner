@@ -17,7 +17,7 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 
 ## Just landed
 
-- Prepare suggests staff-system crops from a PDF. **Add all** / **Replace film**; drag and single Add crop still work. No schema bump.
+- Prepare stages sheet rects **per page** before they reach the film. **Find systems** fills them, **Clear page rects** empties one page (others keep theirs), drag + **Add rect** appends your own, the ✕ on a rect drops it, and **Add all N** / **Replace film** commit every rect on every page in page-major order. Each rect is badged with its **film position** (numbering continues across pages), so a wrong reading order is visible on the page before committing — the fix is Clear page rects and redraw in order. The draft is ephemeral UI state (lost on navigate-away or sheet-doc switch); only the commit writes `project.sheetCrops`. The old one-click **Add crop** (drag → straight into the film) is gone. No schema bump. Pure list math is `domain/cropDraft.ts`.
 
 Review **Export film for YouTube** (`<title>.film.mp4`, 1920×1080 30fps H.264+AAC). Desktop Chrome WebCodecs; missing avc1 or AAC → `Mp4UnsupportedError` (never WebM, never PCM-in-MP4). Mix Ghost Focus / Stack Build / Blend Check (default Stack Build). Ghost ms clocks canvas + mix; pins from `project.filmPins`. Offline `drawFilmFrame` (paper fill, one crop centred/contain, 2+ via `filmTrackLayout` clip; missing bitmaps skip `drawImage`) + `renderPlaybackMix` (additive Float32 L/R, gain only — no pan/click/fades). `src/export/` orchestrates; pages do not mux. Tests cover layout/mix/preflight/encode fakes/UI; real file is manual Chrome. `mp4-muxer` (deprecated upstream toward Mediabunny; we did not migrate).
 

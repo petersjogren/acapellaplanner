@@ -15,7 +15,7 @@ Local-first. Desktop Chrome MVP; iPad Safari as a booth once the song is prepare
 5. **Sections** — group a run of phrases as *Follow the ghost* (rubato, no click) or *In time* (optional click). A section is those phrases, sung that way.
 6. Open **Sing** for the booth, **Play** to follow the sheet through the whole song, or **Review** later to promote keepers and export a zip, DAW stems, or a film for YouTube.
 
-Optional: upload a PDF and add the suggested systems (or drag a rectangle). The film is the whole song, not a phrase binding.
+Optional: upload a PDF. Systems are suggested per page — clear the ones a page got wrong (**Clear page rects**), drag your own and **Add rect**, then **Add all N** puts every rect on every page into the film in one press. Each rect is numbered with its place in the film: check the numbers read in playing order before you add them, and if a rect you drew landed out of order, clear that page and draw them in order. The film is the whole song, not a phrase binding.
 
 ## Singer quickstart
 
