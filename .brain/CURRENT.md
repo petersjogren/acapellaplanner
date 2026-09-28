@@ -1,6 +1,6 @@
 # Current state
 
-As of 2026-09-23 (branch `main`).
+As of 2026-09-28 (branch `main`).
 
 Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is documented with mic/PWA caveats, not proven in CI. iPhone Safari (portrait + landscape) is responsive at the shell/page level — same layout as desktop/iPad above `md:`, not proven in CI (manual browser-emulation screenshots only).
 
@@ -8,7 +8,7 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 
 - Home: create / rename / delete songs; import/export `.acapella.zip`.
 - Prepare: ghost import, phrase mark/edit (incl. head start / crossfade tail), roster (unique short labels), sections as phrase spans (ghost-follow vs fixed-tempo + optional click), **score film** (ordered sheet crops for the whole song), completion matrix, phrase preview with mix presets.
-- Sing: part picker / surprise-me, session suggestions, one-shot record, Hear (ghost/stack/solo), Keep / Scrap, Good enough / Next (both mark `enough`), Need more takes, mix presets, **dock booth** (full-width film + Record always on screen).
+- Sing: part picker / surprise-me, session suggestions, one-shot record, **Sing through** (one press across an adjacent run, default off), Hear (ghost/stack/solo), Keep / Scrap, Good enough / Next (both mark `enough`), Need more takes, mix presets, **dock booth** (full-width film + Record always on screen).
 - Play: whole-song follow-along (`/project/:id/play`) with the same dock booth, mix presets, tap-a-phrase jump (horizontal chips), Pause on once-through, Practice loop of a phrase or section. Click the visible film to pin that moment to the centre of the viewport; **Clear all** drops the pins. No recording.
 - Review: rate (keeper/scratch/1–5), play take with/without ghost, all keepers on a phrase or whole song, project zip, **DAW stem zip** (lanes default, keepers-only default, size estimate), **Export film for YouTube** (`.film.mp4`, desktop Chrome, default Stack Build).
 - Calibrate: mic meter + **Check mic**; default **Line up** (880 Hz SNR); alternate **Clap with the click** (sequential Normal–Normal, MAD outliers, min 16 clicks, pair cap 400 ms); both auto-save the same `localStorage` profile; type-ms after a miss.
@@ -16,6 +16,8 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 - Schema v3 + migration from v2 per-phrase `sheetRefs` into `sheetCrops`. v1 section spans still migrate through.
 
 ## Just landed
+
+- Sing **Sing through** (switch next to Record, default off, resets every press). One Record press covers an unbroken adjacent run: one `engine.play()` and one recorder, one `Take` with optional `spanPhraseIds` (no schema bump). Stop credits only phrases whose end has been reached; the rest of the blob is dead tail and is not trimmed. Keep marks every covered phrase enough and moves on. Hear of one phrase seeks into the shared blob. The lyric and a "Phrase n of m in this pass" line follow each boundary; Record stays mounted.
 
 - Prepare stages sheet rects **per page** before they reach the film. **Find systems** fills them, **Clear page rects** empties one page (others keep theirs), drag + **Add rect** appends your own, the ✕ on a rect drops it, and **Add all N** / **Replace film** commit every rect on every page in page-major order. Each rect is badged with its **film position** (numbering continues across pages), so a wrong reading order is visible on the page before committing — the fix is Clear page rects and redraw in order. The draft is ephemeral UI state (lost on navigate-away or sheet-doc switch); only the commit writes `project.sheetCrops`. The old one-click **Add crop** (drag → straight into the film) is gone. No schema bump. Pure list math is `domain/cropDraft.ts`.
 

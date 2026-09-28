@@ -1,7 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { useProjectRepository } from '../../app/projectRepositoryContext.tsx'
 import type { PlaybackEngine } from '../../audio/engine.ts'
-import { clicksForPhrase } from '../../audio/click.ts'
+import { clicksForPhrase, clicksForRun } from '../../audio/click.ts'
 import { decodeAudioFile } from '../../audio/decode.ts'
 import { storedLatencyCompMs } from '../../audio/latency.ts'
 import {
@@ -10,6 +10,8 @@ import {
   headphoneMixSnapshotFor,
   keeperTakesForPhrase,
   loadPlaybackMixForPhrase,
+  loadPlaybackMixForRun,
+  loadSpanPassReviewMix,
   loadTakeReviewMix,
   mixPresetById,
   stackKeepersForReview,
@@ -30,6 +32,13 @@ import {
 import { deriveCompletion } from '../../domain/completion.ts'
 import { phraseTimelineStartMs } from '../../domain/phrases.ts'
 import { markInProgress } from '../../domain/sessionPlan.ts'
+import {
+  completedRun,
+  presentSpanPhrases,
+  singThroughPlaySpec,
+  singThroughRun,
+  takeCoversPhrase,
+} from '../../domain/singThrough.ts'
 import { rateTake, removeTake } from '../../domain/takes.ts'
 import type { Phrase, Project, Take, VoicePart } from '../../domain/schemas.ts'
 
@@ -44,6 +53,10 @@ export type RecordControlProps = {
   onProjectChange: (project: Project) => void
   engine: PlaybackEngine
   mixPresetId?: string
+  /** Live phrase inside a sing-through pass. Null when the pass ends. */
+  onPassChange?: (pass: { phraseIds: string[]; activePhraseId: string } | null) => void
+  /** Keep of a spanning take: mark every covered phrase enough, then advance. */
+  onSpanKept?: (phraseIds: string[]) => void
   ref?: Ref<RecordControlHandle>
 }
 
@@ -87,6 +100,8 @@ export function RecordControl({
   onProjectChange,
   engine,
   mixPresetId,
+  onPassChange,
+  onSpanKept,
   ref,
 }: RecordControlProps) {
   const repo = useProjectRepository()
@@ -96,6 +111,8 @@ export function RecordControl({
   const [hearing, setHearing] = useState<TakeReviewMode | null>(null)
   const [busy, setBusy] = useState(false)
   const [processed, setProcessed] = useState(false)
+  const [singThrough, setSingThrough] = useState(false)
+  const [passActive, setPassActive] = useState(false)
   const armedRef = useRef(false)
   const armingRef = useRef(false)
   const projectRef = useRef(project)
@@ -107,11 +124,19 @@ export function RecordControl({
   const mixPresetIdRef = useRef(mixPresetId)
   const hearGenerationRef = useRef(0)
   const lastTakeIdRef = useRef<string | null>(null)
+  const singThroughRef = useRef(false)
+  const passRunRef = useRef<Phrase[] | null>(null)
+  const spanIdsRef = useRef<string[] | null>(null)
+  const onPassChangeRef = useRef(onPassChange)
+  const onSpanKeptRef = useRef(onSpanKept)
 
   projectRef.current = project
   onProjectChangeRef.current = onProjectChange
   mixPresetIdRef.current = mixPresetId
   lastTakeIdRef.current = lastTakeId
+  singThroughRef.current = singThrough
+  onPassChangeRef.current = onPassChange
+  onSpanKeptRef.current = onSpanKept
 
   useImperativeHandle(ref, () => ({
     flushSaves: () => saveChainRef.current,
@@ -121,7 +146,7 @@ export function RecordControl({
     phrase.partPlan.find((item) => item.voicePartId === voicePart.id)?.targetTakes ??
     voicePart.targetTakes
   const cellTakes = project.takes.filter(
-    (item) => item.phraseId === phrase.id && item.voicePartId === voicePart.id,
+    (item) => takeCoversPhrase(item, phrase.id) && item.voicePartId === voicePart.id,
   )
   const takeCount = cellTakes.length
   const lastTake = lastTakeId ? cellTakes.find((item) => item.id === lastTakeId) : undefined
@@ -131,7 +156,10 @@ export function RecordControl({
     ? stackKeepersForReview(project, phrase.id, lastTakeId).length
     : 0
 
-  async function persistTake(result: RecordingResult): Promise<string | null> {
+  async function persistTake(
+    result: RecordingResult,
+    spanIds: string[] | null,
+  ): Promise<string | null> {
     if (isEmptyTake(result)) {
       setError('nothing caught — try again')
       return null
@@ -148,12 +176,16 @@ export function RecordControl({
       blob: result.blob,
     })
     const current = projectRef.current
-    const takeIndex = nextTakeIndex(current.takes, phrase.id, voicePart.id)
-    const found = current.phrases.findIndex((item) => item.id === phrase.id)
+    const anchor =
+      spanIds && spanIds.length > 1
+        ? (current.phrases.find((item) => item.id === spanIds[0]) ?? phrase)
+        : phrase
+    const takeIndex = nextTakeIndex(current.takes, anchor.id, voicePart.id)
+    const found = current.phrases.findIndex((item) => item.id === anchor.id)
     const phraseIndex = found >= 0 ? found + 1 : 1
     const take: Take = {
       id: crypto.randomUUID(),
-      phraseId: phrase.id,
+      phraseId: anchor.id,
       voicePartId: voicePart.id,
       takeIndex,
       audioBlobId,
@@ -162,7 +194,7 @@ export function RecordControl({
       notes: takeLabel(voicePart.shortLabel, phraseIndex, takeIndex),
       headphoneMixSnapshot: headphoneMixSnapshotFor(mixPresetById(mixPresetIdRef.current), {
         ghostGuideId: ghostGuideId(current),
-        keeperTakeIds: keeperTakesForPhrase(current.takes, phrase.id).map((item) => item.id),
+        keeperTakeIds: keeperTakesForPhrase(current.takes, anchor.id).map((item) => item.id),
       }),
       latencyCompMs: storedLatencyCompMs(),
       peakDb: 0,
@@ -170,13 +202,14 @@ export function RecordControl({
       // Snapshot now, while the phrase is still the one that was sung — see
       // Take.timelineStartMs. Editing/deleting the phrase later must not
       // move or orphan-drop this take from whole-song playback / export.
-      timelineStartMs: phraseTimelineStartMs(phrase),
+      timelineStartMs: phraseTimelineStartMs(anchor),
+      ...(spanIds && spanIds.length > 1 ? { spanPhraseIds: spanIds } : {}),
     }
     const next: Project = {
       ...current,
       takes: [...current.takes, take],
     }
-    const progressing = markInProgress(next, phrase.id, voicePart.id)
+    const progressing = markInProgress(next, anchor.id, voicePart.id)
     const saved = await repo.saveProject({
       ...progressing,
       completion: deriveCompletion(progressing),
@@ -186,12 +219,12 @@ export function RecordControl({
     return take.id
   }
 
-  function queuePersist(rec: StartedRecording) {
+  function queuePersist(rec: StartedRecording, spanIds: string[] | null) {
     const stopped = rec.stop()
     saveChainRef.current = saveChainRef.current
       .then(async () => {
         const result = await stopped
-        const takeId = await persistTake(result)
+        const takeId = await persistTake(result, spanIds)
         if (takeId) {
           setLastTakeId(takeId)
           lastTakeIdRef.current = takeId
@@ -209,9 +242,9 @@ export function RecordControl({
     for (const rec of pending) void rec.stop()
   }
 
-  function persistPending() {
+  function persistPending(spanIds: string[] | null = spanIdsRef.current) {
     const pending = pendingRef.current.splice(0)
-    for (const rec of pending) queuePersist(rec)
+    for (const rec of pending) queuePersist(rec, spanIds)
   }
 
   function stopMic() {
@@ -224,12 +257,35 @@ export function RecordControl({
     setHearing(null)
   }
 
+  function endPass() {
+    passRunRef.current = null
+    setPassActive(false)
+    onPassChangeRef.current?.(null)
+  }
+
   function disarm() {
     armedRef.current = false
     setArmed(false)
     engine.stop()
     discardPending()
     stopMic()
+    spanIdsRef.current = null
+    endPass()
+  }
+
+  function stopSingThrough() {
+    const run = passRunRef.current
+    const positionMs = engine.getPositionMs()
+    const completed = run && positionMs != null ? completedRun(run, positionMs) : []
+    const spanIds = completed.length > 0 ? completed.map((item) => item.id) : null
+    spanIdsRef.current = spanIds
+    engine.stop()
+    armedRef.current = false
+    setArmed(false)
+    if (spanIds) persistPending(spanIds)
+    else discardPending()
+    stopMic()
+    endPass()
   }
 
   async function arm() {
@@ -238,6 +294,7 @@ export function RecordControl({
     armingRef.current = true
     setError(null)
     stopHearing()
+    const through = singThroughRef.current
     try {
       if (!streamRef.current) {
         streamRef.current = await requestMicStream()
@@ -248,21 +305,35 @@ export function RecordControl({
       }
 
       armedRef.current = true
-      const mix = await loadPlaybackMixForPhrase(
-        projectRef.current,
-        phrase.id,
-        mixPresetById(mixPresetIdRef.current).id,
-        createAudioBlobLoader((id) => repo.getAudioBlob(id)),
-      )
+      const current = projectRef.current
+      const run = through ? singThroughRun(current.phrases, phrase.id) : [phrase]
+      const multi = run.length > 1
+      const spanIds = multi ? run.map((item) => item.id) : null
+      spanIdsRef.current = spanIds
+      passRunRef.current = multi ? run : null
+      const loader = createAudioBlobLoader((id) => repo.getAudioBlob(id))
+      const mix = multi
+        ? await loadPlaybackMixForRun(current, run, mixPresetById(mixPresetIdRef.current).id, loader)
+        : await loadPlaybackMixForPhrase(
+            current,
+            phrase.id,
+            mixPresetById(mixPresetIdRef.current).id,
+            loader,
+          )
       if (!armedRef.current) {
         discardPending()
         stopMic()
+        spanIdsRef.current = null
+        endPass()
         return
       }
-      const clickTimesMs = clicksForPhrase(phrase, projectRef.current.sections, projectRef.current.phrases)
+      const clickTimesMs = multi
+        ? clicksForRun(run, current.sections, current.phrases)
+        : clicksForPhrase(phrase, current.sections, current.phrases)
+      const spec = multi ? singThroughPlaySpec(run) : boothPlaySpec(phrase)
       // One pass per Record press so the singer can hear the take before another.
       const started = await engine.play(
-        boothPlaySpec(phrase),
+        spec,
         {
           onPassStart: () => {
             if (!armedRef.current || !streamRef.current) return
@@ -271,13 +342,23 @@ export function RecordControl({
           onPassComplete: () => {
             const rec = pendingRef.current.shift()
             if (!rec) return
-            queuePersist(rec)
+            queuePersist(rec, spanIdsRef.current)
           },
           onEnded: () => {
             armedRef.current = false
             setArmed(false)
-            persistPending()
+            persistPending(spanIdsRef.current)
             stopMic()
+            endPass()
+          },
+          onPhraseEnter: (index) => {
+            if (!multi) return
+            const entered = run[index]
+            if (!entered) return
+            onPassChangeRef.current?.({
+              phraseIds: run.map((item) => item.id),
+              activePhraseId: entered.id,
+            })
           },
         },
         { ...mix, click: true, clickTimesMs },
@@ -287,15 +368,30 @@ export function RecordControl({
         setArmed(false)
         discardPending()
         stopMic()
+        spanIdsRef.current = null
+        endPass()
         return
       }
       setArmed(true)
+      if (through) {
+        setSingThrough(false)
+        singThroughRef.current = false
+      }
+      if (multi) {
+        setPassActive(true)
+        onPassChangeRef.current?.({
+          phraseIds: run.map((item) => item.id),
+          activePhraseId: run[0]!.id,
+        })
+      }
     } catch (err: unknown) {
       const hadMic = streamRef.current != null
       armedRef.current = false
       setArmed(false)
       discardPending()
       stopMic()
+      spanIdsRef.current = null
+      endPass()
       setError(
         messageFrom(
           err,
@@ -310,8 +406,10 @@ export function RecordControl({
   function toggleArm() {
     if (armingRef.current || busy) return
     if (lastTakeIdRef.current) return
-    if (armedRef.current) disarm()
-    else void arm()
+    if (armedRef.current) {
+      if (passRunRef.current && passRunRef.current.length > 1) stopSingThrough()
+      else disarm()
+    } else void arm()
   }
 
   toggleArmRef.current = toggleArm
@@ -337,20 +435,24 @@ export function RecordControl({
       }
       const decoded = await decodeAudioFile(record.blob)
       if (generation !== hearGenerationRef.current) return
-      const mix = await loadTakeReviewMix(
-        projectRef.current,
-        phrase.id,
-        {
-          takeId,
-          takeBuffer: decoded.buffer,
-          latencyCompMs: take.latencyCompMs,
-          mode,
-        },
-        createAudioBlobLoader((id) => repo.getAudioBlob(id)),
-      )
+      const loader = createAudioBlobLoader((id) => repo.getAudioBlob(id))
+      const span =
+        take.spanPhraseIds && take.spanPhraseIds.length > 1
+          ? presentSpanPhrases(projectRef.current.phrases, take.spanPhraseIds)
+          : []
+      const reviewOptions = {
+        takeId,
+        takeBuffer: decoded.buffer,
+        latencyCompMs: take.latencyCompMs,
+        mode,
+      }
+      const mix =
+        span.length > 1
+          ? await loadSpanPassReviewMix(projectRef.current, span, reviewOptions, loader)
+          : await loadTakeReviewMix(projectRef.current, phrase.id, reviewOptions, loader)
       if (generation !== hearGenerationRef.current) return
       const started = await engine.play(
-        boothPlaySpec(phrase),
+        span.length > 1 ? singThroughPlaySpec(span) : boothPlaySpec(phrase),
         {
           onEnded: () => {
             if (generation === hearGenerationRef.current) setHearing(null)
@@ -391,6 +493,8 @@ export function RecordControl({
       onProjectChangeRef.current(saved)
       setLastTakeId(null)
       lastTakeIdRef.current = null
+      const span = saved.takes.find((item) => item.id === takeId)?.spanPhraseIds
+      if (span && span.length > 1) onSpanKeptRef.current?.(span)
     } catch (err: unknown) {
       setError(messageFrom(err, 'Could not keep take'))
     } finally {
@@ -459,6 +563,7 @@ export function RecordControl({
       discardPending()
       streamRef.current?.getTracks().forEach((track) => track.stop())
       streamRef.current = null
+      onPassChangeRef.current?.(null)
     }
   }, [engine])
 
@@ -535,18 +640,33 @@ export function RecordControl({
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          aria-label="Record"
-          aria-pressed={armed}
-          onClick={() => toggleArm()}
-          disabled={busy}
-          className={`flex h-24 w-24 items-center justify-center rounded-full text-sm font-medium text-paper studio-transition disabled:opacity-50 ${
-            armed ? 'record-lamp' : 'bg-record-red hover:bg-ink'
-          }`}
-        >
-          Record
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            aria-label={passActive ? 'Stop' : 'Record'}
+            aria-pressed={armed}
+            onClick={() => toggleArm()}
+            disabled={busy}
+            className={`flex h-24 w-24 items-center justify-center rounded-full text-sm font-medium text-paper studio-transition disabled:opacity-50 ${
+              armed ? 'record-lamp' : 'bg-record-red hover:bg-ink'
+            }`}
+          >
+            {passActive ? 'Stop' : 'Record'}
+          </button>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={singThrough}
+            aria-label="Sing through"
+            disabled={armed || busy || passActive}
+            onClick={() => setSingThrough((value) => !value)}
+            className={`min-h-11 rounded-pill border px-4 py-2 text-sm font-medium studio-transition disabled:opacity-40 ${
+              singThrough ? 'border-ink bg-ink text-paper' : 'border-ink/20 hover:border-ink/50'
+            }`}
+          >
+            Sing through
+          </button>
+        </div>
       )}
 
       {error ? (

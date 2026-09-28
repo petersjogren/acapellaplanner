@@ -51,3 +51,16 @@ export function clicksForPhrase(
     (time) => time >= clipStart && time < clipEnd,
   )
 }
+
+/**
+ * Clicks for a sing-through run: each phrase's own grid, concatenated.
+ * Identical times from overlapping pre/post-rolls fire once.
+ */
+export function clicksForRun(
+  run: ClickPhrase[],
+  sections: Section[],
+  phrases: Array<Pick<Phrase, 'id' | 'startMs' | 'endMs' | 'preRollMs' | 'postRollMs'>>,
+): number[] {
+  const times = run.flatMap((phrase) => clicksForPhrase(phrase, sections, phrases))
+  return [...new Set(times)].sort((a, b) => a - b)
+}

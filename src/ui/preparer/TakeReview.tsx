@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { keeperTakesForPhrase, type TakeReviewMode } from '../../audio/mix.ts'
+import { takeCoversPhrase } from '../../domain/singThrough.ts'
 import type { Project, TakeRating } from '../../domain/schemas.ts'
 
 /** Review only ever solos a take with or without the ghost — never the
@@ -19,7 +20,7 @@ export type TakeReviewProps = {
   selectedPhraseId?: string | null
   onSelectPhrase?: (id: string | null) => void
   onRate: (takeId: string, rating: TakeRating) => void
-  onPlayTake: (takeId: string, mode: ReviewTakeMode) => void
+  onPlayTake: (takeId: string, mode: ReviewTakeMode, phraseId?: string) => void
   /** phraseId is null for "All phrases" — every keeper in the whole song. */
   onPlayAllKeepers: (phraseId: string | null, mode: AllKeepersMode) => void
   onStop?: () => void
@@ -65,7 +66,7 @@ export function TakeReview({
   const phrases = project.phrases
   const partsById = new Map(project.voiceRoster.map((part) => [part.id, part]))
   const takes = project.takes
-    .filter((item) => !phraseFilter || item.phraseId === phraseFilter)
+    .filter((item) => !phraseFilter || takeCoversPhrase(item, phraseFilter))
     .slice()
     .sort((a, b) => {
       if (a.phraseId !== b.phraseId) {
@@ -168,7 +169,13 @@ export function TakeReview({
                         type="button"
                         className={buttonClass}
                         aria-pressed={active}
-                        onClick={() => (active ? onStop?.() : onPlayTake(item.id, mode))}
+                        onClick={() =>
+                          active
+                            ? onStop?.()
+                            : phraseFilter
+                              ? onPlayTake(item.id, mode, phraseFilter)
+                              : onPlayTake(item.id, mode)
+                        }
                       >
                         {active ? `Stop — ${TAKE_MODE_LABELS[mode]}` : TAKE_MODE_LABELS[mode]}
                       </button>

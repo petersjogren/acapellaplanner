@@ -1,3 +1,4 @@
+import { takeCoversPhrase } from './singThrough.ts'
 import type {
   CompletionCell,
   CompletionState,
@@ -22,7 +23,7 @@ export function deriveCompletion(project: Project): CompletionState {
   for (const phrase of project.phrases) {
     for (const part of parts) {
       const matchingTakes = project.takes.filter(
-        (item) => item.phraseId === phrase.id && item.voicePartId === part.id,
+        (item) => takeCoversPhrase(item, phrase.id) && item.voicePartId === part.id,
       )
       const takeCount = matchingTakes.length
       const keeperCount = matchingTakes.filter((item) => item.rating === 'keeper').length

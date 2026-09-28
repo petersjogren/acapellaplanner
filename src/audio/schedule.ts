@@ -5,6 +5,11 @@ export type PhrasePlaySpec = {
   postRollMs: number
   gapMs: number
   loop: boolean
+  /**
+   * Absolute ghost times at which onPhraseEnter fires, in order.
+   * Defaults to a single enter at startMs.
+   */
+  phraseEnterMs?: number[]
 }
 
 export type PlayWindow = {

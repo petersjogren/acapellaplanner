@@ -270,6 +270,29 @@ describe('createPlaybackEngine', () => {
     expect(onPhraseEnter).toHaveBeenCalledTimes(1)
   })
 
+  it('fires onPhraseEnter once per listed boundary', async () => {
+    const onPhraseEnter = vi.fn()
+    const engine = engineWith(buffer())
+    await engine.play(
+      spec({
+        startMs: 1000,
+        endMs: 5000,
+        preRollMs: 250,
+        postRollMs: 0,
+        loop: false,
+        phraseEnterMs: [1000, 3000],
+      }),
+      { onPhraseEnter },
+    )
+    expect(onPhraseEnter).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(250)
+    expect(onPhraseEnter).toHaveBeenCalledTimes(1)
+    expect(onPhraseEnter).toHaveBeenCalledWith(0)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(onPhraseEnter).toHaveBeenCalledTimes(2)
+    expect(onPhraseEnter).toHaveBeenLastCalledWith(1)
+  })
+
   it('fires onPassStart at play window start and onPassComplete at play window end', async () => {
     const onPassStart = vi.fn()
     const onPassComplete = vi.fn()

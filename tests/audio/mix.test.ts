@@ -121,6 +121,32 @@ describe('loadTakeReviewMix', () => {
     expect(mix.extra?.[0]?.offsetMs).toBe(87)
   })
 
+  it('seeks a spanning take to the heard phrase, not the run start', async () => {
+    const spanning = {
+      guides: projectWithKeepers().guides,
+      phrases: [
+        { id: 'p1', startMs: 0, endMs: 1000, preRollMs: 0 },
+        { id: 'p2', startMs: 1000, endMs: 2500, preRollMs: 250 },
+      ],
+      takes: [
+        take({
+          id: 'span',
+          phraseId: 'p1',
+          spanPhraseIds: ['p1', 'p2'],
+          timelineStartMs: 0,
+          latencyCompMs: 20,
+        }),
+      ],
+    } as unknown as Project
+    const mix = await loadTakeReviewMix(
+      spanning,
+      'p2',
+      { takeId: 'span', takeBuffer, latencyCompMs: 20, mode: 'solo' },
+      async () => keeperBuffer,
+    )
+    expect(mix.extra?.[0]?.offsetMs).toBe(770)
+  })
+
   it('never schedules a click while auditioning', async () => {
     for (const mode of ['ghost', 'stack', 'solo'] as const) {
       const mix = await loadTakeReviewMix(

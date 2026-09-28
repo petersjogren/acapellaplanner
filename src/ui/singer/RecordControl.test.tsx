@@ -152,12 +152,16 @@ function renderControl({
   project = projectWith(),
   onProjectChange = vi.fn(),
   mixPresetId,
+  onPassChange,
+  onSpanKept,
 }: {
   repo?: ProjectRepository
   engine: PlaybackEngine
   project?: Project
   onProjectChange?: (project: Project) => void
   mixPresetId?: string
+  onPassChange?: (pass: { phraseIds: string[]; activePhraseId: string } | null) => void
+  onSpanKept?: (phraseIds: string[]) => void
 } = { engine: mockEngine().engine }) {
   const view = render(
     <ProjectRepositoryContext.Provider value={repo}>
@@ -168,6 +172,8 @@ function renderControl({
         onProjectChange={onProjectChange}
         engine={engine}
         mixPresetId={mixPresetId}
+        onPassChange={onPassChange}
+        onSpanKept={onSpanKept}
       />
     </ProjectRepositoryContext.Provider>,
   )
@@ -184,6 +190,8 @@ function renderControl({
             onProjectChange={onProjectChange}
             engine={engine}
             mixPresetId={mixPresetId}
+            onPassChange={onPassChange}
+            onSpanKept={onSpanKept}
           />
         </ProjectRepositoryContext.Provider>,
       )
@@ -1046,5 +1054,131 @@ describe('RecordControl', () => {
     })
     expect(getUserMedia).toHaveBeenCalledTimes(2)
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('stays on one phrase when Sing through is off', async () => {
+    const { engine } = mockEngine()
+    const next: Phrase = { ...phrase, id: 'p2', name: 'next', startMs: 3000, endMs: 5000 }
+    renderControl({ engine, project: projectWith({ phrases: [phrase, next] }) })
+    expect(screen.getByRole('switch', { name: 'Sing through' }).getAttribute('aria-checked')).toBe(
+      'false',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
+    expect(engine.play).toHaveBeenCalledWith(
+      expect.objectContaining({ startMs: 1000, endMs: 3000 }),
+      expect.any(Object),
+      expect.any(Object),
+    )
+  })
+
+  it('plays one merged window across an adjacent run and saves the span', async () => {
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    const onProjectChange = vi.fn()
+    const onPassChange = vi.fn()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const next: Phrase = {
+      ...phrase,
+      id: 'p2',
+      name: 'next line',
+      startMs: 3000,
+      endMs: 5000,
+      postRollMs: 80,
+    }
+    renderControl({
+      engine,
+      repo,
+      onProjectChange,
+      onPassChange,
+      project: projectWith({ phrases: [phrase, next] }),
+    })
+    fireEvent.click(screen.getByRole('switch', { name: 'Sing through' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalledTimes(1))
+    expect(engine.play).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startMs: 1000,
+        endMs: 5000,
+        preRollMs: 250,
+        postRollMs: 80,
+        loop: false,
+        phraseEnterMs: [1000, 3000],
+      }),
+      expect.any(Object),
+      expect.objectContaining({ click: true }),
+    )
+    expect(onPassChange).toHaveBeenCalledWith({
+      phraseIds: ['p1', 'p2'],
+      activePhraseId: 'p1',
+    })
+    expect(screen.getByRole('switch', { name: 'Sing through' }).getAttribute('aria-checked')).toBe(
+      'false',
+    )
+
+    listeners.current?.onPhraseEnter?.(1)
+    expect(onPassChange).toHaveBeenLastCalledWith({
+      phraseIds: ['p1', 'p2'],
+      activePhraseId: 'p2',
+    })
+
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    listeners.current?.onPassComplete?.()
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalled())
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]
+    expect(saved?.takes[0]).toMatchObject({
+      phraseId: 'p1',
+      spanPhraseIds: ['p1', 'p2'],
+      timelineStartMs: 750,
+    })
+  })
+
+  it('caps a manual Stop at the last finished phrase and keeps the dead tail', async () => {
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    vi.mocked(engine.getPositionMs).mockReturnValue(3000)
+    const next: Phrase = { ...phrase, id: 'p2', name: 'next', startMs: 3000, endMs: 5000 }
+    renderControl({
+      engine,
+      repo,
+      project: projectWith({ phrases: [phrase, next] }),
+    })
+    fireEvent.click(screen.getByRole('switch', { name: 'Sing through' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy())
+    now += 10
+    listeners.current?.onPassStart?.()
+    now += 500
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    await waitFor(() => expect(repo.saveProject).toHaveBeenCalled())
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]?.[0]
+    expect(saved?.takes).toHaveLength(1)
+    expect(saved?.takes[0]?.spanPhraseIds).toBeUndefined()
+    expect(saved?.takes[0]?.phraseId).toBe('p1')
+    expect(engine.stop).toHaveBeenCalled()
+  })
+
+  it('discards a sing-through Stop before the first phrase finishes', async () => {
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    vi.mocked(engine.getPositionMs).mockReturnValue(1200)
+    const next: Phrase = { ...phrase, id: 'p2', name: 'next', startMs: 3000, endMs: 5000 }
+    renderControl({
+      engine,
+      repo,
+      project: projectWith({ phrases: [phrase, next] }),
+    })
+    fireEvent.click(screen.getByRole('switch', { name: 'Sing through' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy())
+    listeners.current?.onPassStart?.()
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    await waitFor(() => expect(engine.stop).toHaveBeenCalled())
+    expect(repo.saveProject).not.toHaveBeenCalled()
   })
 })

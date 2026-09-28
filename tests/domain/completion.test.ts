@@ -267,4 +267,24 @@ describe('deriveCompletion', () => {
     expect(cellOf(state, 'p2', 's1')).toMatchObject({ takeCount: 1, status: 'in-progress' })
     expect(cellOf(state, 'p2', 'a1')).toMatchObject({ takeCount: 0, status: 'not-started' })
   })
+
+  it('counts a spanning take toward every covered phrase', () => {
+    const state = deriveCompletion(
+      project({
+        voiceRoster: [part({ id: 's1' })],
+        phrases: [phrase({ id: 'p1' }), phrase({ id: 'p2', startMs: 1000, endMs: 2000 })],
+        takes: [
+          take({
+            id: 'span',
+            phraseId: 'p1',
+            voicePartId: 's1',
+            spanPhraseIds: ['p1', 'p2'],
+            rating: 'keeper',
+          }),
+        ],
+      }),
+    )
+    expect(cellOf(state, 'p1', 's1')).toMatchObject({ takeCount: 1, keeperCount: 1 })
+    expect(cellOf(state, 'p2', 's1')).toMatchObject({ takeCount: 1, keeperCount: 1 })
+  })
 })

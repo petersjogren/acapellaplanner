@@ -22,7 +22,7 @@ Optional: upload a PDF. Systems are suggested per page — clear the ones a page
 1. Open **Sing**. Pick a part, or *Surprise me with what’s left*.
 2. Headphones on. **Line up** once (one tap) so takes sit with the ghost. **Check mic** if nothing is coming through; **Clap with the click** if the tone misses.
 3. Choose a mix: **Ghost Focus**, **Stack Build**, or **Blend Check**.
-4. Tap **Record** or **Space**. One pass records, then **Hear it** / **Keep it** / **Scrap & again**.
+4. Tap **Record** or **Space**. One pass records, then **Hear it** / **Keep it** / **Scrap & again**. **Sing through** (next to Record, off unless you turn it on for that press) keeps going through the next lines that follow straight on, with no gap.
 5. **Good enough** when the line can rest. **Next** for the following phrase on the same part.
 
 To learn the song without recording, open **Play**. The sheet hops phrase by phrase with the ghost. **Once through** is the whole song; **Loop this phrase** or **Loop this section** is practice. Tap a phrase to jump. Nothing records.

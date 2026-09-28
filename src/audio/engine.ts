@@ -19,7 +19,8 @@ const CLICK_DURATION_SEC = 0.02
 
 export type PlaybackListeners = {
   onEnded?: () => void
-  onPhraseEnter?: () => void
+  /** Fires once per phrase boundary. Index is into `spec.phraseEnterMs`, or 0. */
+  onPhraseEnter?: (index: number) => void
   /** Play-window start (pre-roll boundary) for each pass. */
   onPassStart?: () => void
   /** Play-window end (phrase end + post-roll) for each pass. */
@@ -276,8 +277,11 @@ export function createPlaybackEngine({ getBuffer }: PlaybackEngineOptions): Play
       armOffset(spanMs, () => listeners.onPassComplete?.())
     }
     if (listeners?.onPhraseEnter) {
-      armOffset(phraseEnterDelayMs(spec.startMs, window.offsetMs), () => {
-        listeners.onPhraseEnter?.()
+      const enters = spec.phraseEnterMs?.length ? spec.phraseEnterMs : [spec.startMs]
+      enters.forEach((enterMs, index) => {
+        armOffset(phraseEnterDelayMs(enterMs, window.offsetMs), () => {
+          listeners.onPhraseEnter?.(index)
+        })
       })
     }
 

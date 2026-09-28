@@ -1,5 +1,6 @@
 import { DEFAULT_TARGET_TAKES } from './roster.ts'
 import { deriveCompletion } from './completion.ts'
+import { takeCoversPhrase } from './singThrough.ts'
 import type {
   Phrase,
   PhrasePartPlan,
@@ -38,7 +39,7 @@ function workKind(project: Project, phrase: Phrase, part: VoicePart): WorkKind {
   if (plan?.status === 'enough' || plan?.status === 'final') return 'done'
 
   const takes = project.takes.filter(
-    (item) => item.phraseId === phrase.id && item.voicePartId === part.id,
+    (item) => takeCoversPhrase(item, phrase.id) && item.voicePartId === part.id,
   )
   const takeCount = takes.length
   const keeperCount = takes.filter((item) => item.rating === 'keeper').length
@@ -157,7 +158,7 @@ export function reopenEnough(project: Project, voicePartId: string): Project {
     if (!existing || existing.status !== 'enough') return phrase
     changed = true
     const takeCount = project.takes.filter(
-      (item) => item.phraseId === phrase.id && item.voicePartId === voicePartId,
+      (item) => takeCoversPhrase(item, phrase.id) && item.voicePartId === voicePartId,
     ).length
     return {
       ...phrase,

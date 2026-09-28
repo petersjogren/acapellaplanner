@@ -1,7 +1,8 @@
 import { decodeAudioFile } from './decode.ts'
 import { takePlaybackOffsetMs } from './latency.ts'
 import { phraseTimelineStartMs } from '../domain/phrases.ts'
-import type { HeadphoneMixSnapshot, MixPreset, Project, Take } from '../domain/schemas.ts'
+import { spanPhraseSkipMs, takeCoversPhrase } from '../domain/singThrough.ts'
+import type { HeadphoneMixSnapshot, MixPreset, Phrase, Project, Take } from '../domain/schemas.ts'
 
 export const GHOST_LAYER_REF = 'ghost'
 export const KEEPER_LAYER_REF = 'keeper'
@@ -101,7 +102,7 @@ export function ghostGuideId(project: Pick<Project, 'guides'>): string {
 }
 
 export function keeperTakesForPhrase(takes: Take[], phraseId: string): Take[] {
-  return takes.filter((take) => take.phraseId === phraseId && take.rating === 'keeper')
+  return takes.filter((take) => takeCoversPhrase(take, phraseId) && take.rating === 'keeper')
 }
 
 export function resolveMix(
@@ -216,10 +217,14 @@ export async function loadPlaybackMixForPhrase(
 ): Promise<PlaybackMix> {
   const preset = mixPresetById(presetId)
   const guideId = ghostGuideId(project)
+  const phrase = project.phrases?.find((item) => item.id === phraseId)
   const keepers = keeperTakesForPhrase(project.takes, phraseId)
   const keeperBuffers = await loadKeeperBuffers(keepers, loadBuffer)
   const keeperOffsetMs = new Map(
-    keepers.map((take) => [take.id, takePlaybackOffsetMs(take.latencyCompMs)]),
+    keepers.map((take) => [
+      take.id,
+      takePlaybackOffsetMs(take.latencyCompMs) + (phrase ? spanPhraseSkipMs(take, phrase) : 0),
+    ]),
   )
   return playbackMixFromResolved(
     resolveMix(preset, {
@@ -230,6 +235,86 @@ export async function loadPlaybackMixForPhrase(
     keeperBuffers,
     keeperOffsetMs,
   )
+}
+
+function keepersCoveringRun(takes: Take[], run: Phrase[], exceptTakeId?: string): Take[] {
+  const seen = new Set<string>()
+  if (exceptTakeId) seen.add(exceptTakeId)
+  const keepers: Take[] = []
+  for (const phrase of run) {
+    for (const take of keeperTakesForPhrase(takes, phrase.id)) {
+      if (seen.has(take.id)) continue
+      seen.add(take.id)
+      keepers.push(take)
+    }
+  }
+  return keepers
+}
+
+/**
+ * Where a keeper sits inside a play window that starts at `windowStartMs`.
+ * A keeper recorded before the window skips into its buffer; one that starts
+ * later waits. Latency skip is included in the buffer offset.
+ */
+function keeperPlacementInWindow(
+  take: Take,
+  phrasesById: Map<string, Phrase>,
+  windowStartMs: number,
+): { offsetMs: number; startDelayMs: number } {
+  const anchor = phrasesById.get(take.phraseId)
+  const keeperStart =
+    take.timelineStartMs !== undefined
+      ? take.timelineStartMs
+      : anchor
+        ? phraseTimelineStartMs(anchor)
+        : windowStartMs
+  const relative = keeperStart - windowStartMs
+  const latency = takePlaybackOffsetMs(take.latencyCompMs)
+  if (relative >= 0) return { startDelayMs: relative, offsetMs: latency }
+  return { startDelayMs: 0, offsetMs: latency - relative }
+}
+
+/**
+ * Headphone mix for a sing-through pass. Keepers that cover any phrase in
+ * the run are placed once, at their record-time start, so phrase 1's choir
+ * does not sit on top of phrase 2. A one-phrase run is the ordinary mix.
+ */
+export async function loadPlaybackMixForRun(
+  project: Project,
+  run: Phrase[],
+  presetId: string,
+  loadBuffer: (audioBlobId: string) => Promise<AudioBuffer | null>,
+): Promise<PlaybackMix> {
+  const first = run[0]
+  if (!first) throw new Error('Sing-through run must contain at least one phrase')
+  if (run.length === 1) return loadPlaybackMixForPhrase(project, first.id, presetId, loadBuffer)
+
+  const preset = mixPresetById(presetId)
+  const ghostLayer = preset.layers.find((layer) => layer.guideOrTakeRef === GHOST_LAYER_REF)
+  const keeperLayer = preset.layers.find((layer) => layer.guideOrTakeRef === KEEPER_LAYER_REF)
+  const keepers = keepersCoveringRun(project.takes, run)
+  const buffers = await loadKeeperBuffers(keepers, loadBuffer)
+  const phrasesById = new Map(project.phrases.map((phrase) => [phrase.id, phrase]))
+  const windowStart = phraseTimelineStartMs(first)
+  const extra: MixPlaybackLayer[] = []
+  for (const take of keepers) {
+    const buffer = buffers.get(take.id)
+    if (!buffer) continue
+    const placed = keeperPlacementInWindow(take, phrasesById, windowStart)
+    extra.push({
+      buffer,
+      gainDb: keeperLayer?.gainDb ?? 0,
+      mute: keeperLayer?.mute ?? false,
+      pan: keeperLayer?.pan ?? 0,
+      offsetMs: placed.offsetMs,
+      startDelayMs: placed.startDelayMs,
+    })
+  }
+  return {
+    ghostGainDb: ghostLayer?.gainDb ?? 0,
+    ghostMute: ghostLayer?.mute ?? false,
+    extra,
+  }
 }
 
 /**
@@ -366,12 +451,15 @@ export async function loadTakeReviewMix(
   options: TakeReviewOptions,
   loadBuffer: (audioBlobId: string) => Promise<AudioBuffer | null>,
 ): Promise<PlaybackMix> {
+  const phrase = project.phrases?.find((item) => item.id === phraseId)
+  const heard = project.takes.find((item) => item.id === options.takeId)
+  const takeSkip = phrase && heard ? spanPhraseSkipMs(heard, phrase) : 0
   const takeLayer: MixPlaybackLayer = {
     buffer: options.takeBuffer,
     gainDb: 0,
     mute: false,
     pan: 0,
-    offsetMs: takePlaybackOffsetMs(options.latencyCompMs),
+    offsetMs: takePlaybackOffsetMs(options.latencyCompMs) + takeSkip,
   }
 
   if (options.mode === 'solo') {
@@ -399,11 +487,69 @@ export async function loadTakeReviewMix(
       gainDb: keeperLayer?.gainDb ?? 0,
       mute: keeperLayer?.mute ?? false,
       pan: keeperLayer?.pan ?? 0,
-      offsetMs: takePlaybackOffsetMs(keeper.latencyCompMs),
+      offsetMs:
+        takePlaybackOffsetMs(keeper.latencyCompMs) + (phrase ? spanPhraseSkipMs(keeper, phrase) : 0),
     })
   }
   extra.push(takeLayer)
 
+  return {
+    ghostGainDb: ghostLayer?.gainDb ?? 0,
+    ghostMute: ghostLayer?.mute ?? false,
+    extra,
+    click: false,
+  }
+}
+
+/**
+ * Hear a just-sung spanning take against the whole credited run. The blob
+ * starts at the run's play-window start, so the take itself only needs the
+ * latency skip. Other keepers are placed once at their record-time start.
+ */
+export async function loadSpanPassReviewMix(
+  project: Project,
+  run: Phrase[],
+  options: TakeReviewOptions,
+  loadBuffer: (audioBlobId: string) => Promise<AudioBuffer | null>,
+): Promise<PlaybackMix> {
+  const first = run[0]
+  if (!first) throw new Error('Sing-through run must contain at least one phrase')
+  const takeLayer: MixPlaybackLayer = {
+    buffer: options.takeBuffer,
+    gainDb: 0,
+    mute: false,
+    pan: 0,
+    offsetMs: takePlaybackOffsetMs(options.latencyCompMs),
+  }
+  if (options.mode === 'solo') {
+    return { ghostGainDb: 0, ghostMute: true, extra: [takeLayer], click: false }
+  }
+  if (options.mode === 'ghost') {
+    return { ghostGainDb: 0, ghostMute: false, extra: [takeLayer], click: false }
+  }
+
+  const preset = mixPresetById(STACK_BUILD_PRESET_ID)
+  const ghostLayer = preset.layers.find((layer) => layer.guideOrTakeRef === GHOST_LAYER_REF)
+  const keeperLayer = preset.layers.find((layer) => layer.guideOrTakeRef === KEEPER_LAYER_REF)
+  const keepers = keepersCoveringRun(project.takes, run, options.takeId)
+  const buffers = await loadKeeperBuffers(keepers, loadBuffer)
+  const phrasesById = new Map(project.phrases.map((phrase) => [phrase.id, phrase]))
+  const windowStart = phraseTimelineStartMs(first)
+  const extra: MixPlaybackLayer[] = []
+  for (const keeper of keepers) {
+    const buffer = buffers.get(keeper.id)
+    if (!buffer) continue
+    const placed = keeperPlacementInWindow(keeper, phrasesById, windowStart)
+    extra.push({
+      buffer,
+      gainDb: keeperLayer?.gainDb ?? 0,
+      mute: keeperLayer?.mute ?? false,
+      pan: keeperLayer?.pan ?? 0,
+      offsetMs: placed.offsetMs,
+      startDelayMs: placed.startDelayMs,
+    })
+  }
+  extra.push(takeLayer)
   return {
     ghostGainDb: ghostLayer?.gainDb ?? 0,
     ghostMute: ghostLayer?.mute ?? false,

@@ -7,6 +7,7 @@ import { GHOST_FOCUS_PRESET_ID } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
 import { markEnough, reopenEnough, suggestNext } from '../domain/sessionPlan.ts'
 import { filmScrollProgress, sheetPageBlobIdsForCrops } from '../domain/sheets.ts'
+import { takeCoversPhrase } from '../domain/singThrough.ts'
 import type { Phrase, Project, VoicePart } from '../domain/schemas.ts'
 import { SingerShell } from '../ui/shell/SingerShell.tsx'
 import { BoothLayout } from '../ui/singer/BoothLayout.tsx'
@@ -32,7 +33,7 @@ function sortPhrases(phrases: Phrase[]): Phrase[] {
 
 function cellTakeCount(project: Project, phraseId: string, voicePartId: string): number {
   return project.takes.filter(
-    (item) => item.phraseId === phraseId && item.voicePartId === voicePartId,
+    (item) => takeCoversPhrase(item, phraseId) && item.voicePartId === voicePartId,
   ).length
 }
 
@@ -52,6 +53,7 @@ export function SingPage() {
   const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
   const [sheetPageUrls, setSheetPageUrls] = useState<Array<string | null>>([])
   const [sheetElapsedMs, setSheetElapsedMs] = useState<number | null>(null)
+  const [pass, setPass] = useState<{ phraseIds: string[]; activePhraseId: string } | null>(null)
   const bufferRef = useRef<AudioBuffer | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
   const projectRef = useRef<Project | null>(null)
@@ -77,6 +79,7 @@ export function SingPage() {
   useEffect(() => {
     setVoicePartId(null)
     setPhraseId(null)
+    setPass(null)
     setSaveError(null)
   }, [routeProjectId])
 
@@ -280,7 +283,24 @@ export function SingPage() {
     }
   }
 
-  const phraseIndex = phrase ? phrases.findIndex((item) => item.id === phrase.id) + 1 : 0
+  async function handleSpanKept(phraseIds: string[]) {
+    if (!part) return
+    setSaveError(null)
+    try {
+      await recordControlRef.current?.flushSaves()
+      await persistProject((current) =>
+        phraseIds.reduce((proj, id) => markEnough(proj, id, part.id), current),
+      )
+      setPass(null)
+      applySuggestion(suggestNext(latestProject(), { voicePartId: part.id }), part.id)
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error && err.message ? err.message : 'Could not save')
+    }
+  }
+
+  const stagePhrase =
+    (pass ? phrases.find((item) => item.id === pass.activePhraseId) : undefined) ?? phrase
+  const phraseIndex = stagePhrase ? phrases.findIndex((item) => item.id === stagePhrase.id) + 1 : 0
   const takeCount = phrase && part ? cellTakeCount(loaded, phrase.id, part.id) : 0
   const targetTakes =
     phrase && part
@@ -313,6 +333,8 @@ export function SingPage() {
                   onProjectChange={handleProjectChange}
                   engine={getEngine()}
                   mixPresetId={mixPresetId}
+                  onPassChange={setPass}
+                  onSpanKept={(ids) => void handleSpanKept(ids)}
                 />
                 <MixPresetSelect compact value={mixPresetId} onChange={setMixPresetId} />
                 <ProgressRibbon
@@ -354,8 +376,14 @@ export function SingPage() {
             </>
           }
         >
+          {pass && pass.phraseIds.length > 1 ? (
+            <p aria-live="polite" className="shrink-0 text-sm text-ink-muted">
+              Phrase {Math.max(1, pass.phraseIds.indexOf(pass.activePhraseId) + 1)} of{' '}
+              {pass.phraseIds.length} in this pass
+            </p>
+          ) : null}
           <PhraseStage
-            phrase={phrase}
+            phrase={stagePhrase ?? phrase}
             phraseIndex={phraseIndex}
             phraseCount={phrases.length}
             partColor={part.color}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clicksForPhrase, clickTimesMs } from '../../src/audio/click.ts'
+import { clicksForPhrase, clicksForRun, clickTimesMs } from '../../src/audio/click.ts'
 import type { Phrase, Section } from '../../src/domain/schemas.ts'
 
 function section(overrides: Partial<Section> & Pick<Section, 'id' | 'timeMode' | 'fromPhraseId' | 'toPhraseId'>): Section {
@@ -145,5 +145,26 @@ describe('clicksForPhrase', () => {
     expect(times.every((time) => time >= 0)).toBe(true)
     expect(times[0]).toBe(0)
     expect(times).toEqual([0, 1000, 2000, 3000])
+  })
+})
+
+describe('clicksForRun', () => {
+  it('concatenates each phrase grid and does not double a shared instant', () => {
+    const p1 = phrase({ id: 'p1', startMs: 0, endMs: 2000, postRollMs: 1000 })
+    const p2 = phrase({ id: 'p2', startMs: 2000, endMs: 4000, preRollMs: 1000 })
+    const sections = [
+      section({
+        id: 'in-time',
+        timeMode: 'fixed-tempo',
+        fixedBpm: 60,
+        clickEnabled: true,
+        fromPhraseId: 'p1',
+        toPhraseId: 'p2',
+      }),
+    ]
+    const times = clicksForRun([p1, p2], sections, [p1, p2])
+    expect(times).toEqual([...new Set(times)].sort((a, b) => a - b))
+    expect(times.filter((time) => time === 2000)).toHaveLength(1)
+    expect(times.length).toBeGreaterThan(clicksForPhrase(p1, sections, [p1, p2]).length)
   })
 })

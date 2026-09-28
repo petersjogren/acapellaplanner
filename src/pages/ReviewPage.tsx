@@ -12,6 +12,7 @@ import {
   STACK_BUILD_PRESET_ID,
 } from '../audio/mix.ts'
 import { deriveCompletion } from '../domain/completion.ts'
+import { takeCoversPhrase } from '../domain/singThrough.ts'
 import type { Project, TakeRating } from '../domain/schemas.ts'
 import { canEncodeFilmMp4 } from '../export/canEncodeFilmMp4.ts'
 import { exportFilmMp4 } from '../export/filmMp4.ts'
@@ -179,10 +180,12 @@ export function ReviewPage() {
     }
   }
 
-  async function handlePlayTake(takeId: string, mode: ReviewTakeMode) {
+  async function handlePlayTake(takeId: string, mode: ReviewTakeMode, heardPhraseId?: string) {
     const current = projectRef.current ?? loaded
     const take = current.takes.find((item) => item.id === takeId)
-    const phrase = current.phrases.find((item) => item.id === take?.phraseId)
+    const phraseId =
+      take && heardPhraseId && takeCoversPhrase(take, heardPhraseId) ? heardPhraseId : take?.phraseId
+    const phrase = current.phrases.find((item) => item.id === phraseId)
     if (!take || !phrase) return
     const generation = ++playGenerationRef.current
     setPlayError(null)
@@ -461,7 +464,7 @@ export function ReviewPage() {
       <TakeReview
         project={loaded}
         onRate={(takeId, rating) => void handleRate(takeId, rating)}
-        onPlayTake={(takeId, mode) => void handlePlayTake(takeId, mode)}
+        onPlayTake={(takeId, mode, phraseId) => void handlePlayTake(takeId, mode, phraseId)}
         onPlayAllKeepers={(phraseId, mode) => void handlePlayAllKeepers(phraseId, mode)}
         onStop={handleStop}
         playing={playing}

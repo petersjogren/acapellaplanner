@@ -234,6 +234,14 @@ export const TakeSchema = z.object({
    * that phrase is also gone).
    */
   timelineStartMs: z.number().nonnegative().optional(),
+  /**
+   * Phrases sung in one continuous sing-through pass, in order. First entry
+   * is `phraseId`. Missing on single-phrase takes. Optional — no schema bump.
+   */
+  spanPhraseIds: z.array(z.string().min(1)).min(1).optional(),
+}).refine((take) => !take.spanPhraseIds || take.spanPhraseIds[0] === take.phraseId, {
+  message: 'spanPhraseIds must start with phraseId',
+  path: ['spanPhraseIds'],
 })
 
 export const CompletionCellSchema = z.object({
