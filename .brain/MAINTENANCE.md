@@ -13,6 +13,7 @@ This folder is the engineering on-ramp. User docs stay in `README.md` / `docs/`.
 | `TODO.md` | Known debt | Add holes you find; delete items you close |
 | `LEARNINGS.md` | Alignment, Safari, queues, zip | After a non-obvious bug or near-miss |
 | `DECISIONS.md` | Choices not to re-litigate | When you make or reverse a decision |
+| `GLOSSARY.md` | Words the UI and domain use | Add, rename, or retire a term. Record both words if UI copy and code differ. Delete entries that no longer match HEAD |
 | `log/` | Recent work | Append `YYYY-MM-DD-<slug>.md` per landed feature |
 
 Keep entries high-signal. Do not restate filenames or README quickstart. If unsure, write `uncertain:` — do not invent.

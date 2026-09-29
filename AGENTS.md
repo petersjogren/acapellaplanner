@@ -15,6 +15,7 @@ Persistent engineering notes live in `.brain/`. They are the on-ramp for a new s
 | `.brain/TODO.md` | Known debt and leftovers | Add holes you discover; **delete** items you close |
 | `.brain/LEARNINGS.md` | Pitfalls (alignment, Safari, queues) | After a non-obvious bug or a near-miss |
 | `.brain/DECISIONS.md` | Choices not to re-litigate | When you make or reverse a decision |
+| `.brain/GLOSSARY.md` | Words the UI and domain use | Add, rename, or retire a term. UI word and code word both, if they differ |
 | `.brain/log/` | Recent work | Append a short dated note per landed feature |
 
 Do not duplicate README quickstart or restate filenames. Prefer invariants, ownership, and “do not do X”. If unsure, write `uncertain:` rather than inventing.
@@ -25,6 +26,7 @@ A feature is not done until:
 2. `.brain/CURRENT.md` and `.brain/TODO.md` match HEAD.
 3. A new decision, pitfall, or schema bump is recorded.
 4. `.brain/log/YYYY-MM-DD-<slug>.md` exists for the change.
+5. If the change adds, renames, or retires a UI or domain term, `.brain/GLOSSARY.md` matches HEAD.
 
 ## Product rails (do not violate)
 
