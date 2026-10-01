@@ -13,6 +13,7 @@ import {
   GhostImporter,
   type GhostImportResult,
 } from '../ui/preparer/GhostImporter.tsx'
+import { GhostRecorder } from '../ui/preparer/GhostRecorder.tsx'
 import { GhostTimeline } from '../ui/preparer/GhostTimeline.tsx'
 import { SheetCropper } from '../ui/preparer/SheetCropper.tsx'
 import { SheetUploader, type SheetUploadResult } from '../ui/preparer/SheetUploader.tsx'
@@ -43,7 +44,12 @@ import {
   type CropDraft,
 } from '../domain/cropDraft.ts'
 import { appendSheetCrops, removeSheetCrop, replaceSheetCrops } from '../domain/sheets.ts'
-import { renameProject, phrasesBeyondGhost, reconcileGhostDuration } from '../domain/project.ts'
+import {
+  ghostReplacementWarning,
+  phrasesBeyondGhost,
+  reconcileGhostDuration,
+  renameProject,
+} from '../domain/project.ts'
 import type { Phrase, Project, RegionNorm, SheetDocument, SheetRef } from '../domain/schemas.ts'
 import { renderPageToCanvas } from '../pdf/renderPage.ts'
 import { CompletionMatrix } from '../ui/preparer/CompletionMatrix.tsx'
@@ -217,6 +223,10 @@ export function PreparePage() {
   const loaded = project
 
   async function handleImported({ blob, meta }: GhostImportResult) {
+    const warning = ghostReplacementWarning(loaded)
+    if (warning && !window.confirm(warning)) {
+      return
+    }
     const blobId = crypto.randomUUID()
     await repo.putAudioBlob({
       id: blobId,
@@ -831,6 +841,7 @@ export function PreparePage() {
           <p className="mt-2">{ghostMeta.filename}</p>
           <p className="mt-1 text-ink-muted">{formatDuration(ghostMeta.durationMs)}</p>
           <GhostImporter label="Replace ghost track" onImported={handleImported} />
+          <GhostRecorder onImported={handleImported} />
           {buffer ? (
             <section className="mt-6" aria-label="Mark along">
               <div className="mt-3 flex flex-wrap gap-2">
@@ -926,7 +937,10 @@ export function PreparePage() {
           ) : null}
         </section>
       ) : (
-        <GhostImporter onImported={handleImported} />
+        <>
+          <GhostImporter onImported={handleImported} />
+          <GhostRecorder onImported={handleImported} />
+        </>
       )}
       {hasGhost && ghostMeta ? (
         <SectionEditor

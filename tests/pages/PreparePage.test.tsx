@@ -41,6 +41,7 @@ describe('PreparePage ghost import', () => {
 
   afterEach(async () => {
     cleanup()
+    vi.restoreAllMocks()
     database.close()
     await database.delete()
   })
@@ -53,7 +54,72 @@ describe('PreparePage ghost import', () => {
     )
   }
 
+  function minimalPhrase(overrides: Partial<Parameters<typeof repo.saveProject>[0]['phrases'][number]> = {}) {
+    return {
+      id: crypto.randomUUID(),
+      name: 'Phrase 1',
+      startMs: 0,
+      endMs: 1000,
+      partPlan: [],
+      loopDefault: { mode: 'phrase-loop' as const, gapMs: 400 },
+      postRollMs: 0,
+      ...overrides,
+    }
+  }
+
+  function minimalTake(
+    phraseId: string,
+    overrides: Partial<Parameters<typeof repo.saveProject>[0]['takes'][number]> = {},
+  ) {
+    return {
+      id: crypto.randomUUID(),
+      phraseId,
+      voicePartId: 's1',
+      takeIndex: 1,
+      audioBlobId: 'blob-take-1',
+      recordedAt: '2026-09-12T10:00:00.000Z',
+      durationMs: 1000,
+      headphoneMixSnapshot: { layers: [] },
+      peakDb: -6,
+      ...overrides,
+    }
+  }
+
+  /** Seeds an existing ghost + optional phrases/takes, so a replace attempt has something at stake. */
+  async function seedGhostWithPhrases(options: { phraseCount?: number; takeCount?: number } = {}) {
+    const { phraseCount = 0, takeCount = 0 } = options
+    const blobId = crypto.randomUUID()
+    const existing = await repo.getProject(projectId)
+    const phrases = Array.from({ length: phraseCount }, (_, index) =>
+      minimalPhrase({ startMs: index * 2000, endMs: index * 2000 + 1000, name: `Phrase ${index + 1}` }),
+    )
+    const takes = phrases
+      .slice(0, takeCount)
+      .map((phrase, index) => minimalTake(phrase.id, { audioBlobId: `blob-take-${index}` }))
+    await repo.saveProject({
+      ...existing!,
+      ghostTrackId: blobId,
+      guides: [
+        {
+          id: crypto.randomUUID(),
+          kind: 'ghost',
+          audioBlobId: blobId,
+          gainDbDefault: 0,
+          alignToGhost: true,
+        },
+      ],
+      settings: {
+        ...existing!.settings,
+        ghostMeta: { filename: 'already-here.mp3', durationMs: 83400 },
+      },
+      phrases,
+      takes,
+    })
+    return blobId
+  }
+
   it('imports a ghost track, shows name and duration, and persists ghostTrackId', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm')
     renderPrepare()
 
     await waitFor(() => {
@@ -69,6 +135,8 @@ describe('PreparePage ghost import', () => {
     })
     expect(screen.getByLabelText('Replace ghost track')).toBeTruthy()
     expect(screen.queryByLabelText('Import ghost track')).toBeNull()
+    // A brand-new project has zero phrases: nothing at stake, so no confirm.
+    expect(confirmSpy).not.toHaveBeenCalled()
 
     const loaded = await repo.getProject(projectId)
     expect(loaded?.ghostTrackId).toEqual(expect.any(String))
@@ -136,6 +204,92 @@ describe('PreparePage ghost import', () => {
       expect(screen.getByRole('alert').textContent).toBe('Could not save ghost track')
     })
     expect(screen.getByLabelText('Import ghost track')).toBeTruthy()
+  })
+
+  it('confirms before replacing a ghost on a song with phrases, and honors cancel', async () => {
+    const originalBlobId = await seedGhostWithPhrases({ phraseCount: 2 })
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Replace ghost track')).toBeTruthy()
+    })
+
+    const file = new File([new Uint8Array([1, 2, 3, 4])], 'new-lead.wav', { type: 'audio/wav' })
+    fireEvent.change(screen.getByLabelText('Replace ghost track'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledTimes(1)
+    })
+    expect(vi.mocked(window.confirm).mock.calls[0]?.[0]).toMatch(/2 phrases/)
+
+    // Cancelled: nothing changed — same blob id, same filename shown, no new blob written.
+    expect(screen.getByText('already-here.mp3')).toBeTruthy()
+    const loaded = await repo.getProject(projectId)
+    expect(loaded?.ghostTrackId).toBe(originalBlobId)
+    expect(loaded?.settings.ghostMeta?.filename).toBe('already-here.mp3')
+  })
+
+  it('confirms before replacing a ghost on a song with phrases, and honors accept', async () => {
+    await seedGhostWithPhrases({ phraseCount: 2 })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Replace ghost track')).toBeTruthy()
+    })
+
+    const file = new File([new Uint8Array([1, 2, 3, 4])], 'new-lead.wav', { type: 'audio/wav' })
+    fireEvent.change(screen.getByLabelText('Replace ghost track'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByText('new-lead.wav')).toBeTruthy()
+    })
+    expect(window.confirm).toHaveBeenCalledTimes(1)
+
+    const loaded = await repo.getProject(projectId)
+    expect(loaded?.settings.ghostMeta).toEqual({ filename: 'new-lead.wav', durationMs: 83400 })
+    const blob = await repo.getAudioBlob(loaded!.ghostTrackId!)
+    expect(blob?.kind).toBe('ghost')
+    expect(
+      loaded?.guides.some(
+        (guide) => guide.kind === 'ghost' && guide.audioBlobId === loaded.ghostTrackId,
+      ),
+    ).toBe(true)
+  })
+
+  it('mentions recorded takes in the confirmation message when present', async () => {
+    await seedGhostWithPhrases({ phraseCount: 1, takeCount: 1 })
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Replace ghost track')).toBeTruthy()
+    })
+
+    const file = new File([new Uint8Array([1, 2, 3, 4])], 'new-lead.wav', { type: 'audio/wav' })
+    fireEvent.change(screen.getByLabelText('Replace ghost track'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalledTimes(1)
+    })
+    expect(vi.mocked(window.confirm).mock.calls[0]?.[0]).toMatch(/1 recorded take/)
+  })
+
+  it('renders GhostRecorder in both the no-ghost and has-ghost states', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Import ghost track')).toBeTruthy()
+    })
+    expect(screen.getByLabelText('Record ghost')).toBeTruthy()
+
+    const file = new File([new Uint8Array([1, 2, 3, 4])], 'lead.wav', { type: 'audio/wav' })
+    fireEvent.change(screen.getByLabelText('Import ghost track'), { target: { files: [file] } })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Replace ghost track')).toBeTruthy()
+    })
+    expect(screen.getByLabelText('Record ghost')).toBeTruthy()
   })
 })
 
