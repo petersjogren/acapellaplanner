@@ -7,7 +7,7 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 ## What works
 
 - Home: create / rename / delete songs; import/export `.acapella.zip`.
-- Prepare: ghost import, phrase mark/edit (incl. head start / crossfade tail), roster (unique short labels), sections as phrase spans (ghost-follow vs fixed-tempo + optional click), **score film** (ordered sheet crops for the whole song), completion matrix, phrase preview with mix presets.
+- Prepare: ghost import **or record live via mic** (replacing an existing ghost on a song with phrases/takes asks `window.confirm` first, naming the phrase/take count at stake; cancel leaves everything untouched), phrase mark/edit (incl. head start / crossfade tail), roster (unique short labels), sections as phrase spans (ghost-follow vs fixed-tempo + optional click), **score film** (ordered sheet crops for the whole song), completion matrix, phrase preview with mix presets.
 - Sing: part picker / surprise-me, session suggestions, one-shot record, **Sing through** (one press across an adjacent run, default off), Hear (ghost/stack/solo), Keep / Scrap, Good enough / Next (both mark `enough`), Need more takes, mix presets, **dock booth** (full-width film + Record always on screen).
 - Play: whole-song follow-along (`/project/:id/play`) with the same dock booth, mix presets, tap-a-phrase jump (horizontal chips), Pause on once-through, Practice loop of a phrase or section. Click the visible film to pin that moment to the centre of the viewport; **Clear all** drops the pins. No recording.
 - Review: rate (keeper/scratch/1–5), play take with/without ghost, all keepers on a phrase or whole song, project zip, **DAW stem zip** (lanes default, keepers-only default, size estimate), **Export film for YouTube** (`.film.mp4`, desktop Chrome, default Stack Build).
@@ -16,6 +16,8 @@ Working **desktop Chrome MVP**, live on GitHub Pages. iPad Safari booth is docum
 - Schema v3 + migration from v2 per-phrase `sheetRefs` into `sheetCrops`. v1 section spans still migrate through.
 
 ## Just landed
+
+- Prepare **Record ghost**: `GhostRecorder` (mic capture via `requestMicStream`/`MediaRecorder`, same primitive as take recording) now sits next to `GhostImporter` in both the no-ghost and has-ghost states of `PreparePage`, wired to the same `handleImported`. Replacing a ghost — by upload or by recording — on a song that already has phrases is gated behind `ghostReplacementWarning` (`domain/project.ts`) + `window.confirm`: a fresh song with zero phrases imports frictionlessly, but once phrases (and optionally takes) exist, cancelling the confirm leaves the old blob/`ghostTrackId`/`ghostMeta` untouched. See `.brain/log/2026-10-01-ghost-recorder-wiring.md`.
 
 - Sing **Sing through** (switch next to Record, default off, resets every press). One Record press covers an unbroken adjacent run: one `engine.play()` and one recorder, one `Take` with optional `spanPhraseIds` (no schema bump). Stop credits only phrases whose end has been reached; the rest of the blob is dead tail and is not trimmed. Keep marks every covered phrase enough and moves on. Hear of one phrase seeks into the shared blob. The lyric and a "Phrase n of m in this pass" line follow each boundary; Record stays mounted.
 
