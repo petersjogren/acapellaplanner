@@ -16,6 +16,7 @@ Link to `DECISIONS.md` for the why. Do not restate the README quickstart.
 ## Time
 
 - **Ghost.** The lead vocal that carries text, vowels, rubato, and intention. Bonnie Herman’s track, in the method docs. `ghostTrackId` plus a blob.
+- **Record ghost.** Capturing a ghost track live via the mic on Prepare (`GhostRecorder`), as an alternative to uploading a file. Distinct from **Pass** (Sing's Record button), which captures a take against an existing ghost — say "Record ghost" when both Prepare and Sing are in view so "Record" isn't ambiguous.
 - **Ghost ms.** The only clock. Bar and beat are not a second timeline.
 - **Phrase.** A musical sentence on the ghost: `[startMs, endMs]`. Phrases do not overlap. Minimum 50 ms.
 - **Play window.** What you hear and record. The phrase plus **head start** (`preRollMs`, 2000 on new phrases) and **crossfade tail** (`postRollMs`, 2000). Those windows may overlap neighbours. The phrase boundary does not. Missing `preRollMs` on disk means 0 — do not migrate old phrases to 2000.
