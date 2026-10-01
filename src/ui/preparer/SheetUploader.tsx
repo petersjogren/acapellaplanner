@@ -1,3 +1,4 @@
+import { clsx } from 'clsx'
 import { useId, useState, type ChangeEvent } from 'react'
 
 export type SheetUploadResult = {
@@ -23,6 +24,7 @@ export function SheetUploader({
   const inputId = useId()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pickedName, setPickedName] = useState<string | null>(null)
 
   async function handleChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -36,6 +38,9 @@ export function SheetUploader({
         blob: file,
         filename: file.name || 'sheet.pdf',
       })
+      // Only reveal the picked name once onUploaded has actually resolved —
+      // see GhostImporter.tsx for why.
+      setPickedName(file.name || null)
     } catch (err: unknown) {
       setError(messageFrom(err, 'Could not open PDF'))
     } finally {
@@ -43,20 +48,35 @@ export function SheetUploader({
     }
   }
 
+  // See GhostImporter.tsx for why the native input is sr-only with a
+  // second styled <label for> as the visible trigger.
   return (
     <div className="mt-4 max-w-xl">
-      <label htmlFor={inputId} className="flex flex-col gap-2 text-sm">
-        <span className="font-medium">{label}</span>
-        <input
-          id={inputId}
-          type="file"
-          accept="application/pdf"
-          disabled={disabled || busy}
-          onChange={(event) => void handleChange(event)}
-          className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-ink file:px-4 file:py-2 file:font-medium file:text-paper hover:file:bg-record-red disabled:opacity-50"
-        />
+      <label htmlFor={inputId} className="block text-sm font-medium">
+        {label}
       </label>
-      {busy ? <p className="mt-3 text-sm text-ink-muted">Opening PDF…</p> : null}
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <label
+          htmlFor={inputId}
+          className={clsx(
+            'inline-flex w-fit cursor-pointer items-center rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper studio-transition hover:bg-record-red',
+            (disabled || busy) && 'pointer-events-none opacity-50',
+          )}
+        >
+          {busy ? 'Opening…' : 'Choose file'}
+        </label>
+        {pickedName ? (
+          <span className="rounded-md bg-ink/5 px-2 py-1 text-xs text-ink-muted">{pickedName}</span>
+        ) : null}
+      </div>
+      <input
+        id={inputId}
+        type="file"
+        accept="application/pdf"
+        disabled={disabled || busy}
+        onChange={(event) => void handleChange(event)}
+        className="sr-only"
+      />
       {error ? (
         <p role="alert" className="mt-3 text-record-red">
           {error}
