@@ -937,10 +937,14 @@ export function PreparePage() {
           ) : null}
         </section>
       ) : (
-        <>
+        <section
+          className="mt-8 max-w-3xl rounded-lg border border-phrase-line bg-phrase-tint p-5"
+          aria-label="Ghost track"
+        >
+          <h3 className="font-medium">Ghost track</h3>
           <GhostImporter onImported={handleImported} />
           <GhostRecorder onImported={handleImported} />
-        </>
+        </section>
       )}
       {hasGhost && ghostMeta ? (
         <SectionEditor
