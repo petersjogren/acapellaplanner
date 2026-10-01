@@ -194,6 +194,7 @@ export function GhostRecorder({ onImported, disabled = false }: GhostRecorderPro
   return (
     <section aria-label="Record ghost" className="mt-6 max-w-xl">
       <p className="font-medium">Record ghost</p>
+      <p className="mt-1 text-sm text-ink-muted">Capture it live over your mic instead of uploading a file.</p>
 
       {state === 'idle' || state === 'checking' ? (
         <button
