@@ -74,15 +74,7 @@ export function PreparerShell({
                     active ? 'bg-ink text-paper' : 'text-ink/80 hover:bg-ink/5',
                   )}
                 >
-                  <span className="block font-medium">
-                    {item.label}
-                    {item.id === 'review' ? (
-                      <span
-                        className="ml-2 inline-block h-1.5 w-1.5 rounded-pill bg-gold align-middle"
-                        aria-hidden
-                      />
-                    ) : null}
-                  </span>
+                  <span className="block font-medium">{item.label}</span>
                   <span className={clsx('hidden text-xs md:block', active ? 'text-paper/80' : 'text-ink-muted')}>
                     {item.hint}
                   </span>
