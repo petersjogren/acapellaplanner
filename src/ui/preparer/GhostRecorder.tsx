@@ -43,6 +43,7 @@ export function GhostRecorder({ onImported, disabled = false }: GhostRecorderPro
   const analyserRef = useRef<AnalyserNode | null>(null)
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const aliveRef = useRef(true)
+  const stoppingRef = useRef(false)
 
   useEffect(() => {
     aliveRef.current = true
@@ -51,6 +52,12 @@ export function GhostRecorder({ onImported, disabled = false }: GhostRecorderPro
       sourceRef.current?.disconnect()
       sourceRef.current = null
       analyserRef.current = null
+      // Explicitly stop any in-flight recorder rather than relying on the
+      // track-stop below to indirectly halt MediaRecorder.
+      if (recordingRef.current) {
+        void recordingRef.current.stop().catch(() => undefined)
+        recordingRef.current = null
+      }
       streamRef.current?.getTracks().forEach((track) => track.stop())
       streamRef.current = null
     }
@@ -116,6 +123,10 @@ export function GhostRecorder({ onImported, disabled = false }: GhostRecorderPro
   }
 
   function handleRecord() {
+    // Ref-based re-entry guard (same shape as RecordControl's armingRef):
+    // a second rapid click before re-render must not overwrite the ref and
+    // leak the first MediaRecorder.
+    if (recordingRef.current) return
     const stream = streamRef.current
     if (!stream) return
     recordingRef.current = startRecording(stream)
@@ -123,12 +134,26 @@ export function GhostRecorder({ onImported, disabled = false }: GhostRecorderPro
   }
 
   async function handleStop() {
+    // Ref-based re-entry guard: a second rapid click while stop() is still
+    // in flight must be a no-op, not call stop() twice.
+    if (stoppingRef.current) return
     const rec = recordingRef.current
     if (!rec) return
-    const stopped = await rec.stop()
-    if (!aliveRef.current) return
-    setResult(stopped)
-    setState('confirming')
+    stoppingRef.current = true
+    try {
+      const stopped = await rec.stop()
+      if (!aliveRef.current) return
+      recordingRef.current = null
+      setResult(stopped)
+      setState('confirming')
+    } catch (err: unknown) {
+      if (!aliveRef.current) return
+      recordingRef.current = null
+      setError(messageFrom(err, 'Recording failed'))
+      setState('armed')
+    } finally {
+      stoppingRef.current = false
+    }
   }
 
   function backToArmed() {
@@ -167,7 +192,7 @@ export function GhostRecorder({ onImported, disabled = false }: GhostRecorderPro
   const empty = result ? isEmptyTake({ byteSize: result.byteSize, durationMs: result.durationMs }) : false
 
   return (
-    <div className="mt-6 max-w-xl">
+    <section aria-label="Record ghost" className="mt-6 max-w-xl">
       <p className="font-medium">Record ghost</p>
 
       {state === 'idle' || state === 'checking' ? (
@@ -253,6 +278,6 @@ export function GhostRecorder({ onImported, disabled = false }: GhostRecorderPro
           {error}
         </p>
       ) : null}
-    </div>
+    </section>
   )
 }

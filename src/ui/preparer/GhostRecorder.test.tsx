@@ -252,4 +252,74 @@ describe('GhostRecorder', () => {
 
     expect(track.stop).toHaveBeenCalledTimes(1)
   })
+
+  it('stops the in-flight recorder and mic tracks on unmount while recording', async () => {
+    const track = fakeTrack()
+    vi.mocked(requestMicStream).mockResolvedValue(fakeStream([track]))
+    const recorder = fakeRecorder(wellAboveEmptyResult())
+    vi.mocked(startRecording).mockReturnValue(recorder)
+    const { unmount } = render(<GhostRecorder onImported={() => undefined} />)
+    await checkMic()
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+    unmount()
+
+    expect(recorder.stop).toHaveBeenCalledTimes(1)
+    expect(track.stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows an error and returns to armed when stop() rejects', async () => {
+    const recorder = { stop: vi.fn(() => Promise.reject(new Error('Recording failed'))) }
+    vi.mocked(startRecording).mockReturnValue(recorder)
+    render(<GhostRecorder onImported={() => undefined} />)
+    await checkMic()
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('Recording failed')
+    })
+    expect(screen.getByRole('button', { name: 'Record' })).toBeDefined()
+  })
+
+  it('ignores a second rapid click on Record before re-render', async () => {
+    const result = wellAboveEmptyResult()
+    vi.mocked(startRecording).mockReturnValue(fakeRecorder(result))
+    render(<GhostRecorder onImported={() => undefined} />)
+    await checkMic()
+
+    const recordButton = screen.getByRole('button', { name: 'Record' })
+    fireEvent.click(recordButton)
+    fireEvent.click(recordButton)
+
+    expect(startRecording).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores a second rapid click on Stop while stop() is in flight', async () => {
+    let resolveStop: ((result: RecordingResult) => void) | undefined
+    const recorder = {
+      stop: vi.fn(
+        () =>
+          new Promise<RecordingResult>((resolve) => {
+            resolveStop = resolve
+          }),
+      ),
+    }
+    vi.mocked(startRecording).mockReturnValue(recorder)
+    render(<GhostRecorder onImported={() => undefined} />)
+    await checkMic()
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+
+    const stopButton = screen.getByRole('button', { name: 'Stop' })
+    fireEvent.click(stopButton)
+    fireEvent.click(stopButton)
+
+    expect(recorder.stop).toHaveBeenCalledTimes(1)
+
+    resolveStop?.(wellAboveEmptyResult())
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Use this' })).toBeDefined()
+    })
+  })
 })
