@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   forkProjectForImport,
   GHOST_DURATION_TOLERANCE_MS,
+  ghostReplacementWarning,
   phrasesBeyondGhost,
   reconcileGhostDuration,
   renameProject,
@@ -188,5 +189,45 @@ describe('forkProjectForImport', () => {
 
     expect(forkA.project.id).not.toBe(forkB.project.id)
     expect(forkA.project.ghostTrackId).not.toBe(forkB.project.ghostTrackId)
+  })
+})
+
+describe('ghostReplacementWarning', () => {
+  it('returns null when there are no phrases yet, regardless of ghost/take state', () => {
+    expect(ghostReplacementWarning(withGhost(30_000, []))).toBeNull()
+    expect(ghostReplacementWarning(createEmptyProject('Song'))).toBeNull()
+  })
+
+  it('mentions the phrase count and says nothing about takes when there are none', () => {
+    const project = withGhost(30_000, [
+      phrase('p1', 'Phrase 1', 0, 10_000),
+      phrase('p2', 'Phrase 2', 10_000, 20_000),
+      phrase('p3', 'Phrase 3', 20_000, 30_000),
+    ])
+    const message = ghostReplacementWarning(project)
+    expect(message).toMatch(/3 phrases/)
+    expect(message).not.toMatch(/take/i)
+  })
+
+  it('mentions both the phrase count and the take count when takes exist', () => {
+    const project: Project = {
+      ...withGhost(30_000, [phrase('p1', 'Phrase 1', 0, 10_000), phrase('p2', 'Phrase 2', 10_000, 20_000)]),
+      takes: [take('take-1', 'blob-a'), take('take-2', 'blob-b')],
+    }
+    const message = ghostReplacementWarning(project)
+    expect(message).toMatch(/2 phrases/)
+    expect(message).toMatch(/2 recorded takes/)
+  })
+
+  it('uses singular wording for exactly one phrase and one take', () => {
+    const project: Project = {
+      ...withGhost(10_000, [phrase('p1', 'Phrase 1', 0, 10_000)]),
+      takes: [take('take-1', 'blob-a')],
+    }
+    const message = ghostReplacementWarning(project)
+    expect(message).toMatch(/\b1 phrase\b/)
+    expect(message).not.toMatch(/1 phrases/)
+    expect(message).toMatch(/\b1 recorded take\b/)
+    expect(message).not.toMatch(/1 recorded takes/)
   })
 })

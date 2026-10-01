@@ -102,3 +102,27 @@ export function phrasesBeyondGhost(project: Project, ghostDurationMs: number): P
   if (!Number.isFinite(ghostDurationMs) || ghostDurationMs <= 0) return []
   return project.phrases.filter((phrase) => phrase.endMs > ghostDurationMs)
 }
+
+/**
+ * Whether replacing this song's ghost track should be confirmed first, and
+ * the exact message to show if so. `null` means nothing is at stake yet
+ * (no phrases marked), so the common first-ghost import should never be
+ * interrupted by a confirmation. Otherwise, names how much work — phrases,
+ * and recorded takes if any — is riding on the current ghost, since
+ * replacing it may shift where that work lands on the new timeline.
+ */
+export function ghostReplacementWarning(project: Project): string | null {
+  const phraseCount = project.phrases.length
+  if (phraseCount === 0) return null
+
+  const phraseWord = phraseCount === 1 ? 'phrase' : 'phrases'
+  let message = `This song already has ${phraseCount} ${phraseWord} marked on the current ghost.`
+
+  const takeCount = project.takes.length
+  if (takeCount > 0) {
+    const takeWord = takeCount === 1 ? 'recorded take' : 'recorded takes'
+    message += ` (and ${takeCount} ${takeWord})`
+  }
+
+  return `${message} Replacing it may shift where they land. Continue?`
+}
