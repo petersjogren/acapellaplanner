@@ -29,6 +29,7 @@ Link to `DECISIONS.md` for the why. Do not restate the README quickstart.
 
 - **Part.** A voice on the roster (`shortLabel`, e.g. S1, A2). **Doubles** are `targetTakes` (default 4). Density comes from humans, not a chorus plugin.
 - **Cell.** One phrase × one part. Status is `not-started`, `in-progress`, `enough`, or `final`.
+- **Completion matrix** (UI heading: “What’s left”). Prepare's take-progress table: voice parts as rows, phrases as columns, cells as `n/target` plus one dot per take (gold = keeper, gray = not), ordered chronologically by `takeIndex`. The phrase name at the top of a column plays that phrase (ghost + stack, the Headphones preset shared with the Listen panel below it) — press again to stop. A take's own dot plays that one take **solo**, nothing layered in. Only one of the two can play at a time.
 - **Pass.** One Record press, one playback, one recorder. Then Hear / Keep / Scrap.
 - **Sing through** (a.k.a. multi-phrase Record). A per-press, default-off toggle next to Record. Resets every press. When on, one Record press covers a **run** instead of stopping at the current phrase’s play-window end. See `DECISIONS.md` → “Sing-through / multi-phrase Record”.
 - **Run** (a.k.a. span). An unbroken, adjacent sequence of phrases sung in one sing-through pass. On disk: `Take.spanPhraseIds`, ordered, first entry is the take’s `phraseId`. A performance grouping, not a section — no tempo semantics, and it need not line up with section boundaries.

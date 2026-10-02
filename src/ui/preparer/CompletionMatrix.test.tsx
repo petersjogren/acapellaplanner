@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, render, screen, fireEvent } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CompletionMatrix } from './CompletionMatrix.tsx'
 import { createEmptyProject, type Phrase, type Project, type Take, type VoicePart } from '../../domain/schemas.ts'
 
@@ -98,6 +98,76 @@ describe('CompletionMatrix', () => {
     expect(screen.getByRole('rowheader', { name: /Alto 1/ })).toBeTruthy()
     expect(screen.getByText('2/4')).toBeTruthy()
     expect(screen.getAllByText('0/4').length).toBeGreaterThan(0)
-    expect(screen.getByLabelText('1 keeper')).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: 'Take 1 (keeper) — S1 / when I fall' }),
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Take 2 — S1 / when I fall' })).toBeTruthy()
+  })
+
+  it('orders dots chronologically by takeIndex, not keeper-first', () => {
+    render(
+      <CompletionMatrix
+        project={project({
+          voiceRoster: [part({ id: 's1', name: 'Soprano 1', shortLabel: 'S1' })],
+          phrases: [phrase({ id: 'p1', name: 'when I fall' })],
+          takes: [
+            take({ id: 't1', phraseId: 'p1', voicePartId: 's1', takeIndex: 1 }),
+            take({ id: 't2', phraseId: 'p1', voicePartId: 's1', takeIndex: 2, rating: 'keeper' }),
+            take({ id: 't3', phraseId: 'p1', voicePartId: 's1', takeIndex: 3 }),
+          ],
+        })}
+      />,
+    )
+    const buttons = screen.getAllByRole('button', { name: /^Take \d/ })
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Take 1 — S1 / when I fall',
+      'Take 2 (keeper) — S1 / when I fall',
+      'Take 3 — S1 / when I fall',
+    ])
+  })
+
+  it('presses the phrase name to play, and again to stop', () => {
+    const onPlayPhrase = vi.fn()
+    render(
+      <CompletionMatrix
+        project={project({
+          voiceRoster: [part({ id: 's1', name: 'Soprano 1', shortLabel: 'S1' })],
+          phrases: [phrase({ id: 'p1', name: 'when I fall' })],
+        })}
+        onPlayPhrase={onPlayPhrase}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'when I fall' }))
+    expect(onPlayPhrase).toHaveBeenCalledWith('p1')
+  })
+
+  it('shows the phrase header as playing when playingPhraseId matches', () => {
+    render(
+      <CompletionMatrix
+        project={project({
+          voiceRoster: [part({ id: 's1', name: 'Soprano 1', shortLabel: 'S1' })],
+          phrases: [phrase({ id: 'p1', name: 'when I fall' })],
+        })}
+        playingPhraseId="p1"
+      />,
+    )
+    const button = screen.getByRole('button', { name: 'Stop — when I fall' })
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('presses a take dot to play it solo', () => {
+    const onPlayTake = vi.fn()
+    render(
+      <CompletionMatrix
+        project={project({
+          voiceRoster: [part({ id: 's1', name: 'Soprano 1', shortLabel: 'S1' })],
+          phrases: [phrase({ id: 'p1', name: 'when I fall' })],
+          takes: [take({ id: 't1', phraseId: 'p1', voicePartId: 's1', takeIndex: 1 })],
+        })}
+        onPlayTake={onPlayTake}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Take 1 — S1 / when I fall' }))
+    expect(onPlayTake).toHaveBeenCalledWith('t1', 'p1')
   })
 })

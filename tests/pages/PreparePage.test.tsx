@@ -1143,6 +1143,231 @@ describe('PreparePage phrase playback', () => {
   })
 })
 
+describe('PreparePage completion matrix', () => {
+  let database: AcapellaDB
+  let repo: ProjectRepository
+  let projectId: string
+  let sources: Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }>
+
+  beforeEach(async () => {
+    sources = []
+    function FakeAudioContext(this: unknown) {
+      const ctx = {
+        state: 'running' as AudioContextState,
+        currentTime: 1,
+        destination: {},
+        resume: vi.fn(async () => undefined),
+        close: vi.fn(async () => {
+          ctx.state = 'closed'
+        }),
+        createGain() {
+          return { connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } }
+        },
+        createBufferSource() {
+          const source: {
+            buffer: AudioBuffer | null
+            connect: ReturnType<typeof vi.fn>
+            disconnect: ReturnType<typeof vi.fn>
+            start: ReturnType<typeof vi.fn>
+            stop: ReturnType<typeof vi.fn>
+            onended: (() => void) | null
+          } = {
+            buffer: null,
+            connect: vi.fn(),
+            disconnect: vi.fn(),
+            start: vi.fn(),
+            stop: vi.fn(),
+            onended: null,
+          }
+          sources.push(source)
+          return source
+        },
+      }
+      return ctx
+    }
+    vi.stubGlobal('AudioContext', FakeAudioContext)
+
+    database = new AcapellaDB(`acapellaplanner-prepare-matrix-${crypto.randomUUID()}`)
+    repo = createProjectRepository(database)
+    const project = await repo.saveProject(createEmptyProject('When I Fall'))
+    projectId = project.id
+    const ghostBlobId = crypto.randomUUID()
+    await repo.putAudioBlob({
+      id: ghostBlobId,
+      projectId,
+      kind: 'ghost',
+      mimeType: 'audio/wav',
+      byteSize: 4,
+      createdAt: new Date().toISOString(),
+      blob: new Blob([new Uint8Array([1, 2, 3, 4])]),
+    })
+    await repo.putAudioBlob({
+      id: 'take-blob-1',
+      projectId,
+      kind: 'take',
+      mimeType: 'audio/wav',
+      byteSize: 4,
+      createdAt: new Date().toISOString(),
+      blob: new Blob([new Uint8Array([1, 2, 3, 4])]),
+    })
+    await repo.saveProject({
+      ...project,
+      ghostTrackId: ghostBlobId,
+      guides: [
+        {
+          id: crypto.randomUUID(),
+          kind: 'ghost',
+          audioBlobId: ghostBlobId,
+          gainDbDefault: 0,
+          alignToGhost: true,
+        },
+      ],
+      voiceRoster: [
+        { id: 's1', name: 'Soprano 1', shortLabel: 'S1', color: '#c23b2a', targetTakes: 4 },
+      ],
+      phrases: [
+        {
+          id: 'phrase-1',
+          name: 'Phrase 1',
+          startMs: 1000,
+          endMs: 3000,
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          preRollMs: 250,
+          postRollMs: 100,
+        },
+      ],
+      takes: [
+        {
+          id: 'take-1',
+          phraseId: 'phrase-1',
+          voicePartId: 's1',
+          takeIndex: 1,
+          audioBlobId: 'take-blob-1',
+          recordedAt: '2026-09-12T10:00:00.000Z',
+          durationMs: 1000,
+          headphoneMixSnapshot: { layers: [] },
+          peakDb: -6,
+        },
+      ],
+      settings: {
+        ...project.settings,
+        ghostMeta: { filename: 'lead.wav', durationMs: 10_000 },
+      },
+    })
+    vi.mocked(decodeAudioFile).mockReset()
+    vi.mocked(decodeAudioFile).mockResolvedValue({
+      buffer: { duration: 10, sampleRate: 44100, length: 441_000 } as AudioBuffer,
+      durationMs: 10_000,
+      sampleRate: 44100,
+    })
+  })
+
+  afterEach(async () => {
+    cleanup()
+    await closeAudioContext()
+    vi.unstubAllGlobals()
+    database.close()
+    await database.delete()
+  })
+
+  function renderPrepare() {
+    return render(
+      <MemoryRouter initialEntries={[`/project/${projectId}/prepare`]}>
+        <AppRoutes repo={repo} />
+      </MemoryRouter>,
+    )
+  }
+
+  it('plays the phrase name, then toggles it back off', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play ghost' })).toBeTruthy()
+    })
+    await waitFor(() => {
+      expect(within(screen.getByLabelText("What's left")).getByRole('button', { name: 'Phrase 1' })).toBeTruthy()
+    })
+
+    fireEvent.click(within(screen.getByLabelText("What's left")).getByRole('button', { name: 'Phrase 1' }))
+    await waitFor(() => {
+      expect(sources).toHaveLength(1)
+    })
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', { name: 'Stop — Phrase 1' }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', { name: 'Stop — Phrase 1' }),
+    )
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', { name: 'Phrase 1' }),
+      ).toBeTruthy()
+    })
+  })
+
+  it('plays a take dot solo, and pressing the phrase name stops it', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play ghost' })).toBeTruthy()
+    })
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+    )
+    await waitFor(() => {
+      // Solo mode still schedules the ghost layer (muted) alongside the take.
+      expect(sources).toHaveLength(2)
+    })
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Stop — Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', { name: 'Phrase 1' }),
+    )
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+  })
+
+  it('shares the Headphones preset between the Listen panel and the matrix selector', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getAllByLabelText('Headphones').length).toBeGreaterThan(0)
+    })
+    fireEvent.click(within(screen.getByLabelText('Phrase marking')).getByRole('button', { name: /Phrase 1/ }))
+    await waitFor(() => {
+      expect(screen.getAllByLabelText('Headphones')).toHaveLength(2)
+    })
+
+    const [listenSelect, matrixSelect] = screen.getAllByLabelText('Headphones') as HTMLSelectElement[]
+    fireEvent.change(matrixSelect!, { target: { value: 'stack-build' } })
+    await waitFor(() => {
+      expect(listenSelect!.value).toBe('stack-build')
+    })
+  })
+})
+
 describe('PreparePage sheet upload', () => {
   let database: AcapellaDB
   let repo: ProjectRepository

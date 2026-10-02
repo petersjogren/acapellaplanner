@@ -7,6 +7,7 @@ import {
   createAudioBlobLoader,
   GHOST_FOCUS_PRESET_ID,
   loadPlaybackMixForPhrase,
+  loadTakeReviewMix,
 } from '../audio/mix.ts'
 import { useProjectRepository } from '../app/projectRepositoryContext.tsx'
 import {
@@ -85,6 +86,11 @@ export function PreparePage() {
   const [playing, setPlaying] = useState(false)
   const [playError, setPlayError] = useState<string | null>(null)
   const [mixPresetId, setMixPresetId] = useState(GHOST_FOCUS_PRESET_ID)
+  // Completion matrix: a phrase-name press plays ghost+stack (same recipe as
+  // the Listen panel); a take dot plays that one take solo. Only one of the
+  // two can be active — the engine replaces whatever was playing.
+  const [matrixPlayingPhraseId, setMatrixPlayingPhraseId] = useState<string | null>(null)
+  const [matrixPlayingTakeId, setMatrixPlayingTakeId] = useState<string | null>(null)
   const [sheetPageIndex, setSheetPageIndex] = useState(0)
   const [sheetPageUrl, setSheetPageUrl] = useState<string | null>(null)
   const [cropDraft, setCropDraft] = useState<CropDraft | null>(null)
@@ -374,6 +380,8 @@ export function PreparePage() {
     committedIdsRef.current = []
     setOpenStart(null)
     setPlayError(null)
+    setMatrixPlayingPhraseId(null)
+    setMatrixPlayingTakeId(null)
     try {
       const started = await getEngine().play(
         {
@@ -442,6 +450,8 @@ export function PreparePage() {
     if (id !== selectedPhraseId && !markAlongPlayingRef.current) {
       engineRef.current?.stop()
       setPlaying(false)
+      setMatrixPlayingPhraseId(null)
+      setMatrixPlayingTakeId(null)
     }
     setSelectedPhraseId(id)
   }
@@ -480,6 +490,8 @@ export function PreparePage() {
   async function playPhrase(phrase: Phrase, loop: boolean) {
     if (markAlongPlayingRef.current) return
     setPlayError(null)
+    setMatrixPlayingPhraseId(null)
+    setMatrixPlayingTakeId(null)
     try {
       const mix = await loadPlaybackMixForPhrase(
         loaded,
@@ -522,7 +534,104 @@ export function PreparePage() {
   }
 
   function handleStop() {
+    setMatrixPlayingPhraseId(null)
+    setMatrixPlayingTakeId(null)
     void finishMarkAlong()
+  }
+
+  // Completion matrix — press a phrase name: play once (ghost + stack, per
+  // the shared Headphones preset), same recipe as the Listen panel. Press
+  // again to stop. Starting any other playback (Listen, mark-along, a take
+  // dot) must also clear this, since the engine only ever plays one thing.
+  async function handleMatrixPlayPhrase(id: string) {
+    if (matrixPlayingPhraseId === id) {
+      handleStop()
+      return
+    }
+    const phrase = loaded.phrases.find((item) => item.id === id)
+    if (!phrase || !bufferRef.current || markAlongPlayingRef.current) return
+    setMatrixPlayingTakeId(null)
+    setPlayError(null)
+    try {
+      const mix = await loadPlaybackMixForPhrase(
+        loaded,
+        phrase.id,
+        mixPresetId,
+        createAudioBlobLoader((id) => repo.getAudioBlob(id)),
+      )
+      const clickTimesMs = clicksForPhrase(phrase, loaded.sections, loaded.phrases)
+      const started = await getEngine().play(
+        {
+          startMs: phrase.startMs,
+          endMs: phrase.endMs,
+          preRollMs: phrase.preRollMs ?? 0,
+          postRollMs: phrase.postRollMs,
+          gapMs: phrase.loopDefault.gapMs,
+          loop: false,
+        },
+        {
+          onEnded: () => setMatrixPlayingPhraseId(null),
+        },
+        { ...mix, click: true, clickTimesMs },
+      )
+      setPlaying(false)
+      setMatrixPlayingPhraseId(started ? id : null)
+    } catch (err: unknown) {
+      setMatrixPlayingPhraseId(null)
+      setPlayError(messageFrom(err, 'Could not play phrase'))
+    }
+  }
+
+  // Completion matrix — press a take dot: play that one take solo ("as it
+  // is", nothing else layered in), same recipe TakeReview/Review use.
+  async function handleMatrixPlayTake(takeId: string, phraseId: string) {
+    if (matrixPlayingTakeId === takeId) {
+      handleStop()
+      return
+    }
+    const take = loaded.takes.find((item) => item.id === takeId)
+    const phrase = loaded.phrases.find((item) => item.id === phraseId)
+    if (!take || !phrase || markAlongPlayingRef.current) return
+    setMatrixPlayingPhraseId(null)
+    setPlayError(null)
+    try {
+      const record = await repo.getAudioBlob(take.audioBlobId)
+      if (!record) {
+        setPlayError('Could not load take')
+        return
+      }
+      const decoded = await decodeAudioFile(record.blob)
+      const mix = await loadTakeReviewMix(
+        loaded,
+        phrase.id,
+        {
+          takeId: take.id,
+          takeBuffer: decoded.buffer,
+          latencyCompMs: take.latencyCompMs,
+          mode: 'solo',
+        },
+        createAudioBlobLoader((id) => repo.getAudioBlob(id)),
+      )
+      const started = await getEngine().play(
+        {
+          startMs: phrase.startMs,
+          endMs: phrase.endMs,
+          preRollMs: phrase.preRollMs ?? 0,
+          postRollMs: phrase.postRollMs,
+          gapMs: phrase.loopDefault.gapMs,
+          loop: false,
+        },
+        {
+          onEnded: () => setMatrixPlayingTakeId(null),
+        },
+        mix,
+      )
+      setPlaying(false)
+      setMatrixPlayingTakeId(started ? takeId : null)
+    } catch (err: unknown) {
+      setMatrixPlayingTakeId(null)
+      setPlayError(messageFrom(err, 'Could not play take'))
+    }
   }
 
   async function ensureSheetPageImage(
@@ -1001,7 +1110,16 @@ export function PreparePage() {
         onUpdatePart={handleUpdatePart}
         onRemovePart={handleRemovePart}
       />
-      <CompletionMatrix project={loaded} />
+      <div className="mt-10 flex items-center gap-3">
+        <MixPresetSelect compact value={mixPresetId} onChange={setMixPresetId} />
+      </div>
+      <CompletionMatrix
+        project={loaded}
+        playingPhraseId={matrixPlayingPhraseId}
+        playingTakeId={matrixPlayingTakeId}
+        onPlayPhrase={(id) => void handleMatrixPlayPhrase(id)}
+        onPlayTake={(takeId, phraseId) => void handleMatrixPlayTake(takeId, phraseId)}
+      />
     </PreparerShell>
   )
 }
