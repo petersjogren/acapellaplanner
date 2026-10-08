@@ -19,6 +19,7 @@ Link to `DECISIONS.md` for the why. Do not restate the README quickstart.
 - **Record ghost.** Capturing a ghost track live via the mic on Prepare (`GhostRecorder`), as an alternative to uploading a file. Distinct from **Pass** (Sing's Record button), which captures a take against an existing ghost — say "Record ghost" when both Prepare and Sing are in view so "Record" isn't ambiguous.
 - **Ghost ms.** The only clock. Bar and beat are not a second timeline.
 - **Phrase.** A musical sentence on the ghost: `[startMs, endMs]`. Phrases do not overlap. Minimum 50 ms.
+- **Lyric.** The words of one phrase. What the singer reads. Not the phrase's name, and not the singer notes. Code: `lyricText`.
 - **Play window.** What you hear and record. The phrase plus **head start** (`preRollMs`, 2000 on new phrases) and **crossfade tail** (`postRollMs`, 2000). Those windows may overlap neighbours. The phrase boundary does not. Missing `preRollMs` on disk means 0 — do not migrate old phrases to 2000.
 - **Section.** A feel on a run of phrases (`fromPhraseId`–`toPhraseId`). Not its own time range. Sections must not share a phrase.
 - **Follow the ghost.** Code: `ghost-follow`. Rubato. No click.
@@ -73,6 +74,17 @@ Link to `DECISIONS.md` for the why. Do not restate the README quickstart.
 - The zip is the bus. There is no server copy.
 - Film order is append order. A wrong order is redrawn, not sorted.
 - Optional fields do not bump the schema. A breaking `Project` shape does.
+
+## Decided, not built
+
+Say these only for the 2026-10-08 label and time-left decision. The product still assigns `Phrase N` and has no pie. See `DECISIONS.md`.
+
+- **Phrase name.** A handle you type for one phrase (`Verse`). Not a number, not a clock, not a section.
+- **Unnamed phrase.** A phrase with no name. Its label is the start time.
+- **Phrase label.** What you read when picking a phrase: the phrase name, or the start time if unnamed.
+- **Phrase length.** How long the phrase is: `end − start`. Not the play window.
+- **Time left.** How much of the phrase is still to sound. Not the take ribbon.
+- **Clear name.** Drops that phrase's name. Does not renumber any other phrase.
 
 ## In the schema, not in the product
 

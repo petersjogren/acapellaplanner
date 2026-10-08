@@ -33,6 +33,10 @@ Active product work is whatever the user asks next. This list is **code-backed**
 - iPad mic, Home Screen permission, and MediaRecorder mime are **manual**. Chrome is the supported recorder if Safari blocks.
 - Google Fonts missing offline; UI falls back to Georgia / Helvetica Neue.
 
+## Decided, not built
+
+- **Phrase labels and time-left pie (2026-10-08).** Spec is in `DECISIONS.md` and the glossary section "Decided, not built". Do not re-litigate. Not started.
+
 ## Product (from original plan, still true)
 
 - **Parking lot — crop reorder (do not implement unless asked).** Film order is append order, and the staged crop draft is page-major then per-page append order. A rect drawn to patch a *missed middle* system therefore lands at the end of its page. Numbered badges make that visible before committing; the fix is Clear page rects and redraw in reading order. A real reorder (drag-to-reorder, or column-aware auto-sort that survives two-column music) is **not** designed. Pins (`filmPins`) correct camera drift; they do not reorder slides.
