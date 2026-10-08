@@ -1,4 +1,5 @@
 import type { Phrase, SheetRef } from '../../domain/schemas.ts'
+import { phraseLengthLabel } from '../../domain/phrases.ts'
 import { SheetCue } from './SheetCue.tsx'
 
 export type PhraseStageProps = {
@@ -25,7 +26,8 @@ export function PhraseStage({
   sheetCenter = false,
   onPickSheet,
 }: PhraseStageProps) {
-  const lyric = phrase.lyricText?.trim() || phrase.name
+  // Trimmed lyric, else trimmed name, else blank. Not the start-time clock.
+  const bigLine = phrase.lyricText?.trim() || phrase.name.trim()
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-2" aria-label="Current phrase">
@@ -40,7 +42,8 @@ export function PhraseStage({
           ) : null}
           Phrase {phraseIndex} of {phraseCount}
         </p>
-        <p className="font-display text-lyric leading-snug">{lyric}</p>
+        <p className="text-sm text-ink-muted">{phraseLengthLabel(phrase)}</p>
+        <p className="font-display text-lyric leading-snug">{bigLine}</p>
         {phrase.notesForSinger ? (
           <p className="mt-1 max-w-md text-ink/70">{phrase.notesForSinger}</p>
         ) : null}
