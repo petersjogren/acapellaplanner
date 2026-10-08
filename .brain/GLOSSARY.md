@@ -19,6 +19,11 @@ Link to `DECISIONS.md` for the why. Do not restate the README quickstart.
 - **Record ghost.** Capturing a ghost track live via the mic on Prepare (`GhostRecorder`), as an alternative to uploading a file. Distinct from **Pass** (Sing's Record button), which captures a take against an existing ghost — say "Record ghost" when both Prepare and Sing are in view so "Record" isn't ambiguous.
 - **Ghost ms.** The only clock. Bar and beat are not a second timeline.
 - **Phrase.** A musical sentence on the ghost: `[startMs, endMs]`. Phrases do not overlap. Minimum 50 ms.
+- **Phrase name.** A handle you type for one phrase (`Verse`). Not a number, not a clock, not a section. Code: `Phrase.name`, when the trimmed name is non-empty.
+- **Unnamed phrase.** A phrase with no name. Stores `name: ""`. A whitespace-only name is unnamed. Its label is the start time.
+- **Phrase label.** What you read when picking a phrase: the phrase name, or the start time if unnamed (`0:30.0`). Not stored. Code: `phraseLabel` (trimmed name, else `formatPhraseClock`). See `DECISIONS.md`.
+- **Phrase length.** How long the phrase is: `end − start`, shown as seconds with tenths (`8.4 s`) under `Phrase i of n`. Not the play window. Code: `phraseLengthLabel`. See `DECISIONS.md`.
+- **Clear name.** Drops that phrase's name. Beside Name, only when the trimmed name is non-empty. Does not renumber any other phrase. UI word only — calls `updatePhrase` with an empty name. No separate code name.
 - **Lyric.** The words of one phrase. What the singer reads. Not the phrase's name, and not the singer notes. Code: `lyricText`.
 - **Play window.** What you hear and record. The phrase plus **head start** (`preRollMs`, 2000 on new phrases) and **crossfade tail** (`postRollMs`, 2000). Those windows may overlap neighbours. The phrase boundary does not. Missing `preRollMs` on disk means 0 — do not migrate old phrases to 2000.
 - **Section.** A feel on a run of phrases (`fromPhraseId`–`toPhraseId`). Not its own time range. Sections must not share a phrase.
@@ -30,8 +35,9 @@ Link to `DECISIONS.md` for the why. Do not restate the README quickstart.
 
 - **Part.** A voice on the roster (`shortLabel`, e.g. S1, A2). **Doubles** are `targetTakes` (default 4). Density comes from humans, not a chorus plugin.
 - **Cell.** One phrase × one part. Status is `not-started`, `in-progress`, `enough`, or `final`.
-- **Completion matrix** (UI heading: “What’s left”). Prepare's take-progress table: voice parts as rows, phrases as columns, cells as `n/target` plus one dot per take (gold = keeper, gray = not), ordered chronologically by `takeIndex`. The phrase name at the top of a column plays that phrase (ghost + stack, the Headphones preset shared with the Listen panel below it) — press again to stop. A take's own dot plays that one take **solo**, nothing layered in. Only one of the two can play at a time.
+- **Completion matrix** (UI heading: “What’s left”). Prepare's take-progress table: voice parts as rows, phrases as columns, cells as `n/target` plus one dot per take (gold = keeper, gray = not), ordered chronologically by `takeIndex`. The phrase label (typed name or start time) at the top of a column plays that phrase (ghost + stack, the Headphones preset shared with the Listen panel below it) — press again to stop. A take's own dot plays that one take **solo**, nothing layered in. Only one of the two can play at a time.
 - **Pass.** One Record press, one playback, one recorder. Then Hear / Keep / Scrap.
+- **Time left.** How much of the phrase is still to sound, as a pie on the Record button. Not the take ribbon. Not on Play. Code: `timeLeftFraction`. See `DECISIONS.md`.
 - **Sing through** (a.k.a. multi-phrase Record). A per-press, default-off toggle next to Record. Resets every press. When on, one Record press covers a **run** instead of stopping at the current phrase’s play-window end. See `DECISIONS.md` → “Sing-through / multi-phrase Record”.
 - **Run** (a.k.a. span). An unbroken, adjacent sequence of phrases sung in one sing-through pass. On disk: `Take.spanPhraseIds`, ordered, first entry is the take’s `phraseId`. A performance grouping, not a section — no tempo semantics, and it need not line up with section boundaries.
 - **Spanning take.** A `Take` whose `spanPhraseIds` covers more than one phrase. Credits every covered cell independently. Keep, Scrap, and rating apply to the whole take (no partial keep). Per-phrase Hear seeks into the shared blob by that phrase’s offset from the run start, the same way `latencyCompMs` skips into a buffer.
@@ -74,17 +80,6 @@ Link to `DECISIONS.md` for the why. Do not restate the README quickstart.
 - The zip is the bus. There is no server copy.
 - Film order is append order. A wrong order is redrawn, not sorted.
 - Optional fields do not bump the schema. A breaking `Project` shape does.
-
-## Decided, not built
-
-Say these only for the 2026-10-08 label and time-left decision. The product still assigns `Phrase N` and has no pie. See `DECISIONS.md`.
-
-- **Phrase name.** A handle you type for one phrase (`Verse`). Not a number, not a clock, not a section.
-- **Unnamed phrase.** A phrase with no name. Its label is the start time.
-- **Phrase label.** What you read when picking a phrase: the phrase name, or the start time if unnamed.
-- **Phrase length.** How long the phrase is: `end − start`. Not the play window.
-- **Time left.** How much of the phrase is still to sound. Not the take ribbon.
-- **Clear name.** Drops that phrase's name. Does not renumber any other phrase.
 
 ## In the schema, not in the product
 
