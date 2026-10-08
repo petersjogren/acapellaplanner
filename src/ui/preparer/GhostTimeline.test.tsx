@@ -254,19 +254,76 @@ describe('GhostTimeline', () => {
     expect(onUpdatePhrase).toHaveBeenCalledWith('phrase-1', { name: 'Intro' })
   })
 
-  it('keeps an empty name draft without calling updatePhrase', () => {
+  it('shows the phrase label as the list title', () => {
+    const named = { ...phrase, name: 'Verse' }
+    const unnamed: Phrase = {
+      ...phrase,
+      id: 'phrase-2',
+      name: '',
+      startMs: 30_000,
+      endMs: 31_000,
+      lyricText: undefined,
+    }
+    renderTimeline({ phrases: [named, unnamed], durationMs: 60_000 })
+
+    expect(screen.getByRole('button', { name: /Verse/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /0:30\.0/ })).toBeTruthy()
+    expect(screen.getByText('0:30.0–0:31.0')).toBeTruthy()
+  })
+
+  it('shows Clear name only when the trimmed name is non-empty', () => {
+    renderTimeline({ phrases: [phrase] })
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    expect(screen.getByRole('button', { name: 'Clear name' })).toBeTruthy()
+  })
+
+  it('hides Clear name when the phrase is already unnamed', () => {
+    const unnamed = { ...phrase, name: '' }
+    renderTimeline({ phrases: [unnamed] })
+    fireEvent.click(screen.getByRole('button', { name: /0:00\.2/ }))
+    expect(screen.queryByRole('button', { name: 'Clear name' })).toBeNull()
+  })
+
+  it('Clear name empties only that phrase and the title becomes the start time', () => {
+    const other: Phrase = {
+      ...phrase,
+      id: 'phrase-2',
+      name: 'Verse',
+      startMs: 2000,
+      endMs: 3000,
+      lyricText: undefined,
+    }
+    const { onUpdatePhrase } = renderTimeline({ phrases: [phrase, other] })
+
+    fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear name' }))
+
+    expect(onUpdatePhrase).toHaveBeenCalledWith('phrase-1', { name: '' })
+  })
+
+  it('commits an empty name on blur and does not snap back', () => {
     const { onUpdatePhrase } = renderTimeline({ phrases: [phrase] })
 
     fireEvent.click(screen.getByRole('button', { name: /Phrase 1/ }))
     const input = screen.getByLabelText('Name') as HTMLInputElement
     fireEvent.change(input, { target: { value: '' } })
+    fireEvent.blur(input)
 
-    expect(onUpdatePhrase).not.toHaveBeenCalled()
+    expect(onUpdatePhrase).toHaveBeenCalledWith('phrase-1', { name: '' })
+    expect(input.value).toBe('')
+  })
+
+  it('shows the start time as Name placeholder without saving it', () => {
+    const unnamed = { ...phrase, name: '' }
+    const { onUpdatePhrase } = renderTimeline({ phrases: [unnamed] })
+
+    fireEvent.click(screen.getByRole('button', { name: /0:00\.2/ }))
+    const input = screen.getByLabelText('Name') as HTMLInputElement
+    expect(input.placeholder).toBe('0:00.2')
     expect(input.value).toBe('')
 
     fireEvent.blur(input)
     expect(onUpdatePhrase).not.toHaveBeenCalled()
-    expect(input.value).toBe('Phrase 1')
   })
 
   it('notifies when a phrase is selected or cleared', () => {

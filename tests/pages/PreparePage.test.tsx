@@ -370,17 +370,18 @@ describe('PreparePage phrase marking', () => {
     const timeline = mockTimelineRect()
     dragPhrase(timeline, 100, 300)
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Phrase 1/ })).toBeTruthy()
+      expect(screen.getByRole('button', { name: /0:01\.0/ })).toBeTruthy()
     })
 
     dragPhrase(timeline, 400, 600)
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Phrase 2/ })).toBeTruthy()
+      expect(screen.getByRole('button', { name: /0:04\.0/ })).toBeTruthy()
     })
 
     const loaded = await repo.getProject(projectId)
     expect(loaded?.phrases).toHaveLength(2)
-    expect(loaded?.phrases.map((item) => item.name).sort()).toEqual(['Phrase 1', 'Phrase 2'])
+    expect(loaded?.phrases.map((item) => item.name)).toEqual(['', ''])
+    expect(loaded?.phrases.map((item) => item.startMs).sort((a, b) => a - b)).toEqual([1000, 4000])
   })
 
   it('does not drop the first phrase when a second mark starts before save resolves', async () => {

@@ -149,7 +149,7 @@ export const PhrasePartPlanSchema = z.object({
 export const PhraseSchema = z
   .object({
     id: z.string().min(1),
-    name: z.string().min(1),
+    name: z.string(),
     sectionId: z.string().min(1).optional(),
     startMs: z.number(),
     endMs: z.number(),

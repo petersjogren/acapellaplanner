@@ -201,6 +201,15 @@ describe('schema parse failures', () => {
     expect(() => validatePhrases([phrase({ id: 'a', startMs: 1000, endMs: 1000 })])).toThrow()
   })
 
+  it('accepts an empty phrase name string', () => {
+    const result = PhraseSchema.safeParse({
+      ...phrase({ id: 'a', startMs: 0, endMs: 1000 }),
+      name: '',
+    })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.name).toBe('')
+  })
+
   it('rejects a section whose from-phrase is after its to-phrase', () => {
     const phrases = [
       phrase({ id: 'a', startMs: 0, endMs: 1000 }),

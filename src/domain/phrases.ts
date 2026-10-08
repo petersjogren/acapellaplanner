@@ -107,16 +107,49 @@ export function gapContainingMs(
   return { startMs, endMs }
 }
 
-export function nextPhraseName(existing: Array<{ name: string }>): string {
-  const names = new Set(existing.map((item) => item.name))
-  let n = 1
-  while (names.has(`Phrase ${n}`)) n += 1
-  return `Phrase ${n}`
+/** Clock format matching `formatDuration` in audio/decode.ts (`0:30.0`). Pure domain copy. */
+export function formatPhraseClock(ms: number): string {
+  const totalTenths = Math.round(Math.max(0, ms) / 100)
+  const tenths = totalTenths % 10
+  const totalSeconds = Math.floor(totalTenths / 10)
+  const seconds = totalSeconds % 60
+  const minutes = Math.floor(totalSeconds / 60)
+  return `${minutes}:${seconds.toString().padStart(2, '0')}.${tenths}`
 }
 
-function buildPhrase(input: NewPhraseInput, existing: Phrase[], durationMs: number): Phrase {
+/** Trimmed name when non-empty; otherwise start time as duration clock. Not stored. */
+export function phraseLabel(phrase: Pick<Phrase, 'name' | 'startMs'>): string {
+  const trimmed = phrase.name.trim()
+  return trimmed ? trimmed : formatPhraseClock(phrase.startMs)
+}
+
+/** Phrase span as seconds with tenths + unit (`8.4 s`). Not the duration clock. */
+export function phraseLengthLabel(phrase: Pick<Phrase, 'startMs' | 'endMs'>): string {
+  const lengthMs = Math.max(0, phrase.endMs - phrase.startMs)
+  const tenths = Math.round(lengthMs / 100)
+  const whole = Math.floor(tenths / 10)
+  const frac = tenths % 10
+  return `${whole}.${frac} s`
+}
+
+/**
+ * Fraction of the phrase span elapsed at ghostMs.
+ * Before start (incl. head start) = 0; at/after end (incl. crossfade tail) = 1;
+ * between = elapsed / length.
+ */
+export function timeLeftFraction(
+  phrase: Pick<Phrase, 'startMs' | 'endMs'>,
+  ghostMs: number,
+): number {
+  const length = phrase.endMs - phrase.startMs
+  if (ghostMs < phrase.startMs) return 0
+  if (length <= 0 || ghostMs >= phrase.endMs) return 1
+  return (ghostMs - phrase.startMs) / length
+}
+
+function buildPhrase(input: NewPhraseInput, durationMs: number): Phrase {
   const { startMs, endMs } = clampPhrase(input.startMs, input.endMs, durationMs)
-  const name = input.name?.trim() ? input.name.trim() : nextPhraseName(existing)
+  const name = input.name?.trim() ? input.name.trim() : ''
   return {
     id: crypto.randomUUID(),
     name,
@@ -132,7 +165,7 @@ function buildPhrase(input: NewPhraseInput, existing: Phrase[], durationMs: numb
 
 export function addPhrase(project: Project, input: NewPhraseInput): Project {
   const durationMs = ghostDurationMs(project, Math.max(input.startMs, input.endMs, 0))
-  const phrase = buildPhrase(input, project.phrases, durationMs)
+  const phrase = buildPhrase(input, durationMs)
   const phrases = sortPhrases([...project.phrases, phrase])
   validatePhrases(phrases)
   validateSections(project.sections, phrases)
@@ -154,9 +187,6 @@ export function updatePhrase(project: Project, id: string, patch: PhrasePatch): 
     durationMs,
   )
   const name = patch.name !== undefined ? patch.name.trim() : current.name
-  if (!name) {
-    throw new Error('Phrase name is required')
-  }
   // Head start / crossfade tail: how far the play window and mic capture
   // extend outside the phrase's own boundaries. Phrases themselves stay
   // non-overlapping (validated below); this is what actually overlaps.

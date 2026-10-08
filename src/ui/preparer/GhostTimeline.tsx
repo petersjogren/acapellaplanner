@@ -9,6 +9,7 @@ import { formatDuration } from '../../audio/decode.ts'
 import {
   MIN_PHRASE_MS,
   gapContainingMs,
+  phraseLabel,
   phrasesFromDrag,
   sortPhrases,
   type PhrasePatch,
@@ -138,9 +139,11 @@ function previewFromRawDrag(
 
 function PhraseNameInput({
   value,
+  placeholder,
   onCommit,
 }: {
   value: string
+  placeholder?: string
   onCommit: (name: string) => void | Promise<void>
 }) {
   const [draft, setDraft] = useState(value)
@@ -151,17 +154,17 @@ function PhraseNameInput({
 
   function commit() {
     const trimmed = draft.trim()
-    if (!trimmed) {
+    if (trimmed === value.trim()) {
       setDraft(value)
       return
     }
-    if (trimmed === value) return
     void onCommit(trimmed)
   }
 
   return (
     <input
       value={draft}
+      placeholder={placeholder}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
@@ -466,7 +469,7 @@ export function GhostTimeline({
                     onSelectPhrase?.(item.id)
                   }}
                 >
-                  <span className="font-medium">{item.name}</span>
+                  <span className="font-medium">{phraseLabel(item)}</span>
                   <span className="text-sm text-ink-muted">
                     {formatDuration(item.startMs)}–{formatDuration(item.endMs)}
                   </span>
@@ -476,12 +479,29 @@ export function GhostTimeline({
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <label className="flex flex-col gap-1 text-sm">
                       Name
-                      <PhraseNameInput
-                        value={item.name}
-                        onCommit={(name) =>
-                          run(() => onUpdatePhrase(item.id, { name }), 'Could not update phrase')
-                        }
-                      />
+                      <div className="flex items-center gap-2">
+                        <PhraseNameInput
+                          value={item.name}
+                          placeholder={formatDuration(item.startMs)}
+                          onCommit={(name) =>
+                            run(() => onUpdatePhrase(item.id, { name }), 'Could not update phrase')
+                          }
+                        />
+                        {item.name.trim() ? (
+                          <button
+                            type="button"
+                            className="shrink-0 text-sm text-ink-muted hover:text-record-red"
+                            onClick={() =>
+                              void run(
+                                () => onUpdatePhrase(item.id, { name: '' }),
+                                'Could not update phrase',
+                              )
+                            }
+                          >
+                            Clear name
+                          </button>
+                        ) : null}
+                      </div>
                     </label>
                     <label className="flex flex-col gap-1 text-sm">
                       Lyric
