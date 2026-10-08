@@ -1181,4 +1181,125 @@ describe('RecordControl', () => {
     await waitFor(() => expect(engine.stop).toHaveBeenCalled())
     expect(repo.saveProject).not.toHaveBeenCalled()
   })
+
+  it('idle Record has no time-left meter and is not pressed', () => {
+    const { engine } = mockEngine()
+    renderControl({ engine })
+    expect(screen.getByRole('button', { name: 'Record' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    )
+    expect(screen.queryByRole('progressbar', { name: 'Time left' })).toBeNull()
+  })
+
+  it('shows time left empty in head start, partial while sounding, full at end', async () => {
+    const { engine, listeners } = mockEngine()
+    // phrase is 1000–3000; pre-roll 250 → head start position 900 is before start
+    vi.mocked(engine.getPositionMs).mockReturnValue(900)
+    renderControl({ engine })
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
+    listeners.current?.onPassStart?.()
+
+    await waitFor(() => {
+      expect(screen.getByRole('progressbar', { name: 'Time left' }).getAttribute('aria-valuenow')).toBe(
+        '0',
+      )
+    })
+
+    vi.mocked(engine.getPositionMs).mockReturnValue(2000)
+    await waitFor(() => {
+      expect(
+        Number(screen.getByRole('progressbar', { name: 'Time left' }).getAttribute('aria-valuenow')),
+      ).toBeCloseTo(0.5)
+    })
+
+    vi.mocked(engine.getPositionMs).mockReturnValue(3000)
+    await waitFor(() => {
+      expect(screen.getByRole('progressbar', { name: 'Time left' }).getAttribute('aria-valuenow')).toBe(
+        '1',
+      )
+    })
+
+    vi.mocked(engine.getPositionMs).mockReturnValue(3050)
+    await waitFor(() => {
+      expect(screen.getByRole('progressbar', { name: 'Time left' }).getAttribute('aria-valuenow')).toBe(
+        '1',
+      )
+    })
+  })
+
+  it('resets time left against the active phrase on sing through', async () => {
+    const { engine, listeners } = mockEngine()
+    const next: Phrase = {
+      ...phrase,
+      id: 'p2',
+      name: 'next line',
+      startMs: 3000,
+      endMs: 5000,
+      postRollMs: 80,
+    }
+    // Mid first phrase (1000–3000) → 0.5; after enter p2 at its start → 0
+    vi.mocked(engine.getPositionMs).mockReturnValue(2000)
+    renderControl({
+      engine,
+      project: projectWith({ phrases: [phrase, next] }),
+    })
+    fireEvent.click(screen.getByRole('switch', { name: 'Sing through' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy())
+    listeners.current?.onPassStart?.()
+
+    await waitFor(() => {
+      expect(
+        Number(screen.getByRole('progressbar', { name: 'Time left' }).getAttribute('aria-valuenow')),
+      ).toBeCloseTo(0.5)
+    })
+
+    vi.mocked(engine.getPositionMs).mockReturnValue(3000)
+    listeners.current?.onPhraseEnter?.(1)
+    await waitFor(() => {
+      expect(screen.getByRole('progressbar', { name: 'Time left' }).getAttribute('aria-valuenow')).toBe(
+        '0',
+      )
+    })
+
+    vi.mocked(engine.getPositionMs).mockReturnValue(4000)
+    await waitFor(() => {
+      expect(
+        Number(screen.getByRole('progressbar', { name: 'Time left' }).getAttribute('aria-valuenow')),
+      ).toBeCloseTo(0.5)
+    })
+  })
+
+  it('drops the time-left meter when Hear / Keep / Scrap replaces Record', async () => {
+    const { engine, listeners } = mockEngine()
+    const repo = mockRepo()
+    let now = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    vi.mocked(engine.getPositionMs).mockReturnValue(2000)
+    const { rerender } = renderControl({ engine, repo })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(engine.play).toHaveBeenCalled())
+    now += 10
+    listeners.current?.onPassStart?.()
+    await waitFor(() => {
+      expect(screen.getByRole('progressbar', { name: 'Time left' })).toBeTruthy()
+    })
+    now += 500
+    listeners.current?.onPassComplete?.()
+    listeners.current?.onEnded?.()
+
+    await waitFor(() => {
+      expect(repo.saveProject).toHaveBeenCalledTimes(1)
+    })
+    const saved = vi.mocked(repo.saveProject).mock.calls[0]![0]
+    rerender(saved)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Last take')).toBeTruthy()
+    })
+    expect(screen.queryByRole('button', { name: 'Record' })).toBeNull()
+    expect(screen.queryByRole('progressbar', { name: 'Time left' })).toBeNull()
+  })
 })

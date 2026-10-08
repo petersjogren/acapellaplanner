@@ -30,7 +30,7 @@ import {
   type StartedRecording,
 } from '../../audio/record.ts'
 import { deriveCompletion } from '../../domain/completion.ts'
-import { phraseTimelineStartMs } from '../../domain/phrases.ts'
+import { phraseTimelineStartMs, timeLeftFraction } from '../../domain/phrases.ts'
 import { markInProgress } from '../../domain/sessionPlan.ts'
 import {
   completedRun,
@@ -113,6 +113,9 @@ export function RecordControl({
   const [processed, setProcessed] = useState(false)
   const [singThrough, setSingThrough] = useState(false)
   const [passActive, setPassActive] = useState(false)
+  /** Active phrase of the armed pass (sing-through advances this). Null when idle. */
+  const [meterPhrase, setMeterPhrase] = useState<Phrase | null>(null)
+  const [elapsedFraction, setElapsedFraction] = useState(0)
   const armedRef = useRef(false)
   const armingRef = useRef(false)
   const projectRef = useRef(project)
@@ -129,6 +132,7 @@ export function RecordControl({
   const spanIdsRef = useRef<string[] | null>(null)
   const onPassChangeRef = useRef(onPassChange)
   const onSpanKeptRef = useRef(onSpanKept)
+  const meterPhraseRef = useRef<Phrase | null>(null)
 
   projectRef.current = project
   onProjectChangeRef.current = onProjectChange
@@ -137,6 +141,7 @@ export function RecordControl({
   singThroughRef.current = singThrough
   onPassChangeRef.current = onPassChange
   onSpanKeptRef.current = onSpanKept
+  meterPhraseRef.current = meterPhrase
 
   useImperativeHandle(ref, () => ({
     flushSaves: () => saveChainRef.current,
@@ -260,6 +265,9 @@ export function RecordControl({
   function endPass() {
     passRunRef.current = null
     setPassActive(false)
+    meterPhraseRef.current = null
+    setMeterPhrase(null)
+    setElapsedFraction(0)
     onPassChangeRef.current?.(null)
   }
 
@@ -355,6 +363,8 @@ export function RecordControl({
             if (!multi) return
             const entered = run[index]
             if (!entered) return
+            meterPhraseRef.current = entered
+            setMeterPhrase(entered)
             onPassChangeRef.current?.({
               phraseIds: run.map((item) => item.id),
               activePhraseId: entered.id,
@@ -373,6 +383,9 @@ export function RecordControl({
         return
       }
       setArmed(true)
+      meterPhraseRef.current = run[0]!
+      setMeterPhrase(run[0]!)
+      setElapsedFraction(0)
       if (through) {
         setSingThrough(false)
         singThroughRef.current = false
@@ -567,6 +580,40 @@ export function RecordControl({
     }
   }, [engine])
 
+  // Poll ghost ms while armed. The pie is a fill driven by timeLeftFraction —
+  // not a looping animation. When idle, fraction stays 0 and the meter is gone.
+  useEffect(() => {
+    if (!armed || !meterPhrase) {
+      setElapsedFraction(0)
+      return
+    }
+    let cancelled = false
+    let raf = 0
+    function tick() {
+      if (cancelled) return
+      const measured = meterPhraseRef.current
+      if (!measured) {
+        setElapsedFraction(0)
+      } else {
+        const pos = engine.getPositionMs()
+        setElapsedFraction(pos == null ? 0 : timeLeftFraction(measured, pos))
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+    }
+  }, [armed, meterPhrase, engine])
+
+  const showPie = armed && elapsedFraction > 0
+  const pieStyle = showPie
+    ? {
+        background: `conic-gradient(from 0deg, color-mix(in srgb, var(--record-red) 72%, var(--ink)) 0deg ${elapsedFraction * 360}deg, var(--record-red) ${elapsedFraction * 360}deg 360deg)`,
+      }
+    : undefined
+
   return (
     <section className="flex flex-col items-start gap-3" aria-label="Record">
       <p className="text-sm text-ink-muted" aria-label="Takes">
@@ -647,11 +694,22 @@ export function RecordControl({
             aria-pressed={armed}
             onClick={() => toggleArm()}
             disabled={busy}
-            className={`flex h-24 w-24 items-center justify-center rounded-full text-sm font-medium text-paper studio-transition disabled:opacity-50 ${
+            style={pieStyle}
+            className={`relative flex h-24 w-24 items-center justify-center rounded-full text-sm font-medium text-paper studio-transition disabled:opacity-50 ${
               armed ? 'record-lamp' : 'bg-record-red hover:bg-ink'
             }`}
           >
-            {passActive ? 'Stop' : 'Record'}
+            {armed ? (
+              <span
+                role="progressbar"
+                aria-label="Time left"
+                aria-valuemin={0}
+                aria-valuemax={1}
+                aria-valuenow={elapsedFraction}
+                className="sr-only"
+              />
+            ) : null}
+            <span className="relative z-10">{passActive ? 'Stop' : 'Record'}</span>
           </button>
           <button
             type="button"
