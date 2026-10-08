@@ -1,4 +1,5 @@
 import { cellKey } from '../../domain/completion.ts'
+import { phraseLabel } from '../../domain/phrases.ts'
 import { takeCoversPhrase } from '../../domain/singThrough.ts'
 import type { Project, Take } from '../../domain/schemas.ts'
 
@@ -61,7 +62,7 @@ export function CompletionMatrix({
                         className="font-medium studio-transition hover:text-record-red"
                         onClick={() => onPlayPhrase?.(phrase.id)}
                       >
-                        {isPlaying ? `Stop — ${phrase.name}` : phrase.name}
+                        {isPlaying ? `Stop — ${phraseLabel(phrase)}` : phraseLabel(phrase)}
                       </button>
                     </th>
                   )
@@ -91,7 +92,7 @@ export function CompletionMatrix({
                       <td
                         key={phrase.id}
                         className="px-2 py-3 align-top"
-                        aria-label={`${part.shortLabel} / ${phrase.name}: ${takeCount} of ${targetTakes}`}
+                        aria-label={`${part.shortLabel} / ${phraseLabel(phrase)}: ${takeCount} of ${targetTakes}`}
                       >
                         <span className="tabular-nums">
                           {takeCount}/{targetTakes}
@@ -103,7 +104,7 @@ export function CompletionMatrix({
                               const isPlaying = playingTakeId === take.id
                               const label = `${isPlaying ? 'Stop — ' : ''}Take ${take.takeIndex}${
                                 isKeeper ? ' (keeper)' : ''
-                              } — ${part.shortLabel} / ${phrase.name}`
+                              } — ${part.shortLabel} / ${phraseLabel(phrase)}`
                               return (
                                 <button
                                   key={take.id}

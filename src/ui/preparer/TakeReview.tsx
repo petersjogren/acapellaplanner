@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { keeperTakesForPhrase, type TakeReviewMode } from '../../audio/mix.ts'
+import { phraseLabel } from '../../domain/phrases.ts'
 import { takeCoversPhrase } from '../../domain/singThrough.ts'
 import type { Project, TakeRating } from '../../domain/schemas.ts'
 
@@ -115,7 +116,7 @@ export function TakeReview({
             <option value="">All phrases</option>
             {phrases.map((phrase) => (
               <option key={phrase.id} value={phrase.id}>
-                {phrase.name}
+                {phraseLabel(phrase)}
               </option>
             ))}
           </select>

@@ -1,6 +1,6 @@
 import { strToU8, zipSync } from 'fflate'
 import { takePlaybackOffsetMs } from '../audio/latency.ts'
-import { phraseTimelineStartMs } from '../domain/phrases.ts'
+import { phraseLabel, phraseTimelineStartMs } from '../domain/phrases.ts'
 import type { Phrase, Project, Take } from '../domain/schemas.ts'
 import { encodeWavPadded, floatToPcm16, msToSamples, WAV_HEADER_BYTES, wavFromPcm16 } from './wav.ts'
 
@@ -99,7 +99,7 @@ export function planSegments(project: Project, options: DawExportOptions): Plann
       partName: part.name,
       shortLabel: part.shortLabel,
       phraseIndex: phrase ? phraseIndex.get(phrase.id) ?? 1 : 1,
-      phraseName: phrase?.name ?? 'Deleted phrase',
+      phraseName: phrase ? phraseLabel(phrase) : 'Deleted phrase',
       takeIndex: take.takeIndex,
       timelineStartMs: takeTimelineStartMs(take, phrase),
       trimLeadingMs,

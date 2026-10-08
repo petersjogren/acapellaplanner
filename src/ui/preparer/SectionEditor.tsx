@@ -1,4 +1,5 @@
 import { useId, useMemo, useState, type FormEvent } from 'react'
+import { phraseLabel } from '../../domain/phrases.ts'
 import type { NewSectionInput } from '../../domain/sections.ts'
 import { phrasesInSection } from '../../domain/sections.ts'
 import type { Phrase, Section } from '../../domain/schemas.ts'
@@ -18,8 +19,9 @@ function timeFeelLabel(mode: Section['timeMode']): string {
   return mode === 'fixed-tempo' ? 'In time' : 'Follow the ghost'
 }
 
-function phraseLabel(phrases: Phrase[], id: string): string {
-  return phrases.find((item) => item.id === id)?.name ?? id
+function sectionPhraseLabel(phrases: Phrase[], id: string): string {
+  const phrase = phrases.find((item) => item.id === id)
+  return phrase ? phraseLabel(phrase) : id
 }
 
 export function SectionEditor({
@@ -88,8 +90,8 @@ export function SectionEditor({
         <ul className="mt-4 flex flex-col gap-2" aria-label="Section list">
           {sections.map((item) => {
             const members = phrasesInSection(item, phrases)
-            const fromName = phraseLabel(phrases, item.fromPhraseId)
-            const toName = phraseLabel(phrases, item.toPhraseId)
+            const fromName = sectionPhraseLabel(phrases, item.fromPhraseId)
+            const toName = sectionPhraseLabel(phrases, item.toPhraseId)
             const spanLabel =
               members.length <= 1 ? fromName : `${fromName}–${toName}`
             return (
@@ -178,7 +180,7 @@ export function SectionEditor({
             >
               {ordered.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name}
+                  {phraseLabel(item)}
                 </option>
               ))}
             </select>
@@ -193,7 +195,7 @@ export function SectionEditor({
             >
               {ordered.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name}
+                  {phraseLabel(item)}
                 </option>
               ))}
             </select>

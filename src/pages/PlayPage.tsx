@@ -16,7 +16,7 @@ import {
   playAlongWindow,
   type PlayAlongLoopMode,
 } from '../domain/playAlong.ts'
-import { sortPhrases } from '../domain/phrases.ts'
+import { phraseLabel, sortPhrases } from '../domain/phrases.ts'
 import { addFilmPin, clearFilmPins, filmScrollProgress, sheetPageBlobIdsForCrops } from '../domain/sheets.ts'
 import type { Phrase, Project } from '../domain/schemas.ts'
 import { deriveCompletion } from '../domain/completion.ts'
@@ -30,10 +30,6 @@ import { useLoadedProject } from './useLoadedProject.ts'
 
 function messageFrom(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
-}
-
-function phraseLabel(phrase: Phrase): string {
-  return phrase.lyricText?.trim() || phrase.name
 }
 
 export function PlayPage() {
@@ -483,7 +479,7 @@ export function PlayPage() {
                             current ? 'bg-ink text-paper' : 'text-ink/80 hover:bg-ink/5'
                           }`}
                         >
-                          {phraseLabel(item)}
+                          {item.lyricText?.trim() || phraseLabel(item)}
                         </button>
                       </li>
                     )
