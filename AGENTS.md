@@ -56,3 +56,17 @@ Vitest, jsdom. UI tests colocated under `src/ui/**`. Domain/audio/storage/pages 
 ## Scope
 
 Touch only what the task needs. Match existing style. One concern per commit if you are asked to commit.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default role names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), recorded as a `Status:` line in each issue file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context. The glossary and decisions already live in `.brain/`, not a root `GLOSSARY.md` or `docs/adr/`. See `docs/agents/domain.md`.
