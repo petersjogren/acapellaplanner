@@ -13,6 +13,7 @@ export type CompletionMatrixProps = {
   playingTakeId?: string | null
   onPlayPhrase?: (phraseId: string) => void
   onPlayTake?: (takeId: string, phraseId: string) => void
+  onToggleTake?: (takeId: string) => void
 }
 
 export function CompletionMatrix({
@@ -21,6 +22,7 @@ export function CompletionMatrix({
   playingTakeId = null,
   onPlayPhrase,
   onPlayTake,
+  onToggleTake,
 }: CompletionMatrixProps) {
   const parts = project.voiceRoster.filter((item) => !item.isGhost)
   const phrases = project.phrases
@@ -115,7 +117,13 @@ export function CompletionMatrix({
                                   className={`h-2.5 w-2.5 rounded-pill studio-transition ${
                                     isKeeper ? 'bg-gold' : 'bg-ink/35'
                                   } ${isPlaying ? 'ring-2 ring-ink ring-offset-1' : ''}`}
-                                  onClick={() => onPlayTake?.(take.id, phrase.id)}
+                                  onClick={(event) => {
+                                    if (event.shiftKey) {
+                                      onToggleTake?.(take.id)
+                                      return
+                                    }
+                                    onPlayTake?.(take.id, phrase.id)
+                                  }}
                                 />
                               )
                             })}

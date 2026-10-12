@@ -1367,6 +1367,814 @@ describe('PreparePage completion matrix', () => {
       expect(listenSelect!.value).toBe('stack-build')
     })
   })
+
+  it('shift-click a keeper stores scratch and does not start playback', async () => {
+    const seeded = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...seeded!,
+      takes: seeded!.takes.map((take) =>
+        take.id === 'take-1' ? { ...take, rating: 'keeper' as const, notes: 'hold the top' } : take,
+      ),
+    })
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 (keeper) — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+
+    await waitFor(async () => {
+      const saved = await repo.getProject(projectId)
+      expect(saved?.takes[0]?.rating).toBe('scratch')
+    })
+    expect(
+      within(screen.getByLabelText("What's left")).queryByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+    ).toBeNull()
+    expect(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+    ).toBeTruthy()
+    const saved = await repo.getProject(projectId)
+    expect(saved?.takes[0]).toMatchObject({
+      id: 'take-1',
+      audioBlobId: 'take-blob-1',
+      notes: 'hold the top',
+      takeIndex: 1,
+      phraseId: 'phrase-1',
+    })
+    expect(sources).toHaveLength(0)
+  })
+
+  it('shift-click scratch stores keeper', async () => {
+    const seeded = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...seeded!,
+      takes: seeded!.takes.map((take) =>
+        take.id === 'take-1' ? { ...take, rating: 'scratch' as const } : take,
+      ),
+    })
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
+    })
+    expect(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+    ).toBeTruthy()
+    expect(sources).toHaveLength(0)
+  })
+
+  it('a failed save leaves the last saved rating and shows an alert', async () => {
+    const seeded = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...seeded!,
+      takes: seeded!.takes.map((take) =>
+        take.id === 'take-1' ? { ...take, rating: 'keeper' as const } : take,
+      ),
+    })
+    vi.spyOn(repo, 'saveProject').mockRejectedValueOnce(new Error('disk full'))
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 (keeper) — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+
+    await waitFor(() => {
+      const alert = screen.getByRole('alert')
+      expect(alert.textContent).toBe('disk full')
+      expect(alert.className).toContain('text-record-red')
+    })
+    expect(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+    ).toBeTruthy()
+    expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
+    expect(sources).toHaveLength(0)
+  })
+
+  it('shift-click an unrated take stores keeper', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
+    })
+    const dot = within(screen.getByLabelText("What's left")).getByRole('button', {
+      name: 'Take 1 (keeper) — S1 / Phrase 1',
+    })
+    expect(dot.getAttribute('title')).toBe('Play this take, solo')
+    expect(sources).toHaveLength(0)
+  })
+
+  it('shift-click any star stores keeper', async () => {
+    for (const star of [1, 2, 3, 4, 5] as const) {
+      cleanup()
+      const seeded = await repo.getProject(projectId)
+      await repo.saveProject({
+        ...seeded!,
+        takes: seeded!.takes.map((take) =>
+          take.id === 'take-1' ? { ...take, rating: star } : take,
+        ),
+      })
+      renderPrepare()
+      await waitFor(() => {
+        expect(
+          within(screen.getByLabelText("What's left")).getByRole('button', {
+            name: 'Take 1 — S1 / Phrase 1',
+          }),
+        ).toBeTruthy()
+      })
+
+      fireEvent.click(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+        { shiftKey: true },
+      )
+
+      await waitFor(async () => {
+        expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
+      })
+      expect(sources).toHaveLength(0)
+    }
+  })
+
+  it('a second shift-click on a former star stores scratch, not the star', async () => {
+    const seeded = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...seeded!,
+      takes: seeded!.takes.map((take) => (take.id === 'take-1' ? { ...take, rating: 5 } : take)),
+    })
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 (keeper) — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('scratch')
+    })
+    expect(
+      within(screen.getByLabelText("What's left")).queryByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+    ).toBeNull()
+  })
+
+  it('a second shift-click on an unrated take stores scratch, not unrated', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 (keeper) — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('scratch')
+    })
+    expect((await repo.getProject(projectId))?.takes[0]?.rating).not.toBeUndefined()
+  })
+
+  it('shift-click a spanning take flips every phrase dot of that take', async () => {
+    const seeded = await repo.getProject(projectId)
+    await repo.putAudioBlob({
+      id: 'take-blob-2',
+      projectId,
+      kind: 'take',
+      mimeType: 'audio/wav',
+      byteSize: 4,
+      createdAt: new Date().toISOString(),
+      blob: new Blob([new Uint8Array([5, 6, 7, 8])]),
+    })
+    await repo.saveProject({
+      ...seeded!,
+      phrases: [
+        seeded!.phrases[0]!,
+        {
+          id: 'phrase-2',
+          name: 'Phrase 2',
+          startMs: 3000,
+          endMs: 5000,
+          partPlan: [],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          preRollMs: 250,
+          postRollMs: 100,
+        },
+      ],
+      takes: [
+        {
+          ...seeded!.takes[0]!,
+          rating: 'scratch',
+          spanPhraseIds: ['phrase-1', 'phrase-2'],
+        },
+        {
+          id: 'take-2',
+          phraseId: 'phrase-1',
+          voicePartId: 's1',
+          takeIndex: 2,
+          audioBlobId: 'take-blob-2',
+          recordedAt: '2026-09-12T10:01:00.000Z',
+          durationMs: 800,
+          headphoneMixSnapshot: { layers: [] },
+          peakDb: -8,
+          rating: 'keeper',
+          notes: 'leave me',
+        },
+      ],
+    })
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 2',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 2',
+      }),
+      { shiftKey: true },
+    )
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 (keeper) — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 (keeper) — S1 / Phrase 2',
+        }),
+      ).toBeTruthy()
+    })
+    expect(
+      within(screen.getByLabelText("What's left"))
+        .getAllByRole('button', { name: /Take \d.*S1 \/ Phrase 1/ })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['Take 1 (keeper) — S1 / Phrase 1', 'Take 2 (keeper) — S1 / Phrase 1'])
+    const saved = await repo.getProject(projectId)
+    expect(saved?.takes.find((take) => take.id === 'take-1')).toMatchObject({
+      rating: 'keeper',
+      audioBlobId: 'take-blob-1',
+      takeIndex: 1,
+      spanPhraseIds: ['phrase-1', 'phrase-2'],
+    })
+    expect(saved?.takes.find((take) => take.id === 'take-2')).toMatchObject({
+      rating: 'keeper',
+      notes: 'leave me',
+      takeIndex: 2,
+      audioBlobId: 'take-blob-2',
+    })
+    expect(sources).toHaveLength(0)
+  })
+
+  it('a click without shift still solos and does not rate, even with alt', async () => {
+    const seeded = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...seeded!,
+      takes: seeded!.takes.map((take) =>
+        take.id === 'take-1' ? { ...take, rating: 'scratch' as const } : take,
+      ),
+    })
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+    )
+    await waitFor(() => {
+      expect(sources).toHaveLength(2)
+    })
+    expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('scratch')
+
+    cleanup()
+    sources.length = 0
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+      { altKey: true },
+    )
+    await waitFor(() => {
+      expect(sources).toHaveLength(2)
+    })
+    expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('scratch')
+  })
+
+  it('shift-click with alt toggles and does not start playback', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+      { shiftKey: true, altKey: true },
+    )
+
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
+    })
+    expect(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+    ).toBeTruthy()
+    expect(sources).toHaveLength(0)
+  })
+
+  it('shift-click during a phrase-name play does not stop it', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play ghost' })).toBeTruthy()
+    })
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', { name: 'Phrase 1' }),
+      ).toBeTruthy()
+    })
+    fireEvent.click(within(screen.getByLabelText("What's left")).getByRole('button', { name: 'Phrase 1' }))
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Stop — Phrase 1',
+          pressed: true,
+        }),
+      ).toBeTruthy()
+    })
+    const stopsBefore = sources.map((source) => source.stop.mock.calls.length)
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
+    })
+    expect(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Stop — Phrase 1',
+        pressed: true,
+      }),
+    ).toBeTruthy()
+    expect(sources.map((source) => source.stop.mock.calls.length)).toEqual(stopsBefore)
+    expect(sources).toHaveLength(stopsBefore.length)
+  })
+
+  it('shift-click during a take solo does not stop it', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Play ghost' })).toBeTruthy()
+    })
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+    )
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Stop — Take 1 — S1 / Phrase 1',
+          pressed: true,
+        }),
+      ).toBeTruthy()
+    })
+    const stopsBefore = sources.map((source) => source.stop.mock.calls.length)
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Stop — Take 1 — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Stop — Take 1 (keeper) — S1 / Phrase 1',
+          pressed: true,
+        }),
+      ).toBeTruthy()
+    })
+    expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
+    expect(sources.map((source) => source.stop.mock.calls.length)).toEqual(stopsBefore)
+    expect(sources).toHaveLength(stopsBefore.length)
+  })
+
+  it('two queued shift-clicks on the same dot land on the second rating', async () => {
+    const seeded = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...seeded!,
+      takes: seeded!.takes.map((take) =>
+        take.id === 'take-1' ? { ...take, rating: 'keeper' as const } : take,
+      ),
+    })
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 (keeper) — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    const original = repo.saveProject.bind(repo)
+    const seen: Array<string | number | undefined> = []
+    let releaseFirst: (() => void) | undefined
+    let gated = false
+    vi.spyOn(repo, 'saveProject').mockImplementation(async (project) => {
+      seen.push(project.takes.find((take) => take.id === 'take-1')?.rating)
+      if (!gated) {
+        gated = true
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve
+        })
+      }
+      return original(project)
+    })
+
+    const dot = within(screen.getByLabelText("What's left")).getByRole('button', {
+      name: 'Take 1 (keeper) — S1 / Phrase 1',
+    })
+    fireEvent.click(dot, { shiftKey: true })
+    fireEvent.click(dot, { shiftKey: true })
+    await waitFor(() => {
+      expect(seen).toEqual(['scratch'])
+    })
+    releaseFirst?.()
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
+    })
+    expect(seen).toEqual(['scratch', 'keeper'])
+  })
+
+  it('two queued shift-clicks on different dots both stick', async () => {
+    const seeded = await repo.getProject(projectId)
+    await repo.putAudioBlob({
+      id: 'take-blob-2',
+      projectId,
+      kind: 'take',
+      mimeType: 'audio/wav',
+      byteSize: 4,
+      createdAt: new Date().toISOString(),
+      blob: new Blob([new Uint8Array([5, 6, 7, 8])]),
+    })
+    await repo.saveProject({
+      ...seeded!,
+      takes: [
+        { ...seeded!.takes[0]!, rating: 'keeper' },
+        {
+          id: 'take-2',
+          phraseId: 'phrase-1',
+          voicePartId: 's1',
+          takeIndex: 2,
+          audioBlobId: 'take-blob-2',
+          recordedAt: '2026-09-12T10:01:00.000Z',
+          durationMs: 800,
+          headphoneMixSnapshot: { layers: [] },
+          peakDb: -8,
+        },
+      ],
+    })
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 2 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+
+    const original = repo.saveProject.bind(repo)
+    const seen: Array<{ first?: string | number; second?: string | number }> = []
+    let releaseFirst: (() => void) | undefined
+    let gated = false
+    vi.spyOn(repo, 'saveProject').mockImplementation(async (project) => {
+      seen.push({
+        first: project.takes.find((take) => take.id === 'take-1')?.rating,
+        second: project.takes.find((take) => take.id === 'take-2')?.rating,
+      })
+      if (!gated) {
+        gated = true
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve
+        })
+      }
+      return original(project)
+    })
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 2 — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+    await waitFor(() => {
+      expect(seen).toEqual([{ first: 'scratch', second: undefined }])
+    })
+    releaseFirst?.()
+    await waitFor(async () => {
+      const saved = await repo.getProject(projectId)
+      expect(saved?.takes.find((take) => take.id === 'take-1')?.rating).toBe('scratch')
+      expect(saved?.takes.find((take) => take.id === 'take-2')?.rating).toBe('keeper')
+    })
+    expect(seen).toEqual([
+      { first: 'scratch', second: undefined },
+      { first: 'scratch', second: 'keeper' },
+    ])
+    expect(
+      within(screen.getByLabelText("What's left"))
+        .getAllByRole('button', { name: /^Take / })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['Take 1 — S1 / Phrase 1', 'Take 2 (keeper) — S1 / Phrase 1'])
+  })
+
+  it('a rating save with no message uses the fallback copy', async () => {
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+    vi.spyOn(repo, 'saveProject').mockRejectedValueOnce(new Error(''))
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('Could not save rating')
+    })
+    expect((await repo.getProject(projectId))?.takes[0]?.rating).toBeUndefined()
+  })
+
+  it('a later shift-click clears the rating alert before the save finishes', async () => {
+    const seeded = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...seeded!,
+      takes: seeded!.takes.map((take) =>
+        take.id === 'take-1' ? { ...take, rating: 'keeper' as const } : take,
+      ),
+    })
+    const original = repo.saveProject.bind(repo)
+    vi.spyOn(repo, 'saveProject').mockRejectedValueOnce(new Error('disk full'))
+    renderPrepare()
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText("What's left")).getByRole('button', {
+          name: 'Take 1 (keeper) — S1 / Phrase 1',
+        }),
+      ).toBeTruthy()
+    })
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('disk full')
+    })
+
+    let releaseSave: (() => void) | undefined
+    vi.spyOn(repo, 'saveProject').mockImplementation(async (project) => {
+      await new Promise<void>((resolve) => {
+        releaseSave = resolve
+      })
+      return original(project)
+    })
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 (keeper) — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+    expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
+    releaseSave?.()
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('scratch')
+    })
+  })
+
+  it('a rating toggle leaves n/target, enough, and final, and an empty cell has no dot', async () => {
+    const seeded = await repo.getProject(projectId)
+    await repo.saveProject({
+      ...seeded!,
+      phrases: [
+        {
+          ...seeded!.phrases[0]!,
+          partPlan: [
+            {
+              voicePartId: 's1',
+              priority: 0,
+              targetTakes: 4,
+              requiredGuide: ['ghost'],
+              status: 'final',
+            },
+          ],
+        },
+        {
+          id: 'phrase-2',
+          name: 'Phrase 2',
+          startMs: 3000,
+          endMs: 5000,
+          partPlan: [
+            {
+              voicePartId: 's1',
+              priority: 0,
+              targetTakes: 1,
+              requiredGuide: ['ghost'],
+              status: 'enough',
+            },
+          ],
+          loopDefault: { mode: 'phrase-loop', gapMs: 400 },
+          preRollMs: 250,
+          postRollMs: 100,
+        },
+      ],
+      takes: seeded!.takes.map((take) => ({ ...take, rating: 'scratch' as const })),
+    })
+    renderPrepare()
+    await waitFor(() => {
+      expect(within(screen.getByLabelText("What's left")).getByText('1/4')).toBeTruthy()
+      expect(within(screen.getByLabelText("What's left")).getByText('0/1')).toBeTruthy()
+    })
+    expect(
+      within(screen.getByLabelText("What's left")).queryByRole('button', { name: /Take .*Phrase 2/ }),
+    ).toBeNull()
+
+    fireEvent.click(
+      within(screen.getByLabelText("What's left")).getByRole('button', {
+        name: 'Take 1 — S1 / Phrase 1',
+      }),
+      { shiftKey: true },
+    )
+    await waitFor(async () => {
+      expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
+    })
+    expect(within(screen.getByLabelText("What's left")).getByText('1/4')).toBeTruthy()
+    expect(within(screen.getByLabelText("What's left")).getByText('0/1')).toBeTruthy()
+    expect(
+      within(screen.getByLabelText("What's left")).queryByRole('button', { name: /Take .*Phrase 2/ }),
+    ).toBeNull()
+    const saved = await repo.getProject(projectId)
+    expect(saved?.phrases[0]?.partPlan[0]?.status).toBe('final')
+    expect(saved?.phrases[1]?.partPlan[0]?.status).toBe('enough')
+    expect(saved?.completion.cells.find((cell) => cell.phraseId === 'phrase-1')).toMatchObject({
+      takeCount: 1,
+      status: 'final',
+    })
+    expect(saved?.completion.cells.find((cell) => cell.phraseId === 'phrase-2')).toMatchObject({
+      takeCount: 0,
+      status: 'not-started',
+    })
+  })
 })
 
 describe('PreparePage sheet upload', () => {

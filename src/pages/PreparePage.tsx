@@ -21,6 +21,7 @@ import { SheetUploader, type SheetUploadResult } from '../ui/preparer/SheetUploa
 import { deriveCompletion } from '../domain/completion.ts'
 import { tapMarkAlong, stopMarkAlong } from '../domain/markAlong.ts'
 import { addPhrase, removePhrase, updatePhrase, type PhrasePatch } from '../domain/phrases.ts'
+import { rateTake } from '../domain/takes.ts'
 import {
   addSection,
   removeSection,
@@ -91,6 +92,7 @@ export function PreparePage() {
   // two can be active — the engine replaces whatever was playing.
   const [matrixPlayingPhraseId, setMatrixPlayingPhraseId] = useState<string | null>(null)
   const [matrixPlayingTakeId, setMatrixPlayingTakeId] = useState<string | null>(null)
+  const [matrixRatingError, setMatrixRatingError] = useState<string | null>(null)
   const [sheetPageIndex, setSheetPageIndex] = useState(0)
   const [sheetPageUrl, setSheetPageUrl] = useState<string | null>(null)
   const [cropDraft, setCropDraft] = useState<CropDraft | null>(null)
@@ -634,6 +636,19 @@ export function PreparePage() {
     }
   }
 
+  async function handleMatrixToggleTake(takeId: string) {
+    setMatrixRatingError(null)
+    try {
+      await persistProject((current) => {
+        const take = current.takes.find((item) => item.id === takeId)
+        const rating = take?.rating === 'keeper' ? 'scratch' : 'keeper'
+        return rateTake(current, takeId, rating)
+      })
+    } catch (err: unknown) {
+      setMatrixRatingError(messageFrom(err, 'Could not save rating'))
+    }
+  }
+
   async function ensureSheetPageImage(
     docId: string,
     pageIndex: number,
@@ -1113,12 +1128,18 @@ export function PreparePage() {
       <div className="mt-10 flex items-center gap-3">
         <MixPresetSelect compact value={mixPresetId} onChange={setMixPresetId} />
       </div>
+      {matrixRatingError ? (
+        <p role="alert" className="mt-3 text-record-red">
+          {matrixRatingError}
+        </p>
+      ) : null}
       <CompletionMatrix
         project={loaded}
         playingPhraseId={matrixPlayingPhraseId}
         playingTakeId={matrixPlayingTakeId}
         onPlayPhrase={(id) => void handleMatrixPlayPhrase(id)}
         onPlayTake={(takeId, phraseId) => void handleMatrixPlayTake(takeId, phraseId)}
+        onToggleTake={(takeId) => void handleMatrixToggleTake(takeId)}
       />
     </PreparerShell>
   )
