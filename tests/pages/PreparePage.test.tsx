@@ -1934,6 +1934,9 @@ describe('PreparePage completion matrix', () => {
       expect(seen).toEqual(['scratch'])
     })
     releaseFirst?.()
+    await waitFor(() => {
+      expect(seen).toEqual(['scratch', 'keeper'])
+    })
     await waitFor(async () => {
       expect((await repo.getProject(projectId))?.takes[0]?.rating).toBe('keeper')
     })
